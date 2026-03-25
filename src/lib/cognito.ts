@@ -102,13 +102,17 @@ export interface SignUpParams {
 
 export async function cognitoSignUp(
   params: SignUpParams
-): Promise<{ userSub: string }> {
+): Promise<{ userSub: string; username: string }> {
   const { email, password, fullName, phoneNumber, nickname } = params;
+
+  // When email is configured as an alias, Username must NOT be an email.
+  // Use a UUID as the username; users will sign in via email alias.
+  const username = crypto.randomUUID();
 
   const result = await cognitoClient.send(
     new SignUpCommand({
       ClientId: PASSWORD_CLIENT_ID,
-      Username: email.toLowerCase(),
+      Username: username,
       Password: password,
       UserAttributes: [
         { Name: "email", Value: email.toLowerCase() },
@@ -119,19 +123,19 @@ export async function cognitoSignUp(
     })
   );
 
-  return { userSub: result.UserSub! };
+  return { userSub: result.UserSub!, username };
 }
 
 // ── Confirm Sign Up ──
 
 export async function cognitoConfirmSignUp(
-  email: string,
+  username: string,
   code: string
 ): Promise<void> {
   await cognitoClient.send(
     new ConfirmSignUpCommand({
       ClientId: PASSWORD_CLIENT_ID,
-      Username: email.toLowerCase(),
+      Username: username,
       ConfirmationCode: code,
     })
   );
@@ -139,11 +143,11 @@ export async function cognitoConfirmSignUp(
 
 // ── Resend Confirmation Code ──
 
-export async function cognitoResendCode(email: string): Promise<void> {
+export async function cognitoResendCode(username: string): Promise<void> {
   await cognitoClient.send(
     new ResendConfirmationCodeCommand({
       ClientId: PASSWORD_CLIENT_ID,
-      Username: email.toLowerCase(),
+      Username: username,
     })
   );
 }

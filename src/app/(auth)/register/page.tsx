@@ -42,6 +42,7 @@ function RegisterContent() {
   const [nickname, setNickname] = useState("");
   const [email, setEmail] = useState(initialEmail);
   const [phoneNumber, setPhoneNumber] = useState("");
+  const [cognitoUsername, setCognitoUsername] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -85,6 +86,7 @@ function RegisterContent() {
         return;
       }
 
+      setCognitoUsername(data.username);
       setStep("confirm");
     } catch {
       setError("Error de conexión. Intenta nuevamente.");
@@ -108,7 +110,7 @@ function RegisterContent() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          email: email.trim(),
+          username: cognitoUsername,
           code: code.trim(),
         }),
       });
@@ -136,7 +138,7 @@ function RegisterContent() {
       const res = await fetch("/api/auth/resend-code", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim() }),
+        body: JSON.stringify({ username: cognitoUsername }),
       });
 
       if (res.ok) {

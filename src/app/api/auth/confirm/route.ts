@@ -4,16 +4,16 @@ import { cognitoConfirmSignUp, getCognitoErrorMessage } from "@/lib/cognito";
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { email, code } = body;
+    const { username, code } = body;
 
-    if (!email || !code) {
+    if (!username || !code) {
       return NextResponse.json(
-        { error: "Correo y código son requeridos" },
+        { error: "Username y código son requeridos" },
         { status: 400 }
       );
     }
 
-    await cognitoConfirmSignUp(email, code);
+    await cognitoConfirmSignUp(username, code);
 
     return NextResponse.json({
       ok: true,

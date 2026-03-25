@@ -6,9 +6,9 @@ export async function POST(request: Request) {
 
   try {
     body = await request.json();
-  } catch (parseError) {
+  } catch {
     return NextResponse.json(
-      { error: "JSON inválido en el request", detail: String(parseError) },
+      { error: "JSON inválido en el request" },
       { status: 400 }
     );
   }
@@ -24,7 +24,7 @@ export async function POST(request: Request) {
 
     if (!email || !password || !fullName || !phoneNumber || !nickname) {
       return NextResponse.json(
-        { error: "Todos los campos son requeridos", received: Object.keys(body) },
+        { error: "Todos los campos son requeridos" },
         { status: 400 }
       );
     }
@@ -47,17 +47,12 @@ export async function POST(request: Request) {
     return NextResponse.json({
       ok: true,
       userSub: result.userSub,
+      username: result.username,
       message: "Cuenta creada. Revisa tu correo para el código de verificación.",
     });
   } catch (error) {
     const message = getCognitoErrorMessage(error);
-    const code = (error && typeof error === "object" && "name" in error)
-      ? (error as { name: string }).name
-      : "Unknown";
-    const detail = (error && typeof error === "object" && "message" in error)
-      ? (error as { message: string }).message
-      : String(error);
-    console.error("[register]", code, detail);
-    return NextResponse.json({ error: message, code, detail }, { status: 400 });
+    console.error("[register]", error);
+    return NextResponse.json({ error: message }, { status: 400 });
   }
 }
