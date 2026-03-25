@@ -35,6 +35,13 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     const message = getCognitoErrorMessage(error);
-    return NextResponse.json({ error: message }, { status: 400 });
+    const code = (error && typeof error === "object" && "name" in error)
+      ? (error as { name: string }).name
+      : "Unknown";
+    const detail = (error && typeof error === "object" && "message" in error)
+      ? (error as { message: string }).message
+      : "";
+    console.error("[register]", code, detail);
+    return NextResponse.json({ error: message, code, detail }, { status: 400 });
   }
 }
