@@ -1,7 +1,5 @@
 """
-PDF Report Lambda — Professional attendance report with clean corporate design.
-Columns: Fecha | Dia | Entrada | Salida | Break | Horas | Estado | Observaciones
-Footer: summary stats + total hours
+PDF Report Lambda — Professional attendance report with structured corporate layout.
 """
 
 import os
@@ -12,10 +10,9 @@ from datetime import date, datetime
 import boto3
 from boto3.dynamodb.conditions import Key
 from reportlab.lib.pagesizes import A4
-from reportlab.lib.colors import HexColor, white, Color
+from reportlab.lib.colors import HexColor, white
 from reportlab.lib.units import mm
 from reportlab.pdfgen import canvas
-from reportlab.lib.enums import TA_CENTER, TA_RIGHT, TA_LEFT
 
 ddb = boto3.resource("dynamodb")
 s3 = boto3.client("s3")
@@ -23,18 +20,19 @@ emp_table = ddb.Table(os.environ.get("TABLE_EMPLOYEES", "NovasysV2_Employees"))
 daily = ddb.Table(os.environ.get("TABLE_DAILY", "NovasysV2_DailySummary"))
 REPORT_BUCKET = os.environ.get("REPORT_BUCKET", "novasys-v2-reports").strip()
 
-# Professional color palette
+# ── Colors ──
+BRAND = HexColor("#1e3a5f")
 BRAND_DARK = HexColor("#0f172a")
-BRAND_PRIMARY = HexColor("#1e3a5f")
-BRAND_ACCENT = HexColor("#2563eb")
-HEADER_BG = HexColor("#1e3a5f")
-TABLE_HEADER_BG = HexColor("#334155")
+ACCENT = HexColor("#2563eb")
+TH_BG = HexColor("#1e3a5f")
 ROW_EVEN = HexColor("#ffffff")
 ROW_ODD = HexColor("#f8fafc")
-BORDER_COLOR = HexColor("#e2e8f0")
-TEXT_PRIMARY = HexColor("#0f172a")
-TEXT_SECONDARY = HexColor("#64748b")
-TEXT_MUTED = HexColor("#94a3b8")
+WEEKEND_BG = HexColor("#f1f5f9")
+BORDER = HexColor("#cbd5e1")
+BORDER_LIGHT = HexColor("#e2e8f0")
+TXT = HexColor("#0f172a")
+TXT2 = HexColor("#475569")
+TXT3 = HexColor("#94a3b8")
 GREEN = HexColor("#059669")
 GREEN_BG = HexColor("#ecfdf5")
 RED = HexColor("#dc2626")
@@ -44,447 +42,424 @@ AMBER_BG = HexColor("#fffbeb")
 BLUE = HexColor("#2563eb")
 BLUE_BG = HexColor("#eff6ff")
 GRAY = HexColor("#6b7280")
-GRAY_BG = HexColor("#f9fafb")
+GRAY_BG = HexColor("#f3f4f6")
+SUMMARY_BG = HexColor("#f0f4ff")
 
-DAY_NAMES_ES = {
-    0: "Lunes", 1: "Martes", 2: "Miércoles", 3: "Jueves",
-    4: "Viernes", 5: "Sábado", 6: "Domingo",
+DAY_ES = {0: "Lunes", 1: "Martes", 2: "Miércoles", 3: "Jueves",
+           4: "Viernes", 5: "Sábado", 6: "Domingo"}
+
+MONTH_ES = ["", "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+            "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
+
+STATUS_LABEL = {
+    "OK": "Completo", "REGULARIZED": "Regularizado", "SHORT": "Incompleto",
+    "MISSING": "Sin registro", "ABSENCE": "Ausencia", "OPEN": "En curso",
+    "No Laborable": "No laborable",
 }
 
-STATUS_LABELS = {
-    "OK": "Completo",
-    "REGULARIZED": "Regularizado",
-    "SHORT": "Incompleto",
-    "MISSING": "Sin registro",
-    "ABSENCE": "Ausencia",
-    "OPEN": "En curso",
-    "No Laborable": "No laborable",
+WORK_MODE_LABEL = {
+    "REMOTE": "Remoto", "ONSITE": "Presencial", "HYBRID": "Híbrido",
 }
 
 
 def resp(code, body):
-    return {
-        "statusCode": code,
-        "headers": {"content-type": "application/json", "cache-control": "no-store"},
-        "body": json.dumps(body, ensure_ascii=False),
-    }
+    return {"statusCode": code, "headers": {"content-type": "application/json", "cache-control": "no-store"},
+            "body": json.dumps(body, ensure_ascii=False)}
 
 
 def parse_iso_week(week_str):
     y, w = week_str.split("-W")
-    monday = date.fromisocalendar(int(y), int(w), 1)
-    sunday = date.fromisocalendar(int(y), int(w), 7)
-    return monday, sunday
+    return date.fromisocalendar(int(y), int(w), 1), date.fromisocalendar(int(y), int(w), 7)
 
 
 def parse_month(month_str):
     y, m = month_str.split("-")
     year, month = int(y), int(m)
-    last_day = calendar.monthrange(year, month)[1]
-    return date(year, month, 1), date(year, month, last_day)
+    return date(year, month, 1), date(year, month, calendar.monthrange(year, month)[1])
 
 
-def extract_time_value(item, local_key, plain_key):
-    value = item.get(local_key)
-    if value and value != "-":
-        if "T" in value:
-            try:
-                dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
-                return dt.strftime("%H:%M")
-            except Exception:
+def extract_time(item, local_key, plain_key):
+    for k in (local_key, plain_key):
+        v = item.get(k)
+        if v and v != "-":
+            if "T" in str(v):
                 try:
-                    return value.split("T", 1)[1][:5]
+                    return datetime.fromisoformat(str(v).replace("Z", "+00:00")).strftime("%H:%M")
                 except Exception:
-                    return str(value)
-        if len(value) > 5:
-            return value[:5]
-        return str(value)
-    value = item.get(plain_key)
-    if value and value != "-":
-        v = str(value)
-        return v[:5] if len(v) > 5 else v
+                    try:
+                        return str(v).split("T", 1)[1][:5]
+                    except Exception:
+                        return str(v)
+            s = str(v)
+            return s[:5] if len(s) > 5 else s
     return "—"
 
 
-def format_hours(minutes):
-    if minutes == 0:
+def fmt_hours(minutes):
+    if not minutes:
         return "—"
-    h = minutes // 60
-    m = minutes % 60
-    if m == 0:
-        return f"{h}h"
-    return f"{h}h {m:02d}m"
+    h, m = divmod(int(minutes), 60)
+    return f"{h}h {m:02d}m" if m else f"{h}h"
 
 
-def format_date_es(d):
-    months = [
-        "", "Ene", "Feb", "Mar", "Abr", "May", "Jun",
-        "Jul", "Ago", "Sep", "Oct", "Nov", "Dic",
-    ]
-    return f"{d.day} {months[d.month]} {d.year}"
+def fmt_date_long(d):
+    return f"{d.day} de {MONTH_ES[d.month]} {d.year}"
 
 
-def build_day_record(ds, it, current_date):
-    day_name = DAY_NAMES_ES.get(current_date.weekday(), "")
-
-    if it:
-        reason_text = it.get("regularizationReasonLabel", "")
-        note = (it.get("regularizationNote") or "").strip()
-        if note:
-            reason_text = f"{reason_text} — {note}" if reason_text else note
-        return {
-            "date": ds,
-            "dayName": day_name,
-            "firstIn": extract_time_value(it, "firstInLocal", "firstIn"),
-            "lastOut": extract_time_value(it, "lastOutLocal", "lastOut"),
-            "breakMinutes": int(it.get("breakMinutes", 0)),
-            "workedMinutes": int(it.get("workedMinutes", 0)),
-            "status": it.get("status", "MISSING"),
-            "reason": reason_text,
-            "isWeekend": current_date.weekday() >= 5,
-        }
-
-    if current_date.weekday() >= 5:
-        return {
-            "date": ds,
-            "dayName": day_name,
-            "firstIn": "—",
-            "lastOut": "—",
-            "breakMinutes": 0,
-            "workedMinutes": 0,
-            "status": "No Laborable",
-            "reason": "",
-            "isWeekend": True,
-        }
-
-    return {
-        "date": ds,
-        "dayName": day_name,
-        "firstIn": "—",
-        "lastOut": "—",
-        "breakMinutes": 0,
-        "workedMinutes": 0,
-        "status": "MISSING",
-        "reason": "",
-        "isWeekend": False,
-    }
-
-
-def status_style(status):
+def status_colors(status):
     s = (status or "").upper()
     if s in ("OK", "REGULARIZED"):
         return GREEN, GREEN_BG
-    if s in ("SHORT",):
+    if s == "SHORT":
         return AMBER, AMBER_BG
     if s in ("MISSING", "ABSENCE"):
         return RED, RED_BG
-    if s in ("OPEN",):
+    if s == "OPEN":
         return BLUE, BLUE_BG
     return GRAY, GRAY_BG
 
 
 def get_employee_info(employee_id):
     try:
-        out = emp_table.get_item(Key={"EmployeeID": employee_id})
-        return out.get("Item", {})
+        return emp_table.get_item(Key={"EmployeeID": employee_id}).get("Item", {})
     except Exception:
         return {}
 
 
-def draw_rounded_rect(c, x, y, w, h, r, fill_color):
-    c.setFillColor(fill_color)
-    c.setStrokeColor(fill_color)
-    c.roundRect(x, y, w, h, r, fill=True, stroke=False)
+def build_day(ds, item, current_date):
+    day_name = DAY_ES.get(current_date.weekday(), "")
+    is_weekend = current_date.weekday() >= 5
 
+    if item:
+        reason = item.get("regularizationReasonLabel", "")
+        note = (item.get("regularizationNote") or "").strip()
+        if note:
+            reason = f"{reason} — {note}" if reason else note
+        return {
+            "date": ds, "day": day_name,
+            "in": extract_time(item, "firstInLocal", "firstIn"),
+            "out": extract_time(item, "lastOutLocal", "lastOut"),
+            "brk": int(item.get("breakMinutes", 0)),
+            "wrk": int(item.get("workedMinutes", 0)),
+            "status": item.get("status", "MISSING"),
+            "reason": reason, "weekend": is_weekend,
+        }
 
-def build_pdf_bytes(employee_key, employee_info, label_title, label_value, days, start_d, end_d):
-    buf = BytesIO()
-    c = canvas.Canvas(buf, pagesize=A4)
-    width, height = A4
-    margin = 40
-    right_margin = width - margin
-    usable_width = right_margin - margin
-    page_num = 1
-
-    emp_name = employee_info.get("FullName", employee_key)
-    emp_area = employee_info.get("Area", "—")
-    emp_position = employee_info.get("Position", "—")
-    emp_dni = employee_info.get("DNI", "—")
-
-    # Column widths (proportional)
-    col_widths = {
-        "fecha": 62,
-        "dia": 58,
-        "entrada": 52,
-        "salida": 52,
-        "break": 42,
-        "horas": 50,
-        "estado": 72,
-        "obs": usable_width - 62 - 58 - 52 - 52 - 42 - 50 - 72,
+    return {
+        "date": ds, "day": day_name, "in": "—", "out": "—",
+        "brk": 0, "wrk": 0,
+        "status": "No Laborable" if is_weekend else "MISSING",
+        "reason": "", "weekend": is_weekend,
     }
 
-    col_x = {}
-    x = margin
-    for key in ["fecha", "dia", "entrada", "salida", "break", "horas", "estado", "obs"]:
-        col_x[key] = x
-        x += col_widths[key]
 
-    row_height = 18
+# ═══════════════════════════════════════════════════════
+# PDF Builder
+# ═══════════════════════════════════════════════════════
 
-    def draw_header_bar(y):
-        # Top brand bar
-        c.setFillColor(HEADER_BG)
-        c.rect(0, y, width, 60, fill=True, stroke=False)
+def build_pdf(emp_key, emp_info, report_title, period_label, days, start_d, end_d):
+    buf = BytesIO()
+    c = canvas.Canvas(buf, pagesize=A4)
+    W, H = A4
+    LM = 40          # left margin
+    RM = W - 40       # right margin
+    UW = RM - LM      # usable width
+    ROW_H = 17
+    page = [1]
 
-        # Company name
-        c.setFillColor(white)
-        c.setFont("Helvetica-Bold", 18)
-        c.drawString(margin, y + 38, "NOVASYS")
+    name = emp_info.get("FullName") or emp_key
+    area = emp_info.get("Area") or "—"
+    position = emp_info.get("Position") or "—"
+    dni = emp_info.get("DNI") or "—"
+    email = emp_info.get("Email") or emp_key
+    work_mode = WORK_MODE_LABEL.get(emp_info.get("WorkMode", ""), emp_info.get("WorkMode", "—"))
 
-        c.setFont("Helvetica", 9)
-        c.drawString(margin, y + 22, "Sistema de Control de Asistencia")
+    # Column layout
+    cols = [
+        ("FECHA", 62), ("DÍA", 56), ("ENTRADA", 50), ("SALIDA", 50),
+        ("BREAK", 42), ("HORAS", 48), ("ESTADO", 70),
+    ]
+    obs_w = UW - sum(w for _, w in cols)
+    cols.append(("OBS.", obs_w))
 
-        # Report type badge on right
+    col_x = []
+    cx = LM
+    for _, w in cols:
+        col_x.append(cx)
+        cx += w
+
+    # ── Drawing helpers ──
+
+    def hline(y, color=BORDER_LIGHT, width=0.5):
+        c.setStrokeColor(color)
+        c.setLineWidth(width)
+        c.line(LM, y, RM, y)
+
+    def draw_top_section(y):
+        """Title block + employee info — structured like a formal document."""
+        # ─── Top line ───
+        c.setFillColor(BRAND)
+        c.rect(0, y, W, 3, fill=True, stroke=False)
+        y -= 3
+
+        # ─── Title section ───
+        y -= 28
+        c.setFillColor(BRAND_DARK)
+        c.setFont("Helvetica-Bold", 16)
+        c.drawString(LM, y, "Novasys")
+
+        c.setFillColor(TXT2)
+        c.setFont("Helvetica", 16)
+        c.drawString(LM + c.stringWidth("Novasys", "Helvetica-Bold", 16) + 6, y, f"— Reporte de Asistencia ({work_mode})")
+
+        # Report type on the right
+        c.setFillColor(BRAND)
         c.setFont("Helvetica-Bold", 10)
-        report_label = f"Reporte {label_title}"
-        c.drawRightString(right_margin, y + 38, report_label)
+        c.drawRightString(RM, y + 2, f"Reporte {report_title}")
 
+        # ─── Separator line ───
+        y -= 10
+        hline(y, BORDER, 0.8)
+
+        # ─── Employee info grid ───
+        y -= 18
+        c.setFont("Helvetica-Bold", 9)
+        c.setFillColor(TXT)
+
+        # Row 1: Empleado | Cargo | Período
+        c.drawString(LM, y, "Empleado:")
         c.setFont("Helvetica", 9)
-        c.drawRightString(right_margin, y + 22, label_value)
+        c.drawString(LM + 58, y, name)
 
-        # Thin accent line below header
-        c.setFillColor(BRAND_ACCENT)
-        c.rect(0, y - 3, width, 3, fill=True, stroke=False)
+        c.setFont("Helvetica-Bold", 9)
+        c.drawString(LM + 240, y, "Cargo:")
+        c.setFont("Helvetica", 9)
+        c.drawString(LM + 280, y, position)
 
-        return y - 3
+        # Period on the right
+        c.setFont("Helvetica-Bold", 9)
+        period_str = f"{fmt_date_long(start_d)}  —  {fmt_date_long(end_d)}"
+        period_label_w = c.stringWidth("Período: ", "Helvetica-Bold", 9)
+        c.drawRightString(RM - c.stringWidth(period_str, "Helvetica", 9), y, "Período: ")
+        c.setFont("Helvetica", 9)
+        c.drawRightString(RM, y, period_str)
 
-    def draw_employee_card(y):
-        # Employee info card
-        card_h = 52
-        card_y = y - card_h - 12
+        # Row 2: Email | Área | DNI
+        y -= 14
+        c.setFont("Helvetica-Bold", 9)
+        c.drawString(LM, y, "Email:")
+        c.setFont("Helvetica", 9)
+        c.drawString(LM + 58, y, email)
 
-        # Card background
-        c.setFillColor(HexColor("#f8fafc"))
-        c.setStrokeColor(BORDER_COLOR)
-        c.setLineWidth(0.5)
-        c.roundRect(margin, card_y, usable_width, card_h, 4, fill=True, stroke=True)
+        c.setFont("Helvetica-Bold", 9)
+        c.drawString(LM + 240, y, "Área:")
+        c.setFont("Helvetica", 9)
+        c.drawString(LM + 280, y, area)
 
-        # Left column: name + position
-        inner_y = card_y + card_h - 14
-        c.setFillColor(TEXT_PRIMARY)
-        c.setFont("Helvetica-Bold", 11)
-        c.drawString(margin + 12, inner_y, emp_name)
+        c.setFont("Helvetica-Bold", 9)
+        c.drawString(LM + 380, y, "DNI:")
+        c.setFont("Helvetica", 9)
+        c.drawString(LM + 408, y, dni)
 
-        inner_y -= 14
-        c.setFillColor(TEXT_SECONDARY)
+        # ─── Another separator ───
+        y -= 10
+        hline(y, BORDER, 0.8)
+
+        # ─── Section title ───
+        y -= 16
+        c.setFillColor(BRAND_DARK)
+        c.setFont("Helvetica-Bold", 10)
+        c.drawString(LM, y, "Detalle de Asistencia")
+
+        c.setFillColor(TXT3)
         c.setFont("Helvetica", 8)
-        c.drawString(margin + 12, inner_y, f"{emp_position}  •  {emp_area}")
+        c.drawRightString(RM, y, period_label)
 
-        inner_y -= 12
-        c.setFont("Helvetica", 7.5)
-        c.drawString(margin + 12, inner_y, f"Email: {employee_key}   |   DNI: {emp_dni}")
-
-        # Right column: period
-        c.setFillColor(TEXT_SECONDARY)
-        c.setFont("Helvetica", 8)
-        period_text = f"Período: {format_date_es(start_d)} — {format_date_es(end_d)}"
-        c.drawRightString(right_margin - 12, card_y + card_h - 14, period_text)
-
-        return card_y - 10
+        y -= 8
+        return y
 
     def draw_table_header(y):
-        # Table header background
-        c.setFillColor(TABLE_HEADER_BG)
-        c.roundRect(margin, y - 4, usable_width, row_height + 2, 3, fill=True, stroke=False)
+        """Dark table header row."""
+        c.setFillColor(TH_BG)
+        c.rect(LM, y - 2, UW, ROW_H + 1, fill=True, stroke=False)
 
         c.setFillColor(white)
-        c.setFont("Helvetica-Bold", 7.5)
+        c.setFont("Helvetica-Bold", 7)
+        for i, (label, _) in enumerate(cols):
+            c.drawString(col_x[i] + 4, y + 3, label)
 
-        headers = [
-            ("fecha", "FECHA"),
-            ("dia", "DÍA"),
-            ("entrada", "ENTRADA"),
-            ("salida", "SALIDA"),
-            ("break", "BREAK"),
-            ("horas", "HORAS"),
-            ("estado", "ESTADO"),
-            ("obs", "OBSERVACIONES"),
-        ]
-        for key, label in headers:
-            c.drawString(col_x[key] + 4, y + 2, label)
+        return y - ROW_H
 
-        return y - row_height
+    def draw_footer():
+        hline(38, BORDER, 0.5)
+        c.setFillColor(TXT3)
+        c.setFont("Helvetica", 6.5)
+        ts = datetime.utcnow().strftime("%d/%m/%Y %H:%M UTC")
+        c.drawString(LM, 28, f"Generado el {ts}  |  Novasys Asistencia v2  |  Documento confidencial")
+        c.drawRightString(RM, 28, f"Página {page[0]}")
+        page[0] += 1
 
-    def draw_page_header(y):
-        y = draw_header_bar(y)
-        y = draw_employee_card(y)
+    def new_page_header():
+        y = H - 10
+        y = draw_top_section(y)
         y = draw_table_header(y)
         return y
 
-    def draw_footer():
-        nonlocal page_num
-        # Footer line
-        c.setStrokeColor(BORDER_COLOR)
-        c.setLineWidth(0.5)
-        c.line(margin, 42, right_margin, 42)
+    # ═══ Start building ═══
+    y = new_page_header()
 
-        c.setFillColor(TEXT_MUTED)
-        c.setFont("Helvetica", 6.5)
-        ts = datetime.utcnow().strftime("%d/%m/%Y %H:%M UTC")
-        c.drawString(margin, 30, f"Generado automáticamente el {ts}")
-        c.drawString(margin, 21, "Novasys Asistencia v2 — Documento confidencial")
-        c.drawRightString(right_margin, 30, f"Página {page_num}")
-        page_num += 1
-
-    # Start building the PDF
-    y = height - 10
-    y = draw_page_header(y)
-
-    total_worked = 0
-    total_break = 0
+    total_wrk = 0
+    total_brk = 0
     days_worked = 0
     days_complete = 0
     days_missing = 0
-    row_idx = 0
+    row_i = 0
 
     for d in days:
-        if y < 90:
+        if y < 85:
             draw_footer()
             c.showPage()
-            y = height - 10
-            y = draw_page_header(y)
-            row_idx = 0
+            y = new_page_header()
+            row_i = 0
 
         # Row background
-        bg = ROW_ODD if row_idx % 2 == 1 else ROW_EVEN
-        if d.get("isWeekend"):
-            bg = HexColor("#f1f5f9")
+        if d["weekend"]:
+            bg = WEEKEND_BG
+        elif row_i % 2 == 1:
+            bg = ROW_ODD
+        else:
+            bg = ROW_EVEN
+
         c.setFillColor(bg)
-        c.rect(margin, y - 4, usable_width, row_height, fill=True, stroke=False)
+        c.rect(LM, y - 2, UW, ROW_H, fill=True, stroke=False)
 
         # Bottom border
-        c.setStrokeColor(BORDER_COLOR)
+        c.setStrokeColor(BORDER_LIGHT)
         c.setLineWidth(0.3)
-        c.line(margin, y - 4, right_margin, y - 4)
+        c.line(LM, y - 2, RM, y - 2)
 
-        status = d.get("status", "MISSING")
-        worked = int(d.get("workedMinutes", 0))
-        brk = int(d.get("breakMinutes", 0))
+        status = d["status"]
+        wrk = d["wrk"]
+        brk = d["brk"]
 
-        # Date
-        c.setFillColor(TEXT_PRIMARY)
-        c.setFont("Helvetica", 8)
-        c.drawString(col_x["fecha"] + 4, y + 2, d["date"])
-
-        # Day name
-        c.setFillColor(TEXT_SECONDARY if not d.get("isWeekend") else TEXT_MUTED)
+        # ── Fecha ──
+        c.setFillColor(TXT)
         c.setFont("Helvetica", 7.5)
-        c.drawString(col_x["dia"] + 4, y + 2, d.get("dayName", ""))
+        c.drawString(col_x[0] + 4, y + 3, d["date"])
 
-        # Entry/exit
-        c.setFillColor(TEXT_PRIMARY)
-        c.setFont("Helvetica", 8)
-        c.drawString(col_x["entrada"] + 4, y + 2, str(d.get("firstIn", "—")))
-        c.drawString(col_x["salida"] + 4, y + 2, str(d.get("lastOut", "—")))
+        # ── Día ──
+        c.setFillColor(TXT3 if d["weekend"] else TXT2)
+        c.setFont("Helvetica", 7)
+        c.drawString(col_x[1] + 4, y + 3, d["day"])
 
-        # Break
+        # ── Entrada / Salida ──
+        c.setFillColor(TXT)
         c.setFont("Helvetica", 7.5)
-        c.setFillColor(TEXT_SECONDARY)
-        brk_text = f"{brk} min" if brk > 0 else "—"
-        c.drawString(col_x["break"] + 4, y + 2, brk_text)
+        c.drawString(col_x[2] + 4, y + 3, d["in"])
+        c.drawString(col_x[3] + 4, y + 3, d["out"])
 
-        # Hours worked
-        c.setFillColor(TEXT_PRIMARY)
-        c.setFont("Helvetica-Bold" if worked > 0 else "Helvetica", 8)
-        c.drawString(col_x["horas"] + 4, y + 2, format_hours(worked))
+        # ── Break ──
+        c.setFillColor(TXT2)
+        c.setFont("Helvetica", 7)
+        c.drawString(col_x[4] + 4, y + 3, f"{brk} min" if brk > 0 else "—")
 
-        # Status badge
-        status_label = STATUS_LABELS.get(status, status)
-        fg, bg_color = status_style(status)
+        # ── Horas ──
+        c.setFillColor(TXT)
+        c.setFont("Helvetica-Bold" if wrk > 0 else "Helvetica", 7.5)
+        c.drawString(col_x[5] + 4, y + 3, fmt_hours(wrk))
 
-        badge_w = min(len(status_label) * 4.5 + 10, col_widths["estado"] - 6)
-        badge_x = col_x["estado"] + 3
-        badge_y = y - 1
+        # ── Estado badge ──
+        label = STATUS_LABEL.get(status, status)
+        fg, bg_c = status_colors(status)
 
-        draw_rounded_rect(c, badge_x, badge_y, badge_w, 12, 2, bg_color)
+        bw = min(c.stringWidth(label, "Helvetica-Bold", 6.5) + 8, cols[6][1] - 6)
+        bx = col_x[6] + 3
+        by = y
+
+        c.setFillColor(bg_c)
+        c.roundRect(bx, by, bw, 12, 2, fill=True, stroke=False)
         c.setFillColor(fg)
         c.setFont("Helvetica-Bold", 6.5)
-        c.drawString(badge_x + 4, y + 1.5, status_label)
+        c.drawString(bx + 4, y + 3, label)
 
-        # Observations
+        # ── Observaciones ──
         reason = d.get("reason", "")
-        if len(reason) > 35:
-            reason = reason[:32] + "..."
-        c.setFillColor(TEXT_MUTED)
+        if len(reason) > 38:
+            reason = reason[:35] + "..."
+        c.setFillColor(TXT3)
         c.setFont("Helvetica", 6.5)
-        c.drawString(col_x["obs"] + 4, y + 2, reason)
+        c.drawString(col_x[7] + 4, y + 3, reason)
 
-        # Accumulate stats
-        total_worked += worked
-        total_break += brk
-        if worked > 0:
+        # Stats
+        total_wrk += wrk
+        total_brk += brk
+        if wrk > 0:
             days_worked += 1
-        s_upper = status.upper()
-        if s_upper in ("OK", "REGULARIZED"):
+        su = status.upper()
+        if su in ("OK", "REGULARIZED"):
             days_complete += 1
-        if s_upper == "MISSING":
+        if su == "MISSING":
             days_missing += 1
 
-        y -= row_height
-        row_idx += 1
+        y -= ROW_H
+        row_i += 1
 
-    # Summary section
-    y -= 12
+    # ── Bottom table border ──
+    hline(y + ROW_H - 2, BORDER, 0.5)
 
-    # Summary card
-    summary_h = 58
-    if y - summary_h < 60:
+    # ── Totals row ──
+    y -= 6
+    c.setFillColor(TXT)
+    c.setFont("Helvetica-Bold", 8)
+    c.drawString(LM + 4, y, f"Total período (min): {total_wrk}")
+    c.drawString(LM + 160, y, f"Total (horas): {total_wrk / 60:.1f}")
+    c.drawString(LM + 310, y, f"Total break: {fmt_hours(total_brk)}")
+
+    # ═══ Summary Card ═══
+    y -= 24
+    card_h = 60
+
+    if y - card_h < 55:
         draw_footer()
         c.showPage()
-        y = height - 60
+        y = H - 60
 
-    c.setFillColor(HexColor("#f0f4ff"))
-    c.setStrokeColor(BRAND_ACCENT)
+    # Card border & background
+    c.setFillColor(SUMMARY_BG)
+    c.setStrokeColor(ACCENT)
     c.setLineWidth(0.8)
-    c.roundRect(margin, y - summary_h, usable_width, summary_h, 4, fill=True, stroke=True)
+    c.roundRect(LM, y - card_h, UW, card_h, 5, fill=True, stroke=True)
 
-    # Summary title
-    sy = y - 14
-    c.setFillColor(BRAND_PRIMARY)
-    c.setFont("Helvetica-Bold", 10)
-    c.drawString(margin + 12, sy, "Resumen del Período")
+    # Title
+    sy = y - 16
+    c.setFillColor(BRAND)
+    c.setFont("Helvetica-Bold", 11)
+    c.drawString(LM + 14, sy, "Resumen del Período")
 
-    # Stats row
-    sy -= 18
+    # Stats
+    sy -= 22
     stats = [
         ("Días trabajados", str(days_worked)),
         ("Días completos", str(days_complete)),
         ("Sin registro", str(days_missing)),
-        ("Total horas", format_hours(total_worked)),
-        ("Total break", format_hours(total_break)),
+        ("Total horas", fmt_hours(total_wrk)),
+        ("Total break", fmt_hours(total_brk)),
     ]
-
-    stat_width = (usable_width - 24) / len(stats)
-    for i, (label, value) in enumerate(stats):
-        sx = margin + 12 + i * stat_width
-
-        c.setFillColor(BRAND_PRIMARY)
-        c.setFont("Helvetica-Bold", 12)
-        c.drawString(sx, sy, value)
-
-        c.setFillColor(TEXT_SECONDARY)
+    sw = (UW - 28) / len(stats)
+    for i, (lbl, val) in enumerate(stats):
+        sx = LM + 14 + i * sw
+        c.setFillColor(BRAND_DARK)
+        c.setFont("Helvetica-Bold", 14)
+        c.drawString(sx, sy, val)
+        c.setFillColor(TXT2)
         c.setFont("Helvetica", 7)
-        c.drawString(sx, sy - 11, label)
+        c.drawString(sx, sy - 12, lbl)
 
-    # Legal note
-    y = y - summary_h - 14
-    c.setFillColor(TEXT_MUTED)
+    # ── Legal note ──
+    y = y - card_h - 12
+    c.setFillColor(TXT3)
     c.setFont("Helvetica-Oblique", 6.5)
-    c.drawString(
-        margin,
-        y,
-        "Las horas registradas se basan en marcaciones del sistema y/o regularizaciones aprobadas con trazabilidad completa.",
-    )
+    c.drawString(LM, y, "Nota: horas basadas en registros y/o regularizaciones con trazabilidad. Hora de servidor en backend.")
 
     draw_footer()
     c.showPage()
@@ -493,10 +468,13 @@ def build_pdf_bytes(employee_key, employee_info, label_title, label_value, days,
     return buf.read()
 
 
+# ═══════════════════════════════════════════════════════
+# Lambda Handler
+# ═══════════════════════════════════════════════════════
+
 def handler(event, context):
     try:
         qs = event.get("queryStringParameters") or {}
-
         employee_key = (qs.get("employeeKey") or "").strip().lower()
         week = (qs.get("week") or "").strip()
         month = (qs.get("month") or "").strip()
@@ -508,73 +486,47 @@ def handler(event, context):
         if week and month:
             return resp(400, {"ok": False, "error": "Envía solo week o month"})
 
-        employee_id = employee_key
-        if not employee_id.startswith("EMP#"):
-            employee_id = f"EMP#{employee_key}"
-
-        # Fetch employee info for the report header
-        employee_info = get_employee_info(employee_id)
+        employee_id = employee_key if employee_key.startswith("EMP#") else f"EMP#{employee_key}"
+        emp_info = get_employee_info(employee_id)
 
         if week:
             start_d, end_d = parse_iso_week(week)
-            label_title, label_value = "Semanal", week
-            report_key_part = week
+            report_title = "Semanal"
+            period_label = f"Semana {week}"
+            key_part = week
         else:
             start_d, end_d = parse_month(month)
-            label_title, label_value = "Mensual", month
-            report_key_part = month
+            y, m = month.split("-")
+            report_title = "Mensual"
+            period_label = f"Mes: {MONTH_ES[int(m)]} {y}"
+            key_part = month
 
         sk_from = f"DATE#{start_d.isoformat()}"
         sk_to = f"DATE#{end_d.isoformat()}"
 
         out = daily.query(
-            KeyConditionExpression=Key("EmployeeID").eq(employee_id)
-            & Key("WorkDate").between(sk_from, sk_to)
+            KeyConditionExpression=Key("EmployeeID").eq(employee_id) & Key("WorkDate").between(sk_from, sk_to)
         )
-        items = out.get("Items", [])
-        by_date = {it["WorkDate"].replace("DATE#", ""): it for it in items}
+        by_date = {it["WorkDate"].replace("DATE#", ""): it for it in out.get("Items", [])}
 
         days = []
         d = start_d
         while d <= end_d:
             ds = d.isoformat()
-            it = by_date.get(ds, {})
-            days.append(build_day_record(ds, it, d))
+            days.append(build_day(ds, by_date.get(ds, {}), d))
             d = date.fromordinal(d.toordinal() + 1)
 
-        pdf_bytes = build_pdf_bytes(
-            employee_key, employee_info, label_title, label_value, days, start_d, end_d
-        )
+        pdf_bytes = build_pdf(employee_key, emp_info, report_title, period_label, days, start_d, end_d)
 
-        report_type = "weekly" if week else "monthly"
-        safe_emp = employee_key.replace("@", "_at_").replace("#", "_")
-        key = f"reports/{report_type}/{report_key_part}/{safe_emp}.pdf"
+        rtype = "weekly" if week else "monthly"
+        safe = employee_key.replace("@", "_at_").replace("#", "_")
+        key = f"reports/{rtype}/{key_part}/{safe}.pdf"
 
-        s3.put_object(
-            Bucket=REPORT_BUCKET,
-            Key=key,
-            Body=pdf_bytes,
-            ContentType="application/pdf",
-        )
+        s3.put_object(Bucket=REPORT_BUCKET, Key=key, Body=pdf_bytes, ContentType="application/pdf")
+        url = s3.generate_presigned_url("get_object", Params={"Bucket": REPORT_BUCKET, "Key": key}, ExpiresIn=900)
 
-        url = s3.generate_presigned_url(
-            "get_object",
-            Params={"Bucket": REPORT_BUCKET, "Key": key},
-            ExpiresIn=900,
-        )
-
-        return resp(
-            200,
-            {
-                "ok": True,
-                "url": url,
-                "s3Key": key,
-                "reportType": report_type,
-                "employeeId": employee_id,
-                "fromDate": start_d.isoformat(),
-                "toDate": end_d.isoformat(),
-            },
-        )
+        return resp(200, {"ok": True, "url": url, "s3Key": key, "reportType": rtype,
+                          "employeeId": employee_id, "fromDate": start_d.isoformat(), "toDate": end_d.isoformat()})
 
     except Exception as e:
         return resp(500, {"ok": False, "error": str(e)})
