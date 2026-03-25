@@ -1,10 +1,10 @@
 import type { NextAuthOptions, Session } from "next-auth";
 import type { JWT } from "next-auth/jwt";
-import CognitoProvider from "next-auth/providers/cognito";
-import { GetCommand } from "@aws-sdk/lib-dynamodb";
+import CredentialsProvider from "next-auth/providers/credentials";
+import { QueryCommand } from "@aws-sdk/lib-dynamodb";
 import { docClient } from "@/lib/db/client";
 import { TABLES, INDEXES } from "@/lib/db/tables";
-import { QueryCommand } from "@aws-sdk/lib-dynamodb";
+import { cognitoSignIn, getCognitoErrorMessage, isCognitoError } from "@/lib/cognito";
 
 export type UserRole = "ADMIN" | "EMPLOYEE";
 
@@ -58,10 +58,58 @@ async function findEmployeeByEmail(email: string) {
 
 export const authOptions: NextAuthOptions = {
   providers: [
-    CognitoProvider({
-      clientId: process.env.COGNITO_CLIENT_ID!,
-      clientSecret: process.env.COGNITO_CLIENT_SECRET!,
-      issuer: process.env.COGNITO_ISSUER!,
+    CredentialsProvider({
+      id: "cognito-credentials",
+      name: "Cognito",
+      credentials: {
+        email: { label: "Email", type: "email" },
+        password: { label: "Password", type: "password" },
+      },
+      async authorize(credentials) {
+        if (!credentials?.email || !credentials?.password) {
+          throw new Error("Correo y contraseña son requeridos");
+        }
+
+        try {
+          // Authenticate against Cognito
+          const cognitoResult = await cognitoSignIn(
+            credentials.email,
+            credentials.password
+          );
+
+          // Look up employee in DynamoDB
+          let employee = await findEmployeeByCognitoSub(cognitoResult.sub);
+          if (!employee) {
+            employee = await findEmployeeByEmail(cognitoResult.email);
+          }
+
+          if (employee) {
+            return {
+              id: employee.EmployeeID,
+              email: cognitoResult.email,
+              name: employee.FullName || cognitoResult.name,
+              role: (employee.Role as UserRole) || "EMPLOYEE",
+              area: employee.Area || "",
+              employeeId: employee.EmployeeID,
+            };
+          }
+
+          // Employee not found in DynamoDB — allow login with default role
+          return {
+            id: `EMP#${cognitoResult.email}`,
+            email: cognitoResult.email,
+            name: cognitoResult.name,
+            role: "EMPLOYEE" as UserRole,
+            area: "",
+            employeeId: `EMP#${cognitoResult.email}`,
+          };
+        } catch (error) {
+          if (isCognitoError(error, "UserNotConfirmedException")) {
+            throw new Error("USER_NOT_CONFIRMED");
+          }
+          throw new Error(getCognitoErrorMessage(error));
+        }
+      },
     }),
   ],
   pages: {
@@ -73,28 +121,22 @@ export const authOptions: NextAuthOptions = {
     maxAge: 12 * 60 * 60, // 12 hours
   },
   callbacks: {
-    async jwt({ token, account, profile }) {
-      // On initial sign-in, look up the employee in DynamoDB
-      if (account && profile) {
-        const sub = account.providerAccountId || (profile as { sub?: string }).sub;
-        const email = token.email || (profile as { email?: string }).email;
-
-        let employee = sub ? await findEmployeeByCognitoSub(sub) : null;
-        if (!employee && email) {
-          employee = await findEmployeeByEmail(email);
-        }
-
-        if (employee) {
-          token.employeeId = employee.EmployeeID;
-          token.role = (employee.Role as UserRole) || "EMPLOYEE";
-          token.area = employee.Area || "";
-          token.name = employee.FullName || token.name;
-        } else {
-          // Employee not found — default to EMPLOYEE role
-          token.employeeId = email ? `EMP#${email.toLowerCase()}` : "EMP#UNKNOWN";
-          token.role = "EMPLOYEE";
-          token.area = "";
-        }
+    async jwt({ token, user }) {
+      // On initial sign-in, user object is populated from authorize()
+      if (user) {
+        const u = user as unknown as {
+          id: string;
+          email?: string;
+          name?: string;
+          role?: string;
+          area?: string;
+          employeeId?: string;
+        };
+        token.employeeId = u.employeeId || u.id;
+        token.role = (u.role as UserRole) || "EMPLOYEE";
+        token.area = u.area || "";
+        token.name = u.name || "";
+        token.email = u.email || "";
       }
       return token;
     },
