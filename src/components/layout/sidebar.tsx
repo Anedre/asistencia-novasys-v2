@@ -16,6 +16,7 @@ import {
   PenLine,
   Settings,
   BarChart3,
+  ArrowLeftRight,
 } from "lucide-react";
 
 export interface NavItem {
@@ -46,12 +47,15 @@ const adminNav: NavItem[] = [
 
 interface SidebarProps {
   role: "ADMIN" | "EMPLOYEE";
+  isAdmin?: boolean;
   className?: string;
 }
 
-export function Sidebar({ role, className }: SidebarProps) {
+export function Sidebar({ role, isAdmin, className }: SidebarProps) {
   const pathname = usePathname();
   const items = role === "ADMIN" ? adminNav : employeeNav;
+  const showSwitch = isAdmin === true;
+  const isAdminView = role === "ADMIN";
 
   return (
     <aside
@@ -67,6 +71,19 @@ export function Sidebar({ role, className }: SidebarProps) {
         </div>
         <span className="text-lg font-semibold">Novasys</span>
       </div>
+
+      {/* View Switch for Admins */}
+      {showSwitch && (
+        <div className="px-4 pt-4">
+          <Link
+            href={isAdminView ? "/dashboard" : "/admin/dashboard"}
+            className="flex items-center gap-3 rounded-lg border border-dashed px-3 py-2.5 text-sm font-medium transition-colors hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground text-sidebar-foreground/70"
+          >
+            <ArrowLeftRight className="h-4 w-4 shrink-0" />
+            {isAdminView ? "Vista Empleado" : "Panel Admin"}
+          </Link>
+        </div>
+      )}
 
       {/* Navigation */}
       <nav className="flex-1 space-y-1 p-4">

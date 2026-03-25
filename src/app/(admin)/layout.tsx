@@ -27,11 +27,12 @@ export default function AdminLayout({
   return (
     <div className="flex h-screen overflow-hidden">
       {/* Desktop sidebar */}
-      <Sidebar role="ADMIN" className="hidden md:flex" />
+      <Sidebar role="ADMIN" isAdmin={true} className="hidden md:flex" />
 
       {/* Mobile nav */}
       <MobileNav
         role="ADMIN"
+        isAdmin={true}
         open={mobileOpen}
         onOpenChange={setMobileOpen}
       />

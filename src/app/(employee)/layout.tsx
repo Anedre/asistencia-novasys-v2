@@ -23,16 +23,18 @@ export default function EmployeeLayout({
     );
   }
 
-  const role = (session?.user?.role as "ADMIN" | "EMPLOYEE") || "EMPLOYEE";
+  const userRole = (session?.user?.role as "ADMIN" | "EMPLOYEE") || "EMPLOYEE";
+  const isAdmin = userRole === "ADMIN";
 
   return (
     <div className="flex h-screen overflow-hidden">
       {/* Desktop sidebar */}
-      <Sidebar role="EMPLOYEE" className="hidden md:flex" />
+      <Sidebar role="EMPLOYEE" isAdmin={isAdmin} className="hidden md:flex" />
 
       {/* Mobile nav */}
       <MobileNav
         role="EMPLOYEE"
+        isAdmin={isAdmin}
         open={mobileOpen}
         onOpenChange={setMobileOpen}
       />

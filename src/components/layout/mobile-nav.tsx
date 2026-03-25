@@ -5,18 +5,19 @@ import { Sidebar } from "./sidebar";
 
 interface MobileNavProps {
   role: "ADMIN" | "EMPLOYEE";
+  isAdmin?: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
-export function MobileNav({ role, open, onOpenChange }: MobileNavProps) {
+export function MobileNav({ role, isAdmin, open, onOpenChange }: MobileNavProps) {
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="left" className="w-64 p-0">
         <SheetHeader className="sr-only">
           <SheetTitle>Menú de navegación</SheetTitle>
         </SheetHeader>
-        <Sidebar role={role} className="border-r-0" />
+        <Sidebar role={role} isAdmin={isAdmin} className="border-r-0" />
       </SheetContent>
     </Sheet>
   );
