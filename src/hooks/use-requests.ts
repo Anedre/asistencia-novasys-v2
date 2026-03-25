@@ -59,7 +59,7 @@ export function useReviewRequest() {
       requestId,
       ...data
     }: ReviewRequestInput & { requestId: string }) => {
-      const res = await fetch(`/api/requests/${requestId}/approve`, {
+      const res = await fetch(`/api/requests/${encodeURIComponent(requestId)}/approve`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
@@ -79,7 +79,7 @@ export function useCancelRequest() {
 
   return useMutation({
     mutationFn: async (requestId: string) => {
-      const res = await fetch(`/api/requests/${requestId}`, {
+      const res = await fetch(`/api/requests/${encodeURIComponent(requestId)}`, {
         method: "DELETE",
       });
       const json = await res.json();
