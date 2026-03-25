@@ -85,6 +85,7 @@ export const updateProfileSchema = z.object({
   Position: z.string().max(100).optional(),
   WorkMode: z.enum(["REMOTE", "ONSITE", "HYBRID"]).optional(),
   BirthDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  ScheduleType: z.enum(["FULL_TIME", "PART_TIME"]).optional(),
 });
 
 // ── Admin Employee Management ──

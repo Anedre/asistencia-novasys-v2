@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import {
   Card,
@@ -9,6 +11,7 @@ import {
 } from "@/components/ui/card";
 import { Clock, CalendarDays, TrendingUp } from "lucide-react";
 import { useTodayStatus, useWeekSummary } from "@/hooks/use-attendance";
+import { useMyProfile } from "@/hooks/use-employee";
 import { ClockWidget } from "@/components/attendance/clock-widget";
 import { WeekTable } from "@/components/attendance/week-table";
 import { StatusBadge } from "@/components/attendance/status-badge";
@@ -20,11 +23,20 @@ function formatPlanned(minutes: number): string {
 }
 
 export default function EmployeeDashboard() {
+  const router = useRouter();
   const { data: session } = useSession();
   const user = session?.user;
 
+  const { data: profile } = useMyProfile();
   const { data: today } = useTodayStatus();
   const { data: week } = useWeekSummary(0);
+
+  // Redirect to onboarding if profile is incomplete
+  useEffect(() => {
+    if (profile?.employee?.dni?.startsWith("PENDING")) {
+      router.push("/onboarding");
+    }
+  }, [profile, router]);
 
   const todayStatus = today?.status ?? "NO_RECORD";
   const workedHHMM = today?.workedHHMM ?? "00:00";

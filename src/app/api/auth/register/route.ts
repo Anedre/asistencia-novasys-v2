@@ -71,7 +71,9 @@ export async function POST(request: Request) {
         startTime: "09:00",
         endTime: "18:00",
         breakMinutes: 60,
+        type: "FULL_TIME",
       },
+      ScheduleType: "FULL_TIME",
       CreatedAt: now,
       UpdatedAt: now,
     };

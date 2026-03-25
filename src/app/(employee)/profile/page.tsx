@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useMyProfile, useUpdateProfile } from "@/hooks/use-employee";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   Card,
   CardContent,
@@ -13,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Camera, Loader2 } from "lucide-react";
 
 function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -50,7 +52,37 @@ export default function ProfilePage() {
     message: string;
   } | null>(null);
 
+  const qc = useQueryClient();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+
   const employee = data?.employee;
+
+  async function handleAvatarUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 2 * 1024 * 1024) {
+      setFeedback({ type: "error", message: "Imagen demasiado grande (max 2MB)" });
+      return;
+    }
+
+    setUploading(true);
+    setFeedback(null);
+    try {
+      const formData = new FormData();
+      formData.append("avatar", file);
+      const res = await fetch("/api/profile/avatar", { method: "POST", body: formData });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Error al subir imagen");
+      qc.invalidateQueries({ queryKey: ["profile"] });
+      setFeedback({ type: "success", message: "Foto de perfil actualizada" });
+    } catch (err) {
+      setFeedback({ type: "error", message: err instanceof Error ? err.message : "Error al subir" });
+    } finally {
+      setUploading(false);
+    }
+  }
 
   useEffect(() => {
     if (employee) {
@@ -131,22 +163,46 @@ export default function ProfilePage() {
             </CardHeader>
             <CardContent>
               <div className="flex items-center gap-4 mb-4">
-                {employee.avatarUrl ? (
-                  <img
-                    src={employee.avatarUrl}
-                    alt={employee.fullName}
-                    className="h-16 w-16 rounded-full object-cover"
+                <div className="relative group">
+                  {employee.avatarUrl ? (
+                    <img
+                      src={employee.avatarUrl}
+                      alt={employee.fullName}
+                      className="h-16 w-16 rounded-full object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary text-primary-foreground text-lg font-bold">
+                      {employee.firstName?.[0] ?? ""}
+                      {employee.lastName?.[0] ?? ""}
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploading}
+                    className="absolute inset-0 flex items-center justify-center rounded-full bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                  >
+                    {uploading ? (
+                      <Loader2 className="h-5 w-5 text-white animate-spin" />
+                    ) : (
+                      <Camera className="h-5 w-5 text-white" />
+                    )}
+                  </button>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    onChange={handleAvatarUpload}
+                    className="hidden"
                   />
-                ) : (
-                  <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary text-primary-foreground text-lg font-bold">
-                    {employee.firstName?.[0] ?? ""}
-                    {employee.lastName?.[0] ?? ""}
-                  </div>
-                )}
+                </div>
                 <div>
                   <p className="text-lg font-semibold">{employee.fullName}</p>
                   <p className="text-sm text-muted-foreground">
                     {employee.position}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {employee.schedule?.type === "PART_TIME" ? "Part-Time (4h)" : "Full-Time (8h)"}
                   </p>
                 </div>
               </div>
@@ -253,14 +309,11 @@ export default function ProfilePage() {
                 />
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="avatarUrl">URL de Avatar</Label>
-                <Input
-                  id="avatarUrl"
-                  value={avatarUrl}
-                  onChange={(e) => setAvatarUrl(e.target.value)}
-                  placeholder="https://ejemplo.com/avatar.jpg"
-                />
+              <div className="space-y-2 rounded-md border p-3 bg-muted/30">
+                <p className="text-sm font-medium">Foto de Perfil</p>
+                <p className="text-xs text-muted-foreground">
+                  Pasa el mouse sobre tu foto arriba para cambiarla. Formatos: JPG, PNG, WebP. Max 2MB.
+                </p>
               </div>
 
               {feedback && (

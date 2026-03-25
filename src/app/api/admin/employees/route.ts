@@ -26,6 +26,7 @@ export const GET = withErrorHandler(async (req: Request) => {
     workMode: e.WorkMode,
     status: e.EmploymentStatus,
     phone: e.Phone ?? null,
+    scheduleType: e.ScheduleType ?? e.Schedule?.type ?? "FULL_TIME",
   }));
 
   return NextResponse.json({ ok: true, employees: list });

@@ -393,7 +393,7 @@ function RegisterContent() {
               </div>
 
               <p className="text-sm text-muted-foreground">
-                Tu cuenta ha sido creada y verificada. Ya puedes iniciar sesión.
+                Tu cuenta ha sido creada y verificada. Inicia sesion para completar tu perfil.
               </p>
 
               <Button
@@ -402,7 +402,7 @@ function RegisterContent() {
                 size="lg"
               >
                 <LogIn className="mr-2 h-5 w-5" />
-                Ir a Iniciar Sesión
+                Iniciar Sesion y Completar Perfil
               </Button>
             </div>
           )}

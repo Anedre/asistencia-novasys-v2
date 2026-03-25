@@ -91,6 +91,7 @@ export async function updateEmployeeProfile(
     Position?: string;
     WorkMode?: string;
     BirthDate?: string;
+    ScheduleType?: string;
   }
 ): Promise<void> {
   const expressions: string[] = ["updatedAt = :now"];
@@ -124,10 +125,19 @@ export async function updateEmployeeProfile(
     expressions.push("BirthDate = :birthDate");
     values[":birthDate"] = updates.BirthDate;
   }
+  if (updates.ScheduleType !== undefined) {
+    expressions.push("ScheduleType = :scheduleType");
+    values[":scheduleType"] = updates.ScheduleType;
+    // Also update the Schedule map's type field
+    expressions.push("Schedule.#type = :scheduleType");
+  }
 
   const names: Record<string, string> = {};
   if (updates.Position !== undefined) {
     names["#pos"] = "Position";
+  }
+  if (updates.ScheduleType !== undefined) {
+    names["#type"] = "type";
   }
 
   await docClient.send(

@@ -1,11 +1,13 @@
 export type EmploymentStatus = "ACTIVE" | "INACTIVE";
 export type EmployeeRole = "EMPLOYEE" | "ADMIN";
 export type WorkMode = "REMOTE" | "ONSITE" | "HYBRID";
+export type ScheduleType = "FULL_TIME" | "PART_TIME";
 
 export interface EmployeeSchedule {
   startTime: string; // "09:00"
   endTime: string; // "18:00"
   breakMinutes: number; // 60
+  type?: ScheduleType; // "FULL_TIME" | "PART_TIME"
 }
 
 export interface Employee {
@@ -26,6 +28,7 @@ export interface Employee {
   CognitoSub?: string;
   AvatarUrl?: string;
   Schedule: EmployeeSchedule;
+  ScheduleType?: ScheduleType;
   CreatedAt: string;
   UpdatedAt: string;
 }
