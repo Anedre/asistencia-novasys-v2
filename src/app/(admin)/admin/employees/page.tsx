@@ -337,17 +337,12 @@ export default function EmployeesPage() {
                       <TableCell>{statusBadge(emp.status)}</TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            render={
-                              <Link
-                                href={`/admin/employees/${encodeURIComponent(emp.employeeId)}`}
-                              />
-                            }
+                          <Link
+                            href={`/admin/employees/${encodeURIComponent(emp.employeeId)}`}
+                            className="inline-flex h-7 items-center rounded-lg border border-border bg-background px-2.5 text-[0.8rem] font-medium hover:bg-muted dark:border-input dark:bg-input/30 dark:hover:bg-input/50"
                           >
                             Ver
-                          </Button>
+                          </Link>
                           <DropdownMenu>
                             <DropdownMenuTrigger
                               render={<Button variant="ghost" size="sm" />}
