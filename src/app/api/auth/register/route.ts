@@ -2,13 +2,29 @@ import { NextResponse } from "next/server";
 import { cognitoSignUp, getCognitoErrorMessage } from "@/lib/cognito";
 
 export async function POST(request: Request) {
+  let body: Record<string, unknown>;
+
   try {
-    const body = await request.json();
-    const { email, password, fullName, phoneNumber, nickname } = body;
+    body = await request.json();
+  } catch (parseError) {
+    return NextResponse.json(
+      { error: "JSON inválido en el request", detail: String(parseError) },
+      { status: 400 }
+    );
+  }
+
+  try {
+    const { email, password, fullName, phoneNumber, nickname } = body as {
+      email?: string;
+      password?: string;
+      fullName?: string;
+      phoneNumber?: string;
+      nickname?: string;
+    };
 
     if (!email || !password || !fullName || !phoneNumber || !nickname) {
       return NextResponse.json(
-        { error: "Todos los campos son requeridos" },
+        { error: "Todos los campos son requeridos", received: Object.keys(body) },
         { status: 400 }
       );
     }
@@ -40,7 +56,7 @@ export async function POST(request: Request) {
       : "Unknown";
     const detail = (error && typeof error === "object" && "message" in error)
       ? (error as { message: string }).message
-      : "";
+      : String(error);
     console.error("[register]", code, detail);
     return NextResponse.json({ error: message, code, detail }, { status: 400 });
   }
