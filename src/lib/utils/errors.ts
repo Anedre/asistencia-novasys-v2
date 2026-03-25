@@ -66,12 +66,9 @@ export function errorResponse(error: unknown): NextResponse {
     );
   }
 
-  const errMsg = error instanceof Error ? error.message : String(error);
-  const errName = error instanceof Error ? error.name : "Unknown";
-  const errStack = error instanceof Error ? error.stack?.split("\n").slice(0, 3).join(" | ") : "";
-  console.error("Unhandled error:", errName, errMsg, errStack);
+  console.error("Unhandled error:", error);
   return NextResponse.json(
-    { ok: false, error: "Error interno del servidor", debug: `${errName}: ${errMsg}` },
+    { ok: false, error: "Error interno del servidor" },
     { status: 500 }
   );
 }

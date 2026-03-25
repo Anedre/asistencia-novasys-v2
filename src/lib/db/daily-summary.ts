@@ -86,13 +86,13 @@ export async function applyStart(
         SET firstInUtc = :utc,
             firstInLocal = :local,
             #st = :open,
-            source = :src,
+            #src = :src,
             updatedAt = :utc,
             updatedAtLocal = :local,
             eventsCount = if_not_exists(eventsCount, :zero) + :one
       `,
       ConditionExpression: "attribute_not_exists(firstInUtc)",
-      ExpressionAttributeNames: { "#st": "status" },
+      ExpressionAttributeNames: { "#st": "status", "#src": "source" },
       ExpressionAttributeValues: {
         ":utc": tsUtc,
         ":local": tsLocal,
@@ -277,10 +277,10 @@ export async function recalcDay(
             deltaMinutes = :delta,
             anomalies = :anomalies,
             #st = :status,
-            source = :src,
+            #src = :src,
             updatedAt = :utc
       `,
-      ExpressionAttributeNames: { "#st": "status" },
+      ExpressionAttributeNames: { "#st": "status", "#src": "source" },
       ExpressionAttributeValues: {
         ":worked": worked,
         ":planned": planned,
