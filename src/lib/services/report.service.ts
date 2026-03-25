@@ -7,6 +7,12 @@ import { LambdaClient, InvokeCommand } from "@aws-sdk/client-lambda";
 
 const lambda = new LambdaClient({
   region: process.env.CUSTOM_AWS_REGION || process.env.AWS_REGION || "us-east-1",
+  ...((process.env.CUSTOM_ACCESS_KEY_ID && process.env.CUSTOM_SECRET_ACCESS_KEY) && {
+    credentials: {
+      accessKeyId: process.env.CUSTOM_ACCESS_KEY_ID,
+      secretAccessKey: process.env.CUSTOM_SECRET_ACCESS_KEY,
+    },
+  }),
 });
 
 interface GenerateReportParams {
