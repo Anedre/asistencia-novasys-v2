@@ -25,7 +25,10 @@ function LoginContent() {
 
   const handleLogin = async () => {
     setIsLoading(true);
-    await signIn("cognito", { callbackUrl });
+    const result = await signIn("cognito", { callbackUrl, redirect: false });
+    if (result?.url) {
+      window.location.href = result.url;
+    }
   };
 
   if (status === "loading") {

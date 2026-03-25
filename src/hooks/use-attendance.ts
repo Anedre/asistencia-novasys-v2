@@ -17,7 +17,8 @@ export function useTodayStatus() {
     queryKey: ["attendance", "today"],
     queryFn: () =>
       fetchJson<TodayStatus & { ok: boolean }>("/api/attendance/today"),
-    refetchInterval: 30000, // 30s poll
+    refetchInterval: (query) => (query.state.error ? false : 30000),
+    retry: false,
   });
 }
 
