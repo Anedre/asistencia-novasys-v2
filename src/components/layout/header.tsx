@@ -7,6 +7,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -79,30 +80,32 @@ export function Header({ onMenuClick }: HeaderProps) {
             </Avatar>
           </DropdownMenuTrigger>
           <DropdownMenuContent className="w-56" align="end">
-            <DropdownMenuLabel className="font-normal">
-              <div className="flex flex-col space-y-1">
-                <p className="text-sm font-medium leading-none">{user?.name}</p>
-                <p className="text-xs leading-none text-muted-foreground">
-                  {user?.email}
-                </p>
-                <Badge variant="outline" className="mt-1 w-fit text-xs">
-                  {user?.role === "ADMIN" ? "Administrador" : "Empleado"}
-                </Badge>
-              </div>
-            </DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem render={<Link href={user?.role === "ADMIN" ? "/admin/dashboard" : "/profile"} />}>
-              <User className="mr-2 h-4 w-4" />
-              Mi Perfil
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              className="text-destructive focus:text-destructive"
-              onClick={() => signOut({ callbackUrl: "/login" })}
-            >
-              <LogOut className="mr-2 h-4 w-4" />
-              Cerrar Sesión
-            </DropdownMenuItem>
+            <DropdownMenuGroup>
+              <DropdownMenuLabel className="font-normal">
+                <div className="flex flex-col space-y-1">
+                  <p className="text-sm font-medium leading-none">{user?.name}</p>
+                  <p className="text-xs leading-none text-muted-foreground">
+                    {user?.email}
+                  </p>
+                  <Badge variant="outline" className="mt-1 w-fit text-xs">
+                    {user?.role === "ADMIN" ? "Administrador" : "Empleado"}
+                  </Badge>
+                </div>
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem render={<Link href={user?.role === "ADMIN" ? "/admin/dashboard" : "/profile"} />}>
+                <User className="mr-2 h-4 w-4" />
+                Mi Perfil
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                className="text-destructive focus:text-destructive"
+                onClick={() => signOut({ callbackUrl: "/login" })}
+              >
+                <LogOut className="mr-2 h-4 w-4" />
+                Cerrar Sesión
+              </DropdownMenuItem>
+            </DropdownMenuGroup>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
