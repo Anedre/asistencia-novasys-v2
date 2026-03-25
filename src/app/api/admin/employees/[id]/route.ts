@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth-helpers";
-import { getEmployeeById } from "@/lib/db/employees";
+import { getEmployeeById, updateEmployeeRole, deactivateEmployee, updateEmployeeProfile } from "@/lib/db/employees";
 import { getDailySummaryRange } from "@/lib/db/daily-summary";
 import { withErrorHandler } from "@/lib/utils/errors";
 import { NotFoundError } from "@/lib/utils/errors";
+import { updateEmployeeRoleSchema } from "@/lib/utils/validation";
 
 export const GET = withErrorHandler(async (req: Request, context: unknown) => {
   await requireAdmin();
@@ -57,4 +58,60 @@ export const GET = withErrorHandler(async (req: Request, context: unknown) => {
     },
     recentAttendance,
   });
+});
+
+/** PATCH: Update employee role or profile fields (admin only) */
+export const PATCH = withErrorHandler(async (req: Request, context: unknown) => {
+  await requireAdmin();
+  const { id } = await (context as { params: Promise<{ id: string }> }).params;
+  const body = await req.json();
+
+  const employee = await getEmployeeById(id);
+  if (!employee) {
+    throw new NotFoundError("Empleado no encontrado");
+  }
+
+  // If updating role
+  if (body.role !== undefined) {
+    const parsed = updateEmployeeRoleSchema.parse(body);
+    await updateEmployeeRole(id, parsed.role);
+    return NextResponse.json({ ok: true, message: `Rol actualizado a ${parsed.role}` });
+  }
+
+  // If updating profile fields
+  const updates: Record<string, string> = {};
+  for (const key of ["Phone", "DNI", "Area", "Position", "WorkMode", "BirthDate"]) {
+    if (body[key] !== undefined) {
+      updates[key] = body[key];
+    }
+  }
+
+  if (Object.keys(updates).length > 0) {
+    await updateEmployeeProfile(id, updates);
+    return NextResponse.json({ ok: true, message: "Empleado actualizado" });
+  }
+
+  return NextResponse.json({ ok: false, error: "No hay campos para actualizar" }, { status: 400 });
+});
+
+/** DELETE: Deactivate employee (admin only) */
+export const DELETE = withErrorHandler(async (_req: Request, context: unknown) => {
+  const admin = await requireAdmin();
+  const { id } = await (context as { params: Promise<{ id: string }> }).params;
+
+  const employee = await getEmployeeById(id);
+  if (!employee) {
+    throw new NotFoundError("Empleado no encontrado");
+  }
+
+  // Prevent self-deactivation
+  if (employee.EmployeeID === admin.employeeId) {
+    return NextResponse.json(
+      { ok: false, error: "No puedes desactivar tu propia cuenta" },
+      { status: 400 }
+    );
+  }
+
+  await deactivateEmployee(id);
+  return NextResponse.json({ ok: true, message: "Empleado desactivado" });
 });

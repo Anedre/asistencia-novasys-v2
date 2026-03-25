@@ -83,11 +83,18 @@ export async function createEmployee(employee: Employee): Promise<void> {
 
 export async function updateEmployeeProfile(
   employeeId: string,
-  updates: { Phone?: string; AvatarUrl?: string }
+  updates: {
+    Phone?: string;
+    AvatarUrl?: string;
+    DNI?: string;
+    Area?: string;
+    Position?: string;
+    WorkMode?: string;
+    BirthDate?: string;
+  }
 ): Promise<void> {
   const expressions: string[] = ["updatedAt = :now"];
   const values: Record<string, unknown> = { ":now": new Date().toISOString() };
-  const names: Record<string, string> = {};
 
   if (updates.Phone !== undefined) {
     expressions.push("Phone = :phone");
@@ -96,6 +103,31 @@ export async function updateEmployeeProfile(
   if (updates.AvatarUrl !== undefined) {
     expressions.push("AvatarUrl = :avatar");
     values[":avatar"] = updates.AvatarUrl;
+  }
+  if (updates.DNI !== undefined) {
+    expressions.push("DNI = :dni");
+    values[":dni"] = updates.DNI;
+  }
+  if (updates.Area !== undefined) {
+    expressions.push("Area = :area");
+    values[":area"] = updates.Area;
+  }
+  if (updates.Position !== undefined) {
+    expressions.push("#pos = :position");
+    values[":position"] = updates.Position;
+  }
+  if (updates.WorkMode !== undefined) {
+    expressions.push("WorkMode = :workMode");
+    values[":workMode"] = updates.WorkMode;
+  }
+  if (updates.BirthDate !== undefined) {
+    expressions.push("BirthDate = :birthDate");
+    values[":birthDate"] = updates.BirthDate;
+  }
+
+  const names: Record<string, string> = {};
+  if (updates.Position !== undefined) {
+    names["#pos"] = "Position";
   }
 
   await docClient.send(
@@ -107,4 +139,54 @@ export async function updateEmployeeProfile(
       ...(Object.keys(names).length > 0 && { ExpressionAttributeNames: names }),
     })
   );
+}
+
+export async function updateEmployeeRole(
+  employeeId: string,
+  role: "ADMIN" | "EMPLOYEE"
+): Promise<void> {
+  await docClient.send(
+    new UpdateCommand({
+      TableName: TABLES.EMPLOYEES,
+      Key: { EmployeeID: employeeId },
+      UpdateExpression: "SET #role = :role, updatedAt = :now",
+      ExpressionAttributeNames: { "#role": "Role" },
+      ExpressionAttributeValues: {
+        ":role": role,
+        ":now": new Date().toISOString(),
+      },
+    })
+  );
+}
+
+export async function deactivateEmployee(employeeId: string): Promise<void> {
+  await docClient.send(
+    new UpdateCommand({
+      TableName: TABLES.EMPLOYEES,
+      Key: { EmployeeID: employeeId },
+      UpdateExpression: "SET EmploymentStatus = :status, updatedAt = :now",
+      ExpressionAttributeValues: {
+        ":status": "INACTIVE",
+        ":now": new Date().toISOString(),
+      },
+    })
+  );
+}
+
+export async function getAllEmployees(): Promise<Employee[]> {
+  const items: Employee[] = [];
+  let lastKey: Record<string, unknown> | undefined;
+
+  do {
+    const result = await docClient.send(
+      new ScanCommand({
+        TableName: TABLES.EMPLOYEES,
+        ...(lastKey && { ExclusiveStartKey: lastKey }),
+      })
+    );
+    items.push(...((result.Items as Employee[]) ?? []));
+    lastKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
+  } while (lastKey);
+
+  return items;
 }

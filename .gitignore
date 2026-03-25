@@ -39,3 +39,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# lambda build artifacts
+lambda/pdf-report/package/
+lambda/pdf-report/lambda-package.zip

@@ -80,6 +80,16 @@ export const createHREventSchema = z.object({
 export const updateProfileSchema = z.object({
   Phone: z.string().max(20).optional(),
   AvatarUrl: z.string().url().optional(),
+  DNI: z.string().max(20).optional(),
+  Area: z.string().max(100).optional(),
+  Position: z.string().max(100).optional(),
+  WorkMode: z.enum(["REMOTE", "ONSITE", "HYBRID"]).optional(),
+  BirthDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+});
+
+// ── Admin Employee Management ──
+export const updateEmployeeRoleSchema = z.object({
+  role: z.enum(["ADMIN", "EMPLOYEE"]),
 });
 
 // ── System Settings ──

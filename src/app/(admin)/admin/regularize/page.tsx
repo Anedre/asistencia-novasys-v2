@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
+import { useAdminEmployees } from "@/hooks/use-employee";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -19,7 +20,7 @@ import {
   TabsContent,
 } from "@/components/ui/tabs";
 import { ALL_REASON_OPTIONS } from "@/lib/constants/reason-codes";
-import { Loader2, CheckCircle, XCircle } from "lucide-react";
+import { Loader2, CheckCircle, XCircle, Search, Users } from "lucide-react";
 
 interface FormMessage {
   type: "success" | "error";
@@ -27,8 +28,24 @@ interface FormMessage {
 }
 
 export default function RegularizePage() {
+  const { data, isLoading: loadingEmployees } = useAdminEmployees();
+  const employees = data?.employees ?? [];
+  const [empSearch, setEmpSearch] = useState("");
+
+  const filteredEmployees = useMemo(() => {
+    if (!empSearch.trim()) return employees;
+    const q = empSearch.toLowerCase();
+    return employees.filter(
+      (e) =>
+        e.fullName.toLowerCase().includes(q) ||
+        e.email.toLowerCase().includes(q) ||
+        e.area.toLowerCase().includes(q)
+    );
+  }, [employees, empSearch]);
+
   // Single day form state
   const [singleEmployeeId, setSingleEmployeeId] = useState("");
+  const [singleEmployeeName, setSingleEmployeeName] = useState("");
   const [workDate, setWorkDate] = useState("");
   const [startTime, setStartTime] = useState("09:00");
   const [endTime, setEndTime] = useState("18:00");
@@ -40,6 +57,7 @@ export default function RegularizePage() {
 
   // Range form state
   const [rangeEmployeeId, setRangeEmployeeId] = useState("");
+  const [rangeEmployeeName, setRangeEmployeeName] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [rangeStartTime, setRangeStartTime] = useState("09:00");
@@ -52,6 +70,20 @@ export default function RegularizePage() {
   const [overwrite, setOverwrite] = useState(false);
   const [rangeLoading, setRangeLoading] = useState(false);
   const [rangeMessage, setRangeMessage] = useState<FormMessage | null>(null);
+
+  function selectEmployee(
+    empId: string,
+    empName: string,
+    target: "single" | "range"
+  ) {
+    if (target === "single") {
+      setSingleEmployeeId(empId);
+      setSingleEmployeeName(empName);
+    } else {
+      setRangeEmployeeId(empId);
+      setRangeEmployeeName(empName);
+    }
+  }
 
   async function handleSingleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -139,6 +171,81 @@ export default function RegularizePage() {
     }
   }
 
+  function EmployeeSelector({
+    selectedId,
+    selectedName,
+    target,
+  }: {
+    selectedId: string;
+    selectedName: string;
+    target: "single" | "range";
+  }) {
+    return (
+      <div className="space-y-2">
+        <Label>Empleado</Label>
+        {selectedId ? (
+          <div className="flex items-center gap-2">
+            <div className="flex-1 rounded-md border bg-muted/30 px-3 py-2">
+              <p className="text-sm font-medium">{selectedName}</p>
+              <p className="text-xs text-muted-foreground">{selectedId}</p>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => selectEmployee("", "", target)}
+            >
+              Cambiar
+            </Button>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Buscar empleado..."
+                value={empSearch}
+                onChange={(e) => setEmpSearch(e.target.value)}
+                className="pl-9"
+              />
+            </div>
+            {loadingEmployees ? (
+              <p className="text-sm text-muted-foreground">Cargando...</p>
+            ) : (
+              <div className="max-h-48 overflow-y-auto space-y-1 rounded-md border p-2">
+                {filteredEmployees.map((emp) => (
+                  <button
+                    key={emp.employeeId}
+                    type="button"
+                    onClick={() =>
+                      selectEmployee(emp.employeeId, emp.fullName, target)
+                    }
+                    className="w-full flex items-center gap-3 rounded-md px-3 py-2 text-left hover:bg-muted/50 transition-colors"
+                  >
+                    <Users className="h-4 w-4 text-muted-foreground shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium truncate">
+                        {emp.fullName}
+                      </p>
+                      <p className="text-xs text-muted-foreground truncate">
+                        {emp.email} &middot; {emp.area}
+                      </p>
+                    </div>
+                  </button>
+                ))}
+                {filteredEmployees.length === 0 && (
+                  <p className="text-sm text-muted-foreground text-center py-4">
+                    No se encontraron empleados
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -164,27 +271,22 @@ export default function RegularizePage() {
             {/* Single Day Tab */}
             <TabsContent value="single" className="mt-4">
               <form onSubmit={handleSingleSubmit} className="space-y-4">
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="singleEmployeeId">ID Empleado</Label>
-                    <Input
-                      id="singleEmployeeId"
-                      placeholder="EMP-001"
-                      value={singleEmployeeId}
-                      onChange={(e) => setSingleEmployeeId(e.target.value)}
-                      required
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="workDate">Fecha</Label>
-                    <Input
-                      id="workDate"
-                      type="date"
-                      value={workDate}
-                      onChange={(e) => setWorkDate(e.target.value)}
-                      required
-                    />
-                  </div>
+                <EmployeeSelector
+                  selectedId={singleEmployeeId}
+                  selectedName={singleEmployeeName}
+                  target="single"
+                />
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="workDate">Fecha</Label>
+                  <Input
+                    id="workDate"
+                    type="date"
+                    value={workDate}
+                    onChange={(e) => setWorkDate(e.target.value)}
+                    required
+                    className="max-w-xs"
+                  />
                 </div>
 
                 <div className="grid gap-4 sm:grid-cols-3">
@@ -252,7 +354,10 @@ export default function RegularizePage() {
                   />
                 </div>
 
-                <Button type="submit" disabled={singleLoading}>
+                <Button
+                  type="submit"
+                  disabled={singleLoading || !singleEmployeeId}
+                >
                   {singleLoading && (
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   )}
@@ -281,16 +386,11 @@ export default function RegularizePage() {
             {/* Range Tab */}
             <TabsContent value="range" className="mt-4">
               <form onSubmit={handleRangeSubmit} className="space-y-4">
-                <div className="space-y-1.5">
-                  <Label htmlFor="rangeEmployeeId">ID Empleado</Label>
-                  <Input
-                    id="rangeEmployeeId"
-                    placeholder="EMP-001"
-                    value={rangeEmployeeId}
-                    onChange={(e) => setRangeEmployeeId(e.target.value)}
-                    required
-                  />
-                </div>
+                <EmployeeSelector
+                  selectedId={rangeEmployeeId}
+                  selectedName={rangeEmployeeName}
+                  target="range"
+                />
 
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="space-y-1.5">
@@ -424,7 +524,10 @@ export default function RegularizePage() {
                   </div>
                 </div>
 
-                <Button type="submit" disabled={rangeLoading}>
+                <Button
+                  type="submit"
+                  disabled={rangeLoading || !rangeEmployeeId}
+                >
                   {rangeLoading && (
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   )}

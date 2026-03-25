@@ -2,11 +2,14 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
-export function useAdminEmployees() {
+export function useAdminEmployees(activeOnly = true) {
   return useQuery({
-    queryKey: ["admin", "employees"],
+    queryKey: ["admin", "employees", activeOnly],
     queryFn: async () => {
-      const res = await fetch("/api/admin/employees");
+      const url = activeOnly
+        ? "/api/admin/employees"
+        : "/api/admin/employees?active=false";
+      const res = await fetch(url);
       if (!res.ok) throw new Error("Error fetching employees");
       return res.json() as Promise<{
         ok: boolean;
@@ -14,11 +17,15 @@ export function useAdminEmployees() {
           employeeId: string;
           email: string;
           fullName: string;
+          firstName: string;
+          lastName: string;
+          dni: string;
           area: string;
           position: string;
           role: string;
           workMode: string;
           status: string;
+          phone: string | null;
         }>;
       }>;
     },
@@ -77,7 +84,15 @@ export function useMyProfile() {
 export function useUpdateProfile() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (data: { Phone?: string; AvatarUrl?: string }) => {
+    mutationFn: async (data: {
+      Phone?: string;
+      AvatarUrl?: string;
+      DNI?: string;
+      Area?: string;
+      Position?: string;
+      WorkMode?: string;
+      BirthDate?: string;
+    }) => {
       const res = await fetch("/api/profile", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -90,5 +105,41 @@ export function useUpdateProfile() {
       return res.json();
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["profile"] }),
+  });
+}
+
+export function useUpdateEmployeeRole() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, role }: { id: string; role: string }) => {
+      const res = await fetch(`/api/admin/employees/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Error updating role");
+      }
+      return res.json();
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "employees"] }),
+  });
+}
+
+export function useDeactivateEmployee() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/admin/employees/${id}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Error deactivating employee");
+      }
+      return res.json();
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "employees"] }),
   });
 }
