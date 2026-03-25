@@ -228,7 +228,7 @@ function RegisterContent() {
                   <Input
                     id="reg-password"
                     type={showPassword ? "text" : "password"}
-                    placeholder="Mínimo 8 caracteres"
+                    placeholder="Mín. 8 chars, mayúscula, número, símbolo"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required
