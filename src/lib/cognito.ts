@@ -92,11 +92,19 @@ export async function cognitoSignIn(
 
 // ── Sign Up ──
 
+export interface SignUpParams {
+  email: string;
+  password: string;
+  fullName: string;
+  phoneNumber: string;
+  nickname: string;
+}
+
 export async function cognitoSignUp(
-  email: string,
-  password: string,
-  fullName: string
+  params: SignUpParams
 ): Promise<{ userSub: string }> {
+  const { email, password, fullName, phoneNumber, nickname } = params;
+
   const result = await cognitoClient.send(
     new SignUpCommand({
       ClientId: PASSWORD_CLIENT_ID,
@@ -105,6 +113,8 @@ export async function cognitoSignUp(
       UserAttributes: [
         { Name: "email", Value: email.toLowerCase() },
         { Name: "name", Value: fullName },
+        { Name: "phone_number", Value: phoneNumber },
+        { Name: "nickname", Value: nickname },
       ],
     })
   );

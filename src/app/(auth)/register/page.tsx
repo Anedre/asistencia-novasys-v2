@@ -39,7 +39,9 @@ function RegisterContent() {
 
   // Register form
   const [fullName, setFullName] = useState("");
+  const [nickname, setNickname] = useState("");
   const [email, setEmail] = useState(initialEmail);
+  const [phoneNumber, setPhoneNumber] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -71,6 +73,8 @@ function RegisterContent() {
           email: email.trim(),
           password,
           fullName: fullName.trim(),
+          phoneNumber: phoneNumber.trim(),
+          nickname: nickname.trim(),
         }),
       });
 
@@ -208,6 +212,21 @@ function RegisterContent() {
               </div>
 
               <div className="space-y-2">
+                <Label htmlFor="nickname">Nickname</Label>
+                <Input
+                  id="nickname"
+                  type="text"
+                  placeholder="juanp"
+                  value={nickname}
+                  onChange={(e) => setNickname(e.target.value)}
+                  required
+                  disabled={isLoading}
+                  autoComplete="username"
+                  className="h-10"
+                />
+              </div>
+
+              <div className="space-y-2">
                 <Label htmlFor="reg-email">Correo electrónico</Label>
                 <Input
                   id="reg-email"
@@ -220,6 +239,24 @@ function RegisterContent() {
                   autoComplete="email"
                   className="h-10"
                 />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="phoneNumber">Teléfono</Label>
+                <Input
+                  id="phoneNumber"
+                  type="tel"
+                  placeholder="+51999999999"
+                  value={phoneNumber}
+                  onChange={(e) => setPhoneNumber(e.target.value)}
+                  required
+                  disabled={isLoading}
+                  autoComplete="tel"
+                  className="h-10"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Formato internacional: +51 seguido del número
+                </p>
               </div>
 
               <div className="space-y-2">

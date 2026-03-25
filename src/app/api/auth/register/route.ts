@@ -4,9 +4,9 @@ import { cognitoSignUp, getCognitoErrorMessage } from "@/lib/cognito";
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { email, password, fullName } = body;
+    const { email, password, fullName, phoneNumber, nickname } = body;
 
-    if (!email || !password || !fullName) {
+    if (!email || !password || !fullName || !phoneNumber || !nickname) {
       return NextResponse.json(
         { error: "Todos los campos son requeridos" },
         { status: 400 }
@@ -20,7 +20,13 @@ export async function POST(request: Request) {
       );
     }
 
-    const result = await cognitoSignUp(email, password, fullName);
+    const result = await cognitoSignUp({
+      email,
+      password,
+      fullName,
+      phoneNumber,
+      nickname,
+    });
 
     return NextResponse.json({
       ok: true,
