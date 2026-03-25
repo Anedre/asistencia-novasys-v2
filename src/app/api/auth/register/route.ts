@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { cognitoSignUp, getCognitoErrorMessage } from "@/lib/cognito";
+import { createEmployee } from "@/lib/db/employees";
+import type { Employee } from "@/lib/types";
 
 export async function POST(request: Request) {
   let body: Record<string, unknown>;
@@ -8,7 +10,7 @@ export async function POST(request: Request) {
     body = await request.json();
   } catch {
     return NextResponse.json(
-      { error: "JSON inválido en el request" },
+      { error: "JSON invalido en el request" },
       { status: 400 }
     );
   }
@@ -36,6 +38,7 @@ export async function POST(request: Request) {
       );
     }
 
+    // 1) Create user in Cognito
     const result = await cognitoSignUp({
       email,
       password,
@@ -44,11 +47,47 @@ export async function POST(request: Request) {
       nickname,
     });
 
+    // 2) Create employee record in DynamoDB
+    const nameParts = fullName.trim().split(/\s+/);
+    const firstName = nameParts[0] || "";
+    const lastName = nameParts.slice(1).join(" ") || "";
+    const now = new Date().toISOString();
+
+    const employee: Employee = {
+      EmployeeID: `EMP#${email.toLowerCase()}`,
+      Email: email.toLowerCase(),
+      DNI: `PENDING-${Date.now()}`,
+      FullName: fullName.trim(),
+      FirstName: firstName,
+      LastName: lastName,
+      Phone: phoneNumber,
+      Area: "General",
+      Position: "Empleado",
+      WorkMode: "ONSITE",
+      EmploymentStatus: "ACTIVE",
+      Role: "EMPLOYEE",
+      CognitoSub: result.userSub,
+      Schedule: {
+        startTime: "09:00",
+        endTime: "18:00",
+        breakMinutes: 60,
+      },
+      CreatedAt: now,
+      UpdatedAt: now,
+    };
+
+    try {
+      await createEmployee(employee);
+    } catch (dbError) {
+      console.error("[register] Error creating employee in DynamoDB:", dbError);
+      // Don't fail registration if DB creation fails — user can still login
+    }
+
     return NextResponse.json({
       ok: true,
       userSub: result.userSub,
       username: result.username,
-      message: "Cuenta creada. Revisa tu correo para el código de verificación.",
+      message: "Cuenta creada. Revisa tu correo para el codigo de verificacion.",
     });
   } catch (error) {
     const message = getCognitoErrorMessage(error);

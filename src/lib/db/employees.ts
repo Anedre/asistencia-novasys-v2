@@ -1,6 +1,6 @@
 import { docClient } from "./client";
 import { TABLES, INDEXES } from "./tables";
-import { GetCommand, QueryCommand, ScanCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
+import { GetCommand, PutCommand, QueryCommand, ScanCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 import type { Employee } from "@/lib/types";
 
 export async function getEmployeeById(employeeId: string): Promise<Employee | null> {
@@ -69,6 +69,16 @@ export async function getEmployeesByArea(area: string): Promise<Employee[]> {
     })
   );
   return (result.Items as Employee[]) ?? [];
+}
+
+export async function createEmployee(employee: Employee): Promise<void> {
+  await docClient.send(
+    new PutCommand({
+      TableName: TABLES.EMPLOYEES,
+      Item: employee,
+      ConditionExpression: "attribute_not_exists(EmployeeID)",
+    })
+  );
 }
 
 export async function updateEmployeeProfile(
