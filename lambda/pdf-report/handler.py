@@ -196,86 +196,95 @@ def build_pdf(emp_key, emp_info, report_title, period_label, days, start_d, end_
         c.line(LM, y, RM, y)
 
     def draw_top_section(y):
-        """Title block + employee info — structured like a formal document."""
-        # ─── Top line ───
+        """Title block + employee info — structured formal document."""
+        # ─── Top accent line ───
         c.setFillColor(BRAND)
-        c.rect(0, y, W, 3, fill=True, stroke=False)
-        y -= 3
+        c.rect(0, y, W, 2.5, fill=True, stroke=False)
+        y -= 2.5
 
-        # ─── Title section ───
-        y -= 28
+        # ─── Title row ───
+        y -= 20
         c.setFillColor(BRAND_DARK)
-        c.setFont("Helvetica-Bold", 16)
+        c.setFont("Helvetica-Bold", 12)
         c.drawString(LM, y, "Novasys")
 
         c.setFillColor(TXT2)
-        c.setFont("Helvetica", 16)
-        c.drawString(LM + c.stringWidth("Novasys", "Helvetica-Bold", 16) + 6, y, f"— Reporte de Asistencia ({work_mode})")
+        c.setFont("Helvetica", 11)
+        c.drawString(LM + c.stringWidth("Novasys", "Helvetica-Bold", 12) + 4, y, f"— Reporte de Asistencia ({work_mode})")
 
-        # Report type on the right
         c.setFillColor(BRAND)
-        c.setFont("Helvetica-Bold", 10)
-        c.drawRightString(RM, y + 2, f"Reporte {report_title}")
+        c.setFont("Helvetica-Bold", 8.5)
+        c.drawRightString(RM, y + 1, f"Reporte {report_title}")
 
-        # ─── Separator line ───
-        y -= 10
-        hline(y, BORDER, 0.8)
+        # ─── Separator ───
+        y -= 8
+        hline(y, BORDER, 0.6)
 
-        # ─── Employee info grid ───
-        y -= 18
-        c.setFont("Helvetica-Bold", 9)
-        c.setFillColor(TXT)
+        # ─── Employee info — 3 columns x 3 rows ───
+        FS = 7.5       # font size
+        LBL_F = "Helvetica-Bold"
+        VAL_F = "Helvetica"
+        RH = 12        # row height
 
-        # Row 1: Empleado | Cargo | Período
-        c.drawString(LM, y, "Empleado:")
-        c.setFont("Helvetica", 9)
-        c.drawString(LM + 58, y, name)
+        # Column positions (3 columns across the page)
+        c1 = LM
+        c2 = LM + 190
+        c3 = LM + 370
 
-        c.setFont("Helvetica-Bold", 9)
-        c.drawString(LM + 240, y, "Cargo:")
-        c.setFont("Helvetica", 9)
-        c.drawString(LM + 280, y, position)
+        def info_row(y, pairs):
+            """Draw a row of label: value pairs at given column positions."""
+            col_positions = [c1, c2, c3]
+            for i, (lbl, val) in enumerate(pairs):
+                if i >= len(col_positions):
+                    break
+                cx = col_positions[i]
+                c.setFont(LBL_F, FS)
+                c.setFillColor(TXT2)
+                lbl_w = c.stringWidth(lbl, LBL_F, FS)
+                c.drawString(cx, y, lbl)
+                c.setFont(VAL_F, FS)
+                c.setFillColor(TXT)
+                c.drawString(cx + lbl_w + 3, y, str(val))
 
-        # Period on the right
-        c.setFont("Helvetica-Bold", 9)
+        y -= RH
+        info_row(y, [
+            ("Empleado: ", name),
+            ("Cargo: ", position),
+            ("Modalidad: ", work_mode),
+        ])
+
+        y -= RH
+        info_row(y, [
+            ("Email: ", email),
+            ("Área: ", area),
+            ("DNI: ", dni),
+        ])
+
+        y -= RH
         period_str = f"{fmt_date_long(start_d)}  —  {fmt_date_long(end_d)}"
-        period_label_w = c.stringWidth("Período: ", "Helvetica-Bold", 9)
-        c.drawRightString(RM - c.stringWidth(period_str, "Helvetica", 9), y, "Período: ")
-        c.setFont("Helvetica", 9)
-        c.drawRightString(RM, y, period_str)
+        hire = emp_info.get("HireDate", "—")
+        phone = emp_info.get("Phone", "—") or "—"
+        info_row(y, [
+            ("Período: ", period_str),
+            ("Ingreso: ", hire),
+            ("Teléfono: ", phone),
+        ])
 
-        # Row 2: Email | Área | DNI
-        y -= 14
-        c.setFont("Helvetica-Bold", 9)
-        c.drawString(LM, y, "Email:")
-        c.setFont("Helvetica", 9)
-        c.drawString(LM + 58, y, email)
-
-        c.setFont("Helvetica-Bold", 9)
-        c.drawString(LM + 240, y, "Área:")
-        c.setFont("Helvetica", 9)
-        c.drawString(LM + 280, y, area)
-
-        c.setFont("Helvetica-Bold", 9)
-        c.drawString(LM + 380, y, "DNI:")
-        c.setFont("Helvetica", 9)
-        c.drawString(LM + 408, y, dni)
-
-        # ─── Another separator ───
-        y -= 10
-        hline(y, BORDER, 0.8)
+        # ─── Separator ───
+        y -= 8
+        hline(y, BORDER, 0.6)
 
         # ─── Section title ───
-        y -= 16
+        y -= 13
         c.setFillColor(BRAND_DARK)
-        c.setFont("Helvetica-Bold", 10)
-        c.drawString(LM, y, "Detalle de Asistencia")
+        c.setFont("Helvetica-Bold", 8.5)
+        c.drawString(LM, y, "DETALLE DE ASISTENCIA")
 
         c.setFillColor(TXT3)
-        c.setFont("Helvetica", 8)
+        c.setFont("Helvetica", 7)
         c.drawRightString(RM, y, period_label)
 
-        y -= 8
+        y -= 6
         return y
 
     def draw_table_header(y):
