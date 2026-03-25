@@ -1,0 +1,66 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: NovasysV2 PDF Report Lambda
+
+Globals:
+  Function:
+    Timeout: 30
+    MemorySize: 256
+    Runtime: python3.12
+
+Parameters:
+  TableDaily:
+    Type: String
+    Default: NovasysV2_DailySummary
+  ReportBucket:
+    Type: String
+    Default: novasys-v2-reports
+  Stage:
+    Type: String
+    Default: prod
+
+Resources:
+  ReportBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref ReportBucket
+      LifecycleConfiguration:
+        Rules:
+          - Id: CleanupOldReports
+            Status: Enabled
+            ExpirationInDays: 30
+
+  PDFReportFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "NovasysV2-PDFReport-${Stage}"
+      Handler: handler.handler
+      CodeUri: .
+      Layers:
+        - !Ref ReportLabLayer
+      Environment:
+        Variables:
+          TABLE_DAILY: !Ref TableDaily
+          REPORT_BUCKET: !Ref ReportBucket
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref TableDaily
+        - S3CrudPolicy:
+            BucketName: !Ref ReportBucket
+
+  ReportLabLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      LayerName: NovasysV2-ReportLab
+      Description: ReportLab library for PDF generation
+      ContentUri: ./layer/
+      CompatibleRuntimes:
+        - python3.12
+
+Outputs:
+  PDFReportFunctionArn:
+    Description: ARN of the PDF Report Lambda
+    Value: !GetAtt PDFReportFunction.Arn
+  PDFReportFunctionName:
+    Description: Name of the PDF Report Lambda
+    Value: !Ref PDFReportFunction
