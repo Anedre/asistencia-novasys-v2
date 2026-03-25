@@ -30,6 +30,17 @@ function formatMinutes(minutes: number): string {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
+function formatTime(isoOrLocal: string | null): string {
+  if (!isoOrLocal) return "—";
+  // If it's an ISO string with T, extract the time part
+  if (isoOrLocal.includes("T")) {
+    const timePart = isoOrLocal.split("T")[1];
+    // Remove timezone offset, keep HH:MM:SS or HH:MM
+    return timePart?.replace(/[-+]\d{2}:\d{2}$/, "").slice(0, 8) ?? isoOrLocal;
+  }
+  return isoOrLocal;
+}
+
 function getTodayLima(): string {
   return new Date()
     .toLocaleDateString("en-CA", { timeZone: "America/Lima" });
@@ -188,8 +199,8 @@ export default function AttendancePage() {
                     return (
                       <TableRow key={s.employeeId}>
                         <TableCell className="font-medium">{email}</TableCell>
-                        <TableCell>{s.firstInLocal ?? "—"}</TableCell>
-                        <TableCell>{s.lastOutLocal ?? "—"}</TableCell>
+                        <TableCell>{formatTime(s.firstInLocal)}</TableCell>
+                        <TableCell>{formatTime(s.lastOutLocal)}</TableCell>
                         <TableCell>{formatMinutes(s.breakMinutes)}</TableCell>
                         <TableCell>{formatMinutes(s.workedMinutes)}</TableCell>
                         <TableCell>

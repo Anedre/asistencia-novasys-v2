@@ -11,16 +11,19 @@ import { Users, Clock, CheckSquare, AlertTriangle, Activity } from "lucide-react
 
 interface DashboardData {
   ok: boolean;
-  activeEmployees: number;
+  totalActiveEmployees: number;
   presentToday: number;
   pendingRequests: number;
-  anomalies: number;
+  anomaliesToday: number;
+  onBreakNow: number;
+  absentToday: number;
   statusBreakdown?: {
-    working: number;
-    onBreak: number;
-    completed: number;
-    absent: number;
-    noRecord: number;
+    ok: number;
+    open: number;
+    short: number;
+    missing: number;
+    absence: number;
+    regularized: number;
   };
 }
 
@@ -58,10 +61,10 @@ export default function AdminDashboard() {
   const { data, isLoading, isError } = useAdminDashboard();
   const dashboard = data as DashboardData | undefined;
 
-  const activeEmployees = dashboard?.activeEmployees ?? 0;
+  const activeEmployees = dashboard?.totalActiveEmployees ?? 0;
   const presentToday = dashboard?.presentToday ?? 0;
   const pendingRequests = dashboard?.pendingRequests ?? 0;
-  const anomalies = dashboard?.anomalies ?? 0;
+  const anomalies = dashboard?.anomaliesToday ?? 0;
   const breakdown = dashboard?.statusBreakdown;
 
   return (
@@ -158,31 +161,31 @@ export default function AdminDashboard() {
           <CardContent className="space-y-3">
             <StatBar
               label="Trabajando"
-              value={breakdown.working}
+              value={breakdown.open}
               total={activeEmployees}
               color="bg-green-500"
             />
             <StatBar
-              label="En break"
-              value={breakdown.onBreak}
-              total={activeEmployees}
-              color="bg-yellow-500"
-            />
-            <StatBar
               label="Jornada completa"
-              value={breakdown.completed}
+              value={breakdown.ok}
               total={activeEmployees}
               color="bg-blue-500"
             />
             <StatBar
+              label="Jornada corta"
+              value={breakdown.short}
+              total={activeEmployees}
+              color="bg-yellow-500"
+            />
+            <StatBar
               label="Ausentes"
-              value={breakdown.absent}
+              value={breakdown.absence}
               total={activeEmployees}
               color="bg-red-500"
             />
             <StatBar
               label="Sin registro"
-              value={breakdown.noRecord}
+              value={breakdown.missing}
               total={activeEmployees}
               color="bg-gray-400"
             />
