@@ -19,7 +19,13 @@ export async function requireSession(): Promise<SessionUser> {
   if (!session?.user) {
     throw new UnauthorizedError();
   }
-  return session.user as SessionUser;
+  const user = session.user as SessionUser;
+  // Fallback for sessions created before multi-tenancy was added
+  if (!user.tenantId) {
+    user.tenantId = "TENANT#novasys";
+    user.tenantSlug = "novasys";
+  }
+  return user;
 }
 
 /** Get session and require ADMIN role */
