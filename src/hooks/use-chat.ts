@@ -36,7 +36,7 @@ export function useDeleteChatSession() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (sessionId: string) => {
-      const res = await fetch(`/api/chat/sessions/${sessionId}`, {
+      const res = await fetch(`/api/chat/sessions/${encodeURIComponent(sessionId)}`, {
         method: "DELETE",
       });
       if (!res.ok) {
@@ -53,7 +53,7 @@ export function useSendMessage(sessionId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (content: string) => {
-      const res = await fetch(`/api/chat/sessions/${sessionId}/messages`, {
+      const res = await fetch(`/api/chat/sessions/${encodeURIComponent(sessionId)}/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content }),

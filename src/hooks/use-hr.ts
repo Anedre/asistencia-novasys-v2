@@ -37,7 +37,7 @@ export function useArchiveHREvent() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => {
-      const res = await fetch(`/api/admin/hr/events/${id}`, { method: "DELETE" });
+      const res = await fetch(`/api/admin/hr/events/${encodeURIComponent(id)}`, { method: "DELETE" });
       if (!res.ok) throw new Error("Error archiving event");
       return res.json();
     },

@@ -62,7 +62,7 @@ export function useEmployeeDetail(id: string) {
   return useQuery({
     queryKey: ["admin", "employee", id],
     queryFn: async () => {
-      const res = await fetch(`/api/admin/employees/${id}`);
+      const res = await fetch(`/api/admin/employees/${encodeURIComponent(id)}`);
       if (!res.ok) throw new Error("Error fetching employee");
       return res.json();
     },

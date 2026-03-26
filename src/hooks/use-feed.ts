@@ -19,7 +19,7 @@ export function usePost(postId: string) {
   return useQuery<{ post: Post }>({
     queryKey: ["feed", postId],
     queryFn: async () => {
-      const res = await fetch(`/api/feed/${postId}`);
+      const res = await fetch(`/api/feed/${encodeURIComponent(postId)}`);
       if (!res.ok) throw new Error("Error al cargar la publicacion");
       return res.json();
     },
@@ -55,7 +55,7 @@ export function useDeletePost() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (postId: string) => {
-      const res = await fetch(`/api/feed/${postId}`, { method: "DELETE" });
+      const res = await fetch(`/api/feed/${encodeURIComponent(postId)}`, { method: "DELETE" });
       if (!res.ok) {
         const e = await res.json();
         throw new Error(e.error || "Error al eliminar publicacion");
@@ -70,7 +70,7 @@ export function useAddComment(postId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (data: { content: string }) => {
-      const res = await fetch(`/api/feed/${postId}/comments`, {
+      const res = await fetch(`/api/feed/${encodeURIComponent(postId)}/comments`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
@@ -92,7 +92,7 @@ export function useToggleReaction(postId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (data: { type: string }) => {
-      const res = await fetch(`/api/feed/${postId}/reactions`, {
+      const res = await fetch(`/api/feed/${encodeURIComponent(postId)}/reactions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),

@@ -19,7 +19,7 @@ export function useEvent(eventId: string) {
   return useQuery<{ event: AppEvent }>({
     queryKey: ["events", eventId],
     queryFn: async () => {
-      const res = await fetch(`/api/events/${eventId}`);
+      const res = await fetch(`/api/events/${encodeURIComponent(eventId)}`);
       if (!res.ok) throw new Error("Error al cargar evento");
       return res.json();
     },
@@ -51,7 +51,7 @@ export function useRSVP() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ eventId, status }: { eventId: string; status: string }) => {
-      const res = await fetch(`/api/events/${eventId}/rsvp`, {
+      const res = await fetch(`/api/events/${encodeURIComponent(eventId)}/rsvp`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status }),

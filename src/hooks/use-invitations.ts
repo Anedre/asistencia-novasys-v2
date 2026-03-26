@@ -61,7 +61,7 @@ export function useRevokeInvitation() {
 
   return useMutation<void, Error, string>({
     mutationFn: async (inviteId: string) => {
-      const res = await fetch(`/api/admin/invitations/${inviteId}`, {
+      const res = await fetch(`/api/admin/invitations/${encodeURIComponent(inviteId)}`, {
         method: "DELETE",
       });
       if (!res.ok) throw new Error("Error al revocar invitacion");
