@@ -5,7 +5,7 @@ import { regularizeSingleSchema } from "@/lib/utils/validation";
 import { withErrorHandler } from "@/lib/utils/errors";
 
 export const POST = withErrorHandler(async (req: Request) => {
-  await requireAdmin();
+  const user = await requireAdmin();
   const body = await req.json();
   const parsed = regularizeSingleSchema.parse(body);
 
@@ -17,6 +17,7 @@ export const POST = withErrorHandler(async (req: Request) => {
     breakMinutes: parsed.breakMinutes,
     reasonCode: parsed.reasonCode,
     reasonNote: parsed.reasonNote,
+    tenantId: user.tenantId,
   });
 
   return NextResponse.json({ ok: true, ...result });

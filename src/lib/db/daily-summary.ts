@@ -53,8 +53,26 @@ export async function getDailySummaryRange(
 
 /** Get all summaries for a date across all employees (admin) */
 export async function getDailySummariesByDate(
-  workDate: string
+  workDate: string,
+  tenantId?: string
 ): Promise<DailySummary[]> {
+  // If tenantId provided, use Tenant-WorkDate-index (efficient, tenant-scoped)
+  if (tenantId) {
+    const result = await docClient.send(
+      new QueryCommand({
+        TableName: TABLES.DAILY_SUMMARY,
+        IndexName: INDEXES.DAILY_BY_TENANT,
+        KeyConditionExpression: "TenantID = :tid AND WorkDate = :wd",
+        ExpressionAttributeValues: {
+          ":tid": tenantId,
+          ":wd": `DATE#${workDate}`,
+        },
+      })
+    );
+    return (result.Items as DailySummary[]) ?? [];
+  }
+
+  // Fallback: use date-only GSI
   const result = await docClient.send(
     new QueryCommand({
       TableName: TABLES.DAILY_SUMMARY,

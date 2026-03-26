@@ -12,6 +12,7 @@ export interface EmployeeSchedule {
 
 export interface Employee {
   EmployeeID: string; // "EMP#john@novasys.com"
+  TenantID?: string; // "TENANT#novasys" — multi-tenant isolation
   Email: string;
   DNI: string;
   FullName: string;

@@ -5,7 +5,7 @@ import { regularizeRangeSchema } from "@/lib/utils/validation";
 import { withErrorHandler } from "@/lib/utils/errors";
 
 export const POST = withErrorHandler(async (req: Request) => {
-  await requireAdmin();
+  const user = await requireAdmin();
   const body = await req.json();
   const parsed = regularizeRangeSchema.parse(body);
 
@@ -21,6 +21,7 @@ export const POST = withErrorHandler(async (req: Request) => {
     weekdaysOnly: parsed.weekdaysOnly,
     pastDatesOnly: parsed.pastDatesOnly,
     overwrite: parsed.overwrite,
+    tenantId: user.tenantId,
   });
 
   return NextResponse.json({ ok: true, ...result });

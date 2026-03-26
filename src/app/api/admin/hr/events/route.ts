@@ -6,10 +6,10 @@ import { withErrorHandler } from "@/lib/utils/errors";
 import { ValidationError } from "@/lib/utils/errors";
 
 export const GET = withErrorHandler(async (req: Request) => {
-  await requireAdmin();
+  const user = await requireAdmin();
   const { searchParams } = new URL(req.url);
   const month = searchParams.get("month") ?? undefined;
-  const dashboard = await getHRDashboard(month);
+  const dashboard = await getHRDashboard(month, user.tenantId);
   return NextResponse.json({ ok: true, ...dashboard });
 });
 
@@ -22,6 +22,6 @@ export const POST = withErrorHandler(async (req: Request) => {
       parsed.error.issues.map((i) => i.message).join(", ")
     );
   }
-  const notificationId = await createHREvent(parsed.data, user.employeeId);
+  const notificationId = await createHREvent(parsed.data, user.employeeId, user.tenantId);
   return NextResponse.json({ ok: true, notificationId }, { status: 201 });
 });

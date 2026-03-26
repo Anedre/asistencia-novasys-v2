@@ -80,12 +80,12 @@ function buildAnniversaryEntry(emp: Employee, targetYear: number): AnniversaryEn
   };
 }
 
-export async function getHRDashboard(month?: string): Promise<HRDashboard> {
+export async function getHRDashboard(month?: string, tenantId?: string): Promise<HRDashboard> {
   const today = workDateLima();
   const targetMonth = month ?? today.substring(0, 7); // "YYYY-MM"
   const { year: targetYear, month: targetM } = parseMonth(targetMonth);
 
-  const employees = await getAllActiveEmployees();
+  const employees = await getAllActiveEmployees(tenantId);
 
   // --- Birthdays of the month ---
   const birthdays: BirthdayEntry[] = [];
@@ -151,7 +151,7 @@ export async function getHRDashboard(month?: string): Promise<HRDashboard> {
   upcomingBirthdays.sort((a, b) => a.daysUntil - b.daysUntil);
 
   // --- Announcements / Holidays ---
-  const allEvents = await getHREventsByMonth(targetMonth);
+  const allEvents = await getHREventsByMonth(targetMonth, tenantId);
   const announcements = allEvents.filter(
     (e) => e.Type === "ANNOUNCEMENT" || e.Type === "HOLIDAY"
   );
@@ -161,7 +161,8 @@ export async function getHRDashboard(month?: string): Promise<HRDashboard> {
 
 export async function createHREvent(
   input: CreateHREventInput,
-  createdBy: string
+  createdBy: string,
+  tenantId?: string
 ): Promise<string> {
   const notificationId = crypto.randomUUID();
   const eventMonth = input.eventDate.substring(0, 7); // "YYYY-MM"
@@ -178,6 +179,7 @@ export async function createHREvent(
     ImageUrl: input.imageUrl,
     CreatedBy: createdBy,
     CreatedAt: new Date().toISOString(),
+    ...(tenantId && { TenantID: tenantId }),
   };
 
   await putHREvent(event);

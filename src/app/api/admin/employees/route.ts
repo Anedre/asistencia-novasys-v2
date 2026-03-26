@@ -4,11 +4,11 @@ import { getAllEmployees } from "@/lib/db/employees";
 import { withErrorHandler } from "@/lib/utils/errors";
 
 export const GET = withErrorHandler(async (req: Request) => {
-  await requireAdmin();
+  const user = await requireAdmin();
   const url = new URL(req.url);
   const activeOnly = url.searchParams.get("active") !== "false";
 
-  const allEmployees = await getAllEmployees();
+  const allEmployees = await getAllEmployees(user.tenantId);
   const employees = activeOnly
     ? allEmployees.filter((e) => e.EmploymentStatus === "ACTIVE")
     : allEmployees;

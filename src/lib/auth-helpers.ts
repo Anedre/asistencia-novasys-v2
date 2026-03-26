@@ -9,6 +9,8 @@ export interface SessionUser {
   role: UserRole;
   employeeId: string;
   area: string;
+  tenantId: string;
+  tenantSlug: string;
 }
 
 /** Get session or throw UnauthorizedError */
@@ -33,4 +35,13 @@ export async function requireAdmin(): Promise<SessionUser> {
 export async function getSession(): Promise<SessionUser | null> {
   const session = await getServerSession(authOptions);
   return (session?.user as SessionUser) ?? null;
+}
+
+/** Get session and require SUPER_ADMIN role */
+export async function requireSuperAdmin(): Promise<SessionUser> {
+  const user = await requireSession();
+  if (user.role !== "SUPER_ADMIN") {
+    throw new ForbiddenError("Se requiere rol de super administrador");
+  }
+  return user;
 }

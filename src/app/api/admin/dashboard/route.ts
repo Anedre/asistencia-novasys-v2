@@ -4,7 +4,7 @@ import { getDashboardMetrics } from "@/lib/services/dashboard.service";
 import { withErrorHandler } from "@/lib/utils/errors";
 
 export const GET = withErrorHandler(async () => {
-  await requireAdmin();
-  const metrics = await getDashboardMetrics();
+  const user = await requireAdmin();
+  const metrics = await getDashboardMetrics(user.tenantId);
   return NextResponse.json({ ok: true, ...metrics });
 });

@@ -15,6 +15,6 @@ export const POST = withErrorHandler(async (req: Request) => {
   const body = await req.json();
   const parsed = createRequestSchema.parse(body);
 
-  const request = await createRequest(user.employeeId, user.name, parsed);
+  const request = await createRequest(user.employeeId, user.name, parsed, user.tenantId);
   return NextResponse.json({ ok: true, request }, { status: 201 });
 });

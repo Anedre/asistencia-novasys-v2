@@ -33,7 +33,8 @@ function generateNotificationId(): string {
 export async function createRequest(
   employeeId: string,
   employeeName: string,
-  input: CreateRequestInput
+  input: CreateRequestInput,
+  tenantId?: string
 ): Promise<ApprovalRequest> {
   const now = new Date().toISOString();
   const request: ApprovalRequest = {
@@ -53,6 +54,7 @@ export async function createRequest(
     reasonNote: input.reasonNote,
     createdAt: now,
     updatedAt: now,
+    ...(tenantId && { TenantID: tenantId }),
   };
 
   await putRequest(request);
@@ -63,8 +65,8 @@ export async function getMyRequests(employeeId: string) {
   return getRequestsByEmployee(employeeId);
 }
 
-export async function getPendingRequests() {
-  return getRequestsByStatus("PENDING");
+export async function getPendingRequests(tenantId?: string) {
+  return getRequestsByStatus("PENDING", undefined, tenantId);
 }
 
 export async function getRequestDetail(requestId: string) {
@@ -77,7 +79,8 @@ export async function approveRequest(
   requestId: string,
   reviewerId: string,
   reviewerName: string,
-  reviewerNote?: string
+  reviewerNote?: string,
+  tenantId?: string
 ) {
   const request = await getRequest(requestId);
   if (!request) throw new NotFoundError("Solicitud no encontrada");
@@ -161,7 +164,8 @@ export async function rejectRequest(
   requestId: string,
   reviewerId: string,
   reviewerName: string,
-  reviewerNote?: string
+  reviewerNote?: string,
+  tenantId?: string
 ) {
   const request = await getRequest(requestId);
   if (!request) throw new NotFoundError("Solicitud no encontrada");

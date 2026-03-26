@@ -50,8 +50,27 @@ export async function getRequestsByEmployee(
 
 export async function getRequestsByStatus(
   status: RequestStatus,
-  limit = 100
+  limit = 100,
+  tenantId?: string
 ): Promise<ApprovalRequest[]> {
+  // If tenantId provided, use Tenant-Status-index for tenant isolation
+  if (tenantId) {
+    const result = await docClient.send(
+      new QueryCommand({
+        TableName: TABLES.APPROVAL_REQUESTS,
+        IndexName: INDEXES.REQUESTS_BY_TENANT,
+        KeyConditionExpression: "TenantID = :tid",
+        FilterExpression: "#s = :status",
+        ExpressionAttributeNames: { "#s": "status" },
+        ExpressionAttributeValues: { ":tid": tenantId, ":status": status },
+        ScanIndexForward: false,
+        Limit: limit,
+      })
+    );
+    return (result.Items as ApprovalRequest[]) ?? [];
+  }
+
+  // Fallback: status-only GSI
   const result = await docClient.send(
     new QueryCommand({
       TableName: TABLES.APPROVAL_REQUESTS,

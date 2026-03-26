@@ -19,6 +19,7 @@ interface GenerateReportParams {
   employeeId: string;
   week?: string; // "2026-W12"
   month?: string; // "2026-03"
+  tenantId?: string;
 }
 
 interface ReportResult {
@@ -45,6 +46,7 @@ export async function generateReport(
       employeeKey,
       ...(params.week && { week: params.week }),
       ...(params.month && { month: params.month }),
+      ...(params.tenantId && { tenantId: params.tenantId }),
     },
   };
 

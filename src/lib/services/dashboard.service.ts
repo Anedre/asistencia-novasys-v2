@@ -25,13 +25,13 @@ export interface DashboardMetrics {
   };
 }
 
-export async function getDashboardMetrics(): Promise<DashboardMetrics> {
+export async function getDashboardMetrics(tenantId?: string): Promise<DashboardMetrics> {
   const todayDate = workDateLima();
 
   const [employees, summaries, pendingRequests] = await Promise.all([
-    getAllActiveEmployees(),
-    getDailySummariesByDate(todayDate),
-    getRequestsByStatus("PENDING", 200),
+    getAllActiveEmployees(tenantId),
+    getDailySummariesByDate(todayDate, tenantId),
+    getRequestsByStatus("PENDING", 200, tenantId),
   ]);
 
   const statusBreakdown = {

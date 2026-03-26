@@ -21,6 +21,7 @@ interface RegularizeSingleParams {
   reasonCode: string;
   reasonNote?: string;
   overwrite?: boolean;
+  tenantId?: string;
 }
 
 interface RegularizeRangeParams {
@@ -35,6 +36,7 @@ interface RegularizeRangeParams {
   weekdaysOnly?: boolean;
   pastDatesOnly?: boolean;
   overwrite?: boolean;
+  tenantId?: string;
 }
 
 function buildRegId(): string {
@@ -153,6 +155,7 @@ export async function regularizeSingle(params: RegularizeSingleParams) {
     reasonCode,
     reasonNote = "",
     overwrite = false,
+    tenantId,
   } = params;
 
   const code = reasonCode.toUpperCase();
@@ -173,6 +176,8 @@ export async function regularizeSingle(params: RegularizeSingleParams) {
       employeeId, workDate, startTime, endTime, breakMinutes, code, reasonNote, regId
     );
   }
+
+  if (tenantId) item.TenantID = tenantId;
 
   const result = await upsertDailySummary(item, overwrite);
 
@@ -199,6 +204,7 @@ export async function regularizeRange(params: RegularizeRangeParams) {
     weekdaysOnly = true,
     pastDatesOnly = true,
     overwrite = false,
+    tenantId,
   } = params;
 
   const code = reasonCode.toUpperCase();
@@ -251,6 +257,8 @@ export async function regularizeRange(params: RegularizeRangeParams) {
         employeeId, ds, startTime, endTime, breakMinutes, code, reasonNote, regId
       );
     }
+
+    if (tenantId) item.TenantID = tenantId;
 
     const result = await upsertDailySummary(item, overwrite);
     if (result === "CREATED") {

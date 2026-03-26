@@ -26,7 +26,22 @@ export async function getHREvent(notificationId: string): Promise<HREvent | null
   return (result.Item as HREvent) ?? null;
 }
 
-export async function getHREventsByMonth(month: string): Promise<HREvent[]> {
+export async function getHREventsByMonth(month: string, tenantId?: string): Promise<HREvent[]> {
+  // If tenantId provided, use Tenant-Month-index
+  if (tenantId) {
+    const result = await docClient.send(
+      new QueryCommand({
+        TableName: TABLES.HR_EVENTS,
+        IndexName: INDEXES.HR_BY_TENANT,
+        KeyConditionExpression: "TenantID = :tid AND EventMonth = :m",
+        ExpressionAttributeValues: { ":tid": tenantId, ":m": month },
+      })
+    );
+    const items = (result.Items as HREvent[]) ?? [];
+    return items.filter((i) => i.Status === "ACTIVE");
+  }
+
+  // Fallback: month-only GSI
   const result = await docClient.send(
     new QueryCommand({
       TableName: TABLES.HR_EVENTS,

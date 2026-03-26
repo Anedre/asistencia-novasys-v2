@@ -33,10 +33,11 @@ interface RecordEventParams {
   deviceId?: string;
   ip: string;
   userAgent: string;
+  tenantId?: string;
 }
 
 export async function recordEvent(params: RecordEventParams) {
-  const { employeeId, eventType, note, clientTime, deviceId, ip, userAgent } =
+  const { employeeId, eventType, note, clientTime, deviceId, ip, userAgent, tenantId } =
     params;
 
   if (!ALLOWED_EVENT_TYPES.has(eventType)) {
@@ -94,6 +95,7 @@ export async function recordEvent(params: RecordEventParams) {
     deviceId: deviceId || "",
     GSI1PK: `DATE#${workDate}`,
     GSI1SK: `${employeeId}#TS#${serverTsUtc}`,
+    ...(tenantId && { TenantID: tenantId }),
   };
 
   await putAttendanceEvent(event);

@@ -6,7 +6,7 @@ import { docClient } from "@/lib/db/client";
 import { TABLES, INDEXES } from "@/lib/db/tables";
 import { cognitoSignIn, getCognitoErrorMessage, isCognitoError } from "@/lib/cognito";
 
-export type UserRole = "ADMIN" | "EMPLOYEE";
+export type UserRole = "ADMIN" | "EMPLOYEE" | "SUPER_ADMIN";
 
 declare module "next-auth" {
   interface Session {
@@ -17,6 +17,8 @@ declare module "next-auth" {
       role: UserRole;
       employeeId: string;
       area: string;
+      tenantId: string;
+      tenantSlug: string;
       image?: string | null;
     };
   }
@@ -27,6 +29,8 @@ declare module "next-auth/jwt" {
     role: UserRole;
     employeeId: string;
     area: string;
+    tenantId: string;
+    tenantSlug: string;
   }
 }
 
@@ -84,6 +88,10 @@ export const authOptions: NextAuthOptions = {
           }
 
           if (employee) {
+            // Extract tenant slug from TenantID (e.g., "TENANT#novasys" → "novasys")
+            const tenantId = employee.TenantID || "TENANT#novasys";
+            const tenantSlug = tenantId.replace("TENANT#", "");
+
             return {
               id: employee.EmployeeID,
               email: cognitoResult.email,
@@ -91,10 +99,12 @@ export const authOptions: NextAuthOptions = {
               role: (employee.Role as UserRole) || "EMPLOYEE",
               area: employee.Area || "",
               employeeId: employee.EmployeeID,
+              tenantId,
+              tenantSlug,
             };
           }
 
-          // Employee not found in DynamoDB — allow login with default role
+          // Employee not found in DynamoDB — allow login with default tenant
           return {
             id: `EMP#${cognitoResult.email}`,
             email: cognitoResult.email,
@@ -102,6 +112,8 @@ export const authOptions: NextAuthOptions = {
             role: "EMPLOYEE" as UserRole,
             area: "",
             employeeId: `EMP#${cognitoResult.email}`,
+            tenantId: "TENANT#novasys",
+            tenantSlug: "novasys",
           };
         } catch (error) {
           if (isCognitoError(error, "UserNotConfirmedException")) {
@@ -131,12 +143,16 @@ export const authOptions: NextAuthOptions = {
           role?: string;
           area?: string;
           employeeId?: string;
+          tenantId?: string;
+          tenantSlug?: string;
         };
         token.employeeId = u.employeeId || u.id;
         token.role = (u.role as UserRole) || "EMPLOYEE";
         token.area = u.area || "";
         token.name = u.name || "";
         token.email = u.email || "";
+        token.tenantId = u.tenantId || "TENANT#novasys";
+        token.tenantSlug = u.tenantSlug || "novasys";
       }
       return token;
     },
@@ -147,6 +163,8 @@ export const authOptions: NextAuthOptions = {
         session.user.employeeId = token.employeeId;
         session.user.area = token.area;
         session.user.id = token.employeeId;
+        session.user.tenantId = token.tenantId;
+        session.user.tenantSlug = token.tenantSlug;
       }
       return session;
     },

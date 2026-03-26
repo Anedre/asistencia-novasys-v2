@@ -7,7 +7,7 @@ import { NotFoundError } from "@/lib/utils/errors";
 import { updateEmployeeRoleSchema } from "@/lib/utils/validation";
 
 export const GET = withErrorHandler(async (req: Request, context: unknown) => {
-  await requireAdmin();
+  const user = await requireAdmin();
   const { id } = await (context as { params: Promise<{ id: string }> }).params;
 
   const employee = await getEmployeeById(id);
@@ -62,7 +62,7 @@ export const GET = withErrorHandler(async (req: Request, context: unknown) => {
 
 /** PATCH: Update employee role or profile fields (admin only) */
 export const PATCH = withErrorHandler(async (req: Request, context: unknown) => {
-  await requireAdmin();
+  const _user = await requireAdmin();
   const { id } = await (context as { params: Promise<{ id: string }> }).params;
   const body = await req.json();
 

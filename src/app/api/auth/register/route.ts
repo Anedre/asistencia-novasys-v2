@@ -54,6 +54,7 @@ export async function POST(request: Request) {
     const now = new Date().toISOString();
 
     const employee: Employee = {
+      TenantID: "TENANT#novasys",
       EmployeeID: `EMP#${email.toLowerCase()}`,
       Email: email.toLowerCase(),
       DNI: `PENDING-${Date.now()}`,

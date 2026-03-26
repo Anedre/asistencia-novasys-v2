@@ -26,6 +26,7 @@ export const POST = withErrorHandler(async (req: Request) => {
     deviceId: parsed.deviceId,
     ip,
     userAgent: ua,
+    tenantId: user.tenantId,
   });
 
   return NextResponse.json({ ok: true, ...result });

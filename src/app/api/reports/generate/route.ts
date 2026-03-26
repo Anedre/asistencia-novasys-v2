@@ -21,6 +21,7 @@ export const POST = withErrorHandler(async (req: Request) => {
     employeeId: parsed.employeeId,
     week: parsed.week,
     month: parsed.month,
+    tenantId: user.tenantId,
   });
 
   return NextResponse.json({ ok: true, ...result });

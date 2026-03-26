@@ -15,9 +15,9 @@ export const POST = withErrorHandler(async (
 
   let result;
   if (parsed.action === "APPROVE") {
-    result = await approveRequest(id, user.employeeId, user.name, parsed.reviewerNote);
+    result = await approveRequest(id, user.employeeId, user.name, parsed.reviewerNote, user.tenantId);
   } else {
-    result = await rejectRequest(id, user.employeeId, user.name, parsed.reviewerNote);
+    result = await rejectRequest(id, user.employeeId, user.name, parsed.reviewerNote, user.tenantId);
   }
 
   return NextResponse.json(result);

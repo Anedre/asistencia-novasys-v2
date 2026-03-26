@@ -5,11 +5,11 @@ import { workDateLima } from "@/lib/utils/time";
 import { withErrorHandler, ValidationError } from "@/lib/utils/errors";
 
 export const GET = withErrorHandler(async (req: Request) => {
-  await requireAdmin();
+  const user = await requireAdmin();
   const { searchParams } = new URL(req.url);
   const date = searchParams.get("date") || workDateLima();
 
-  const summaries = await getDailySummariesByDate(date);
+  const summaries = await getDailySummariesByDate(date, user.tenantId);
 
   const list = summaries.map((s) => ({
     employeeId: s.EmployeeID,

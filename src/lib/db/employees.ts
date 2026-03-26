@@ -39,10 +39,31 @@ export async function getEmployeeByCognitoSub(sub: string): Promise<Employee | n
   return (result.Items?.[0] as Employee) ?? null;
 }
 
-export async function getAllActiveEmployees(): Promise<Employee[]> {
+export async function getAllActiveEmployees(tenantId?: string): Promise<Employee[]> {
+  // If tenantId provided, use Tenant-index GSI (efficient query)
+  if (tenantId) {
+    const items: Employee[] = [];
+    let lastKey: Record<string, unknown> | undefined;
+    do {
+      const result = await docClient.send(
+        new QueryCommand({
+          TableName: TABLES.EMPLOYEES,
+          IndexName: INDEXES.EMPLOYEES_BY_TENANT,
+          KeyConditionExpression: "TenantID = :tid",
+          FilterExpression: "EmploymentStatus = :active",
+          ExpressionAttributeValues: { ":tid": tenantId, ":active": "ACTIVE" },
+          ...(lastKey && { ExclusiveStartKey: lastKey }),
+        })
+      );
+      items.push(...((result.Items as Employee[]) ?? []));
+      lastKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
+    } while (lastKey);
+    return items;
+  }
+
+  // Fallback: scan (backwards compat during migration)
   const items: Employee[] = [];
   let lastKey: Record<string, unknown> | undefined;
-
   do {
     const result = await docClient.send(
       new ScanCommand({
@@ -55,7 +76,6 @@ export async function getAllActiveEmployees(): Promise<Employee[]> {
     items.push(...((result.Items as Employee[]) ?? []));
     lastKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
   } while (lastKey);
-
   return items;
 }
 
@@ -183,10 +203,30 @@ export async function deactivateEmployee(employeeId: string): Promise<void> {
   );
 }
 
-export async function getAllEmployees(): Promise<Employee[]> {
+export async function getAllEmployees(tenantId?: string): Promise<Employee[]> {
+  // If tenantId provided, use Tenant-index GSI
+  if (tenantId) {
+    const items: Employee[] = [];
+    let lastKey: Record<string, unknown> | undefined;
+    do {
+      const result = await docClient.send(
+        new QueryCommand({
+          TableName: TABLES.EMPLOYEES,
+          IndexName: INDEXES.EMPLOYEES_BY_TENANT,
+          KeyConditionExpression: "TenantID = :tid",
+          ExpressionAttributeValues: { ":tid": tenantId },
+          ...(lastKey && { ExclusiveStartKey: lastKey }),
+        })
+      );
+      items.push(...((result.Items as Employee[]) ?? []));
+      lastKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
+    } while (lastKey);
+    return items;
+  }
+
+  // Fallback: scan (backwards compat during migration)
   const items: Employee[] = [];
   let lastKey: Record<string, unknown> | undefined;
-
   do {
     const result = await docClient.send(
       new ScanCommand({
@@ -197,6 +237,5 @@ export async function getAllEmployees(): Promise<Employee[]> {
     items.push(...((result.Items as Employee[]) ?? []));
     lastKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
   } while (lastKey);
-
   return items;
 }

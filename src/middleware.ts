@@ -43,32 +43,40 @@ export async function middleware(request: NextRequest) {
 
   const role = (token.role as string) || "EMPLOYEE";
 
-  // Admin routes — require ADMIN role
+  // Admin routes — require ADMIN or SUPER_ADMIN role
   if (pathname.startsWith("/admin")) {
-    if (role !== "ADMIN") {
+    if (role !== "ADMIN" && role !== "SUPER_ADMIN") {
+      return NextResponse.redirect(new URL("/dashboard", request.url));
+    }
+  }
+
+  // Super-admin routes
+  if (pathname.startsWith("/super-admin")) {
+    if (role !== "SUPER_ADMIN") {
       return NextResponse.redirect(new URL("/dashboard", request.url));
     }
   }
 
   // Root path — redirect by role
   if (pathname === "/") {
-    if (role === "ADMIN") {
+    if (role === "ADMIN" || role === "SUPER_ADMIN") {
       return NextResponse.redirect(new URL("/admin/dashboard", request.url));
     }
     return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 
-  return NextResponse.next();
+  // Inject tenant info as headers for server components (optional optimization)
+  const response = NextResponse.next();
+  if (token.tenantId) {
+    response.headers.set("x-tenant-id", token.tenantId as string);
+    response.headers.set("x-tenant-slug", (token.tenantSlug as string) || "novasys");
+  }
+
+  return response;
 }
 
 export const config = {
   matcher: [
-    /*
-     * Match all paths except:
-     * - _next/static (static files)
-     * - _next/image (image optimization)
-     * - favicon.ico
-     */
     "/((?!_next/static|_next/image|favicon.ico).*)",
   ],
 };
