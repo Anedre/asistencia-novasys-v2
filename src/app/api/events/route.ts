@@ -24,7 +24,7 @@ export const POST = withErrorHandler(async (req: Request) => {
   const user = await requireSession();
   const body = await req.json();
 
-  const { title, description, type, visibility, targetArea, startDate, endDate, location } = body;
+  const { title, description, type, visibility, targetArea, startDate, endDate, location, locationLat, locationLng } = body;
 
   if (!title || !type || !visibility || !startDate) {
     return NextResponse.json({ error: "Titulo, tipo, visibilidad y fecha son requeridos" }, { status: 400 });
@@ -42,6 +42,8 @@ export const POST = withErrorHandler(async (req: Request) => {
     StartDate: startDate,
     EndDate: endDate || undefined,
     Location: location || undefined,
+    LocationLat: locationLat != null ? Number(locationLat) : undefined,
+    LocationLng: locationLng != null ? Number(locationLng) : undefined,
     CreatorID: user.employeeId,
     CreatorName: user.name,
     RSVPs: {},

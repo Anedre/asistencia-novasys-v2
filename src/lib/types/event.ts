@@ -13,6 +13,8 @@ export interface AppEvent {
   StartDate: string; // ISO date
   EndDate?: string;
   Location?: string;
+  LocationLat?: number;
+  LocationLng?: number;
   CreatorID: string;
   CreatorName: string;
   RSVPs?: Record<string, RSVPStatus>;

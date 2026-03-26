@@ -14,10 +14,18 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import dynamic from "next/dynamic";
 import { Camera, Loader2, MapPin } from "lucide-react";
-import { LocationPicker } from "@/components/shared/location-picker";
-import { LocationDisplay } from "@/components/shared/location-display";
 import type { EmployeeLocation } from "@/lib/types/employee";
+
+const LocationPicker = dynamic(
+  () => import("@/components/shared/location-picker").then((m) => ({ default: m.LocationPicker })),
+  { ssr: false }
+);
+const LocationDisplay = dynamic(
+  () => import("@/components/shared/location-display").then((m) => ({ default: m.LocationDisplay })),
+  { ssr: false }
+);
 
 function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (

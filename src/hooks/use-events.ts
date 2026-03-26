@@ -34,6 +34,7 @@ export function useCreateEvent() {
       title: string; description?: string; type: string;
       visibility: string; targetArea?: string;
       startDate: string; endDate?: string; location?: string;
+      locationLat?: number; locationLng?: number;
     }) => {
       const res = await fetch("/api/events", {
         method: "POST",

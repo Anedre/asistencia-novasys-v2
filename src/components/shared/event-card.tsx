@@ -1,12 +1,17 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Calendar, MapPin, Users, Check, HelpCircle, X } from "lucide-react";
 import type { AppEvent, RSVPStatus } from "@/lib/types/event";
 import { useRSVP } from "@/hooks/use-events";
 import { useSession } from "next-auth/react";
+
+const LocationDisplay = dynamic(
+  () => import("@/components/shared/location-display").then((m) => ({ default: m.LocationDisplay })),
+  { ssr: false }
+);
 
 const typeLabels: Record<string, string> = {
   meeting: "Reunion", social: "Social", announcement: "Anuncio", custom: "Otro",
@@ -38,6 +43,12 @@ export function EventCard({ event }: EventCardProps) {
   const startDate = new Date(event.StartDate);
   const isUpcoming = startDate > new Date();
 
+  const hasMapLocation =
+    event.LocationLat != null &&
+    event.LocationLng != null &&
+    !isNaN(event.LocationLat) &&
+    !isNaN(event.LocationLng);
+
   return (
     <Card>
       <CardHeader className="pb-3">
@@ -61,11 +72,23 @@ export function EventCard({ event }: EventCardProps) {
           <p className="text-sm text-muted-foreground">{event.Description}</p>
         )}
 
-        {event.Location && (
+        {event.Location && !hasMapLocation && (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <MapPin className="h-3.5 w-3.5" />
             {event.Location}
           </div>
+        )}
+
+        {hasMapLocation && (
+          <LocationDisplay
+            location={{
+              lat: event.LocationLat!,
+              lng: event.LocationLng!,
+              address: event.Location || "",
+              formattedAddress: event.Location || "",
+            }}
+            height={150}
+          />
         )}
 
         <div className="flex items-center gap-2 text-sm text-muted-foreground">

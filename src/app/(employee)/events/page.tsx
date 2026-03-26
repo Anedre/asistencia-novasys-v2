@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import dynamic from "next/dynamic";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,11 +14,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { CalendarDays, Plus, Loader2 } from "lucide-react";
+import { CalendarDays, Plus, Loader2, MapPin } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useEvents, useCreateEvent } from "@/hooks/use-events";
 import { EventCard } from "@/components/shared/event-card";
 import { EmptyState } from "@/components/shared/empty-state";
+import type { EmployeeLocation } from "@/lib/types/employee";
+
+const LocationPicker = dynamic(
+  () => import("@/components/shared/location-picker").then((m) => ({ default: m.LocationPicker })),
+  { ssr: false }
+);
 
 export default function EventsPage() {
   const { data, isLoading } = useEvents();
@@ -31,6 +38,8 @@ export default function EventsPage() {
   const [visibility, setVisibility] = useState("company");
   const [startDate, setStartDate] = useState("");
   const [location, setLocation] = useState("");
+  const [showMapPicker, setShowMapPicker] = useState(false);
+  const [mapLocation, setMapLocation] = useState<EmployeeLocation | null>(null);
 
   const events = data?.events ?? [];
   const now = new Date().toISOString();
@@ -41,15 +50,21 @@ export default function EventsPage() {
     e.preventDefault();
     if (!title || !startDate) return;
 
+    // Use map location address if available, otherwise text location
+    const locationText = mapLocation?.formattedAddress || location || undefined;
+
     await createEvent.mutateAsync({
       title, description: description || undefined,
       type, visibility,
       startDate: new Date(startDate).toISOString(),
-      location: location || undefined,
+      location: locationText,
+      locationLat: mapLocation?.lat,
+      locationLng: mapLocation?.lng,
     });
 
     // Reset
     setTitle(""); setDescription(""); setStartDate(""); setLocation("");
+    setMapLocation(null); setShowMapPicker(false);
     setShowForm(false);
   };
 
@@ -116,6 +131,30 @@ export default function EventsPage() {
                   <Input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Sala de reuniones" />
                 </div>
               </div>
+
+              <div className="space-y-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowMapPicker(!showMapPicker)}
+                >
+                  <MapPin className="mr-2 h-4 w-4" />
+                  {showMapPicker ? "Ocultar mapa" : "Seleccionar ubicacion en mapa"}
+                </Button>
+                {showMapPicker && (
+                  <LocationPicker
+                    value={mapLocation}
+                    onChange={(loc) => setMapLocation(loc)}
+                  />
+                )}
+                {mapLocation && (
+                  <p className="text-xs text-muted-foreground">
+                    Coordenadas: {mapLocation.lat.toFixed(6)}, {mapLocation.lng.toFixed(6)}
+                  </p>
+                )}
+              </div>
+
               <div className="flex gap-2">
                 <Button type="submit" disabled={createEvent.isPending}>
                   {createEvent.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
