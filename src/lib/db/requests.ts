@@ -53,14 +53,13 @@ export async function getRequestsByStatus(
   limit = 100,
   tenantId?: string
 ): Promise<ApprovalRequest[]> {
-  // If tenantId provided, use Tenant-Status-index for tenant isolation
+  // If tenantId provided, use Tenant-Status-index (PK=TenantID, SK=status)
   if (tenantId) {
     const result = await docClient.send(
       new QueryCommand({
         TableName: TABLES.APPROVAL_REQUESTS,
         IndexName: INDEXES.REQUESTS_BY_TENANT,
-        KeyConditionExpression: "TenantID = :tid",
-        FilterExpression: "#s = :status",
+        KeyConditionExpression: "TenantID = :tid AND #s = :status",
         ExpressionAttributeNames: { "#s": "status" },
         ExpressionAttributeValues: { ":tid": tenantId, ":status": status },
         ScanIndexForward: false,

@@ -4,6 +4,9 @@ import { GoogleMap, useJsApiLoader, Marker } from "@react-google-maps/api";
 import { MapPin } from "lucide-react";
 import type { EmployeeLocation } from "@/lib/types/employee";
 
+// Must match the libraries used in LocationPicker to avoid loader conflict
+const libraries: ("places")[] = ["places"];
+
 interface LocationDisplayProps {
   location: EmployeeLocation;
   className?: string;
@@ -19,6 +22,7 @@ export function LocationDisplay({
 
   const { isLoaded } = useJsApiLoader({
     googleMapsApiKey: apiKey,
+    libraries,
   });
 
   const center = { lat: location.lat, lng: location.lng };
