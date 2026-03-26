@@ -194,6 +194,7 @@ export function LocationPicker({
             streetViewControl: false,
             mapTypeControl: false,
             fullscreenControl: false,
+            mapId: process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID,
           }}
         >
           <Marker

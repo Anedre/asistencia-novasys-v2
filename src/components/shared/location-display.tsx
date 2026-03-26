@@ -76,6 +76,7 @@ export function LocationDisplay({
             draggable: false,
             clickableIcons: false,
             gestureHandling: "none",
+            mapId: process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID,
           }}
         >
           <Marker position={center} />

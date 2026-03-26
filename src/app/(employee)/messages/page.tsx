@@ -40,6 +40,16 @@ interface EmployeeOption {
   FullName: string;
 }
 
+// Map API response (camelCase) to EmployeeOption (PascalCase)
+function normalizeEmployee(raw: Record<string, unknown>): EmployeeOption {
+  return {
+    EmployeeID:
+      (raw.EmployeeID as string) ?? (raw.employeeId as string) ?? "",
+    FullName:
+      (raw.FullName as string) ?? (raw.fullName as string) ?? "Sin nombre",
+  };
+}
+
 export default function MessagesPage() {
   const { data: session } = useSession();
   const searchParams = useSearchParams();
@@ -94,8 +104,8 @@ export default function MessagesPage() {
       const res = await fetch("/api/admin/employees");
       if (res.ok) {
         const data = await res.json();
-        const list = (data.employees ?? data ?? []) as EmployeeOption[];
-        setEmployeeList(list);
+        const raw = (data.employees ?? data ?? []) as Record<string, unknown>[];
+        setEmployeeList(raw.map(normalizeEmployee));
       }
     } catch {
       // Silently fail
@@ -197,7 +207,7 @@ export default function MessagesPage() {
     (emp) =>
       emp.EmployeeID !== currentUserId &&
       !selectedMembers.some((m) => m.EmployeeID === emp.EmployeeID) &&
-      emp.FullName.toLowerCase().includes(employeeSearch.toLowerCase())
+      (emp.FullName ?? "").toLowerCase().includes(employeeSearch.toLowerCase())
   );
 
   // ---- Channel list panel ----
