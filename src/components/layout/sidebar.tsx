@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { useTenant } from "@/lib/contexts/tenant-context";
 import {
   Clock,
   CalendarDays,
@@ -29,6 +30,7 @@ const employeeNav: NavItem[] = [
   { title: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { title: "Historial", href: "/history", icon: CalendarDays },
   { title: "Solicitudes", href: "/requests", icon: Send },
+  { title: "Eventos", href: "/events", icon: CalendarDays },
   { title: "Reportes", href: "/reports", icon: FileText },
   { title: "RRHH", href: "/hr", icon: Heart },
   { title: "Mi Perfil", href: "/profile", icon: User },
@@ -42,7 +44,7 @@ const adminNav: NavItem[] = [
   { title: "Regularizar", href: "/admin/regularize", icon: PenLine },
   { title: "Reportes", href: "/admin/reports", icon: BarChart3 },
   { title: "RRHH", href: "/admin/hr", icon: Heart },
-  { title: "Configuración", href: "/admin/settings", icon: Settings },
+  { title: "Configuracion", href: "/admin/settings", icon: Settings },
 ];
 
 interface SidebarProps {
@@ -53,9 +55,14 @@ interface SidebarProps {
 
 export function Sidebar({ role, isAdmin, className }: SidebarProps) {
   const pathname = usePathname();
+  const { tenantName, logoUrl } = useTenant();
   const items = role === "ADMIN" ? adminNav : employeeNav;
   const showSwitch = isAdmin === true;
   const isAdminView = role === "ADMIN";
+
+  // Get first letter of tenant name for fallback logo
+  const logoLetter = (tenantName || "N").charAt(0).toUpperCase();
+  const displayName = tenantName || "Novasys";
 
   return (
     <aside
@@ -66,10 +73,18 @@ export function Sidebar({ role, isAdmin, className }: SidebarProps) {
     >
       {/* Logo */}
       <div className="flex h-16 items-center gap-2 border-b px-6">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground font-bold text-sm">
-          N
-        </div>
-        <span className="text-lg font-semibold">Novasys</span>
+        {logoUrl ? (
+          <img
+            src={logoUrl}
+            alt={displayName}
+            className="h-8 w-8 rounded-lg object-contain"
+          />
+        ) : (
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground font-bold text-sm">
+            {logoLetter}
+          </div>
+        )}
+        <span className="text-lg font-semibold truncate">{displayName}</span>
       </div>
 
       {/* View Switch for Admins */}
@@ -115,7 +130,7 @@ export function Sidebar({ role, isAdmin, className }: SidebarProps) {
       {/* Footer */}
       <div className="border-t p-4">
         <p className="text-xs text-muted-foreground text-center">
-          Novasys Asistencia v2
+          {displayName} Asistencia v2
         </p>
       </div>
     </aside>

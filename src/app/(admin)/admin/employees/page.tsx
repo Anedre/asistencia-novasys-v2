@@ -45,6 +45,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/shared/empty-state";
+import { InviteEmployeeDialog } from "@/components/admin/invite-employee-dialog";
 
 function roleBadge(role: string) {
   return (
@@ -238,13 +239,16 @@ export default function EmployeesPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">
-          Directorio de Empleados
-        </h1>
-        <p className="text-muted-foreground">
-          Gestiona los empleados registrados
-        </p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">
+            Directorio de Empleados
+          </h1>
+          <p className="text-muted-foreground">
+            Gestiona los empleados registrados
+          </p>
+        </div>
+        <InviteEmployeeDialog />
       </div>
 
       {feedback && (

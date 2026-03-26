@@ -86,6 +86,12 @@ export const updateProfileSchema = z.object({
   WorkMode: z.enum(["REMOTE", "ONSITE", "HYBRID"]).optional(),
   BirthDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   ScheduleType: z.enum(["FULL_TIME", "PART_TIME"]).optional(),
+  Location: z.object({
+    lat: z.number().min(-90).max(90),
+    lng: z.number().min(-180).max(180),
+    address: z.string().max(500),
+    formattedAddress: z.string().max(500),
+  }).optional(),
 });
 
 // ── Admin Employee Management ──

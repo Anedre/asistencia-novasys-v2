@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -22,9 +22,18 @@ import {
   Mail,
   ArrowLeft,
   LogIn,
+  Building2,
 } from "lucide-react";
 
 type Step = "register" | "confirm" | "success";
+
+interface InviteData {
+  email: string;
+  fullName: string;
+  tenantName: string;
+  tenantSlug: string;
+  tenantLogoUrl: string | null;
+}
 
 function RegisterContent() {
   const router = useRouter();
@@ -32,10 +41,13 @@ function RegisterContent() {
 
   const initialStep = (searchParams.get("step") as Step) || "register";
   const initialEmail = searchParams.get("email") || "";
+  const inviteToken = searchParams.get("invite") || null;
 
   const [step, setStep] = useState<Step>(initialStep);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [inviteData, setInviteData] = useState<InviteData | null>(null);
+  const [inviteLoading, setInviteLoading] = useState(!!inviteToken);
 
   // Register form
   const [fullName, setFullName] = useState("");
@@ -51,17 +63,53 @@ function RegisterContent() {
   const [code, setCode] = useState("");
   const [resendCooldown, setResendCooldown] = useState(0);
 
+  // Validate invite token on mount
+  useEffect(() => {
+    if (!inviteToken) return;
+
+    async function validateInvite() {
+      try {
+        const res = await fetch(`/api/auth/validate-invite?token=${inviteToken}`);
+        const data = await res.json();
+
+        if (!res.ok) {
+          setError(data.error || "Invitacion invalida");
+          setInviteLoading(false);
+          return;
+        }
+
+        setInviteData({
+          email: data.invitation.email,
+          fullName: data.invitation.fullName,
+          tenantName: data.tenant.name,
+          tenantSlug: data.tenant.slug,
+          tenantLogoUrl: data.tenant.logoUrl,
+        });
+        setEmail(data.invitation.email);
+        if (data.invitation.fullName) {
+          setFullName(data.invitation.fullName);
+        }
+      } catch {
+        setError("Error al validar la invitacion");
+      } finally {
+        setInviteLoading(false);
+      }
+    }
+
+    validateInvite();
+  }, [inviteToken]);
+
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
     if (password !== confirmPassword) {
-      setError("Las contraseñas no coinciden");
+      setError("Las contrasenas no coinciden");
       return;
     }
 
     if (password.length < 8) {
-      setError("La contraseña debe tener al menos 8 caracteres");
+      setError("La contrasena debe tener al menos 8 caracteres");
       return;
     }
 
@@ -75,7 +123,8 @@ function RegisterContent() {
           password,
           fullName: fullName.trim(),
           phoneNumber: phoneNumber.trim(),
-          nickname: nickname.trim(),
+          nickname: nickname.trim() || email.split("@")[0],
+          ...(inviteToken ? { inviteToken } : {}),
         }),
       });
 
@@ -89,7 +138,7 @@ function RegisterContent() {
       setCognitoUsername(data.username);
       setStep("confirm");
     } catch {
-      setError("Error de conexión. Intenta nuevamente.");
+      setError("Error de conexion. Intenta nuevamente.");
     } finally {
       setIsLoading(false);
     }
@@ -100,7 +149,7 @@ function RegisterContent() {
     setError(null);
 
     if (code.length !== 6) {
-      setError("El código debe tener 6 dígitos");
+      setError("El codigo debe tener 6 digitos");
       return;
     }
 
@@ -124,7 +173,7 @@ function RegisterContent() {
 
       setStep("success");
     } catch {
-      setError("Error de conexión. Intenta nuevamente.");
+      setError("Error de conexion. Intenta nuevamente.");
     } finally {
       setIsLoading(false);
     }
@@ -154,19 +203,31 @@ function RegisterContent() {
         }, 1000);
       } else {
         const data = await res.json();
-        setError(data.error || "Error al reenviar el código");
+        setError(data.error || "Error al reenviar el codigo");
       }
     } catch {
-      setError("Error de conexión");
+      setError("Error de conexion");
     }
   };
+
+  if (inviteLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-br from-background to-muted p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center space-y-4">
           <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-primary text-primary-foreground text-2xl font-bold">
-            N
+            {inviteData?.tenantLogoUrl ? (
+              <img src={inviteData.tenantLogoUrl} alt="" className="h-10 w-10 rounded-lg object-contain" />
+            ) : (
+              "N"
+            )}
           </div>
           <div>
             <CardTitle className="text-2xl">
@@ -175,11 +236,17 @@ function RegisterContent() {
               {step === "success" && "Cuenta Creada"}
             </CardTitle>
             <CardDescription className="mt-2">
-              {step === "register" &&
+              {step === "register" && inviteData && (
+                <span className="flex items-center justify-center gap-1.5">
+                  <Building2 className="h-4 w-4" />
+                  Uniendote a <span className="font-medium text-foreground">{inviteData.tenantName}</span>
+                </span>
+              )}
+              {step === "register" && !inviteData &&
                 "Completa el formulario para registrarte"}
               {step === "confirm" && (
                 <>
-                  Ingresa el código de 6 dígitos enviado a{" "}
+                  Ingresa el codigo de 6 digitos enviado a{" "}
                   <span className="font-medium text-foreground">{email}</span>
                 </>
               )}
@@ -203,7 +270,7 @@ function RegisterContent() {
                 <Input
                   id="fullName"
                   type="text"
-                  placeholder="Juan Pérez"
+                  placeholder="Juan Perez"
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
                   required
@@ -213,23 +280,25 @@ function RegisterContent() {
                 />
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="nickname">Nickname</Label>
-                <Input
-                  id="nickname"
-                  type="text"
-                  placeholder="juanp"
-                  value={nickname}
-                  onChange={(e) => setNickname(e.target.value)}
-                  required
-                  disabled={isLoading}
-                  autoComplete="username"
-                  className="h-10"
-                />
-              </div>
+              {!inviteData && (
+                <div className="space-y-2">
+                  <Label htmlFor="nickname">Nickname</Label>
+                  <Input
+                    id="nickname"
+                    type="text"
+                    placeholder="juanp"
+                    value={nickname}
+                    onChange={(e) => setNickname(e.target.value)}
+                    required
+                    disabled={isLoading}
+                    autoComplete="username"
+                    className="h-10"
+                  />
+                </div>
+              )}
 
               <div className="space-y-2">
-                <Label htmlFor="reg-email">Correo electrónico</Label>
+                <Label htmlFor="reg-email">Correo electronico</Label>
                 <Input
                   id="reg-email"
                   type="email"
@@ -237,14 +306,20 @@ function RegisterContent() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
-                  disabled={isLoading}
+                  disabled={isLoading || !!inviteData}
+                  readOnly={!!inviteData}
                   autoComplete="email"
-                  className="h-10"
+                  className={`h-10 ${inviteData ? "bg-muted" : ""}`}
                 />
+                {inviteData && (
+                  <p className="text-xs text-muted-foreground">
+                    El correo esta vinculado a tu invitacion
+                  </p>
+                )}
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="phoneNumber">Teléfono</Label>
+                <Label htmlFor="phoneNumber">Telefono</Label>
                 <Input
                   id="phoneNumber"
                   type="tel"
@@ -257,17 +332,17 @@ function RegisterContent() {
                   className="h-10"
                 />
                 <p className="text-xs text-muted-foreground">
-                  Formato internacional: +51 seguido del número
+                  Formato internacional: +51 seguido del numero
                 </p>
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="reg-password">Contraseña</Label>
+                <Label htmlFor="reg-password">Contrasena</Label>
                 <div className="relative">
                   <Input
                     id="reg-password"
                     type={showPassword ? "text" : "password"}
-                    placeholder="Mín. 8 chars, mayúscula, número, símbolo"
+                    placeholder="Min. 8 chars, mayuscula, numero, simbolo"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required
@@ -291,11 +366,11 @@ function RegisterContent() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="confirmPassword">Confirmar contraseña</Label>
+                <Label htmlFor="confirmPassword">Confirmar contrasena</Label>
                 <Input
                   id="confirmPassword"
                   type={showPassword ? "text" : "password"}
-                  placeholder="Repite tu contraseña"
+                  placeholder="Repite tu contrasena"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   required
@@ -337,7 +412,7 @@ function RegisterContent() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="code">Código de verificación</Label>
+                <Label htmlFor="code">Codigo de verificacion</Label>
                 <Input
                   id="code"
                   type="text"
@@ -376,8 +451,8 @@ function RegisterContent() {
                   className="text-sm text-primary hover:underline disabled:text-muted-foreground disabled:no-underline"
                 >
                   {resendCooldown > 0
-                    ? `Reenviar código en ${resendCooldown}s`
-                    : "Reenviar código"}
+                    ? `Reenviar codigo en ${resendCooldown}s`
+                    : "Reenviar codigo"}
                 </button>
               </div>
             </form>
@@ -415,7 +490,7 @@ function RegisterContent() {
                 className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
               >
                 <ArrowLeft className="h-3.5 w-3.5" />
-                Volver a iniciar sesión
+                Volver a iniciar sesion
               </Link>
             </div>
           )}

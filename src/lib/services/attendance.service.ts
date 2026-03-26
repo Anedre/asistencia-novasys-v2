@@ -273,26 +273,82 @@ export async function getWeekSummary(
   };
 }
 
-/** Get attendance history for a date range */
+/** Get attendance history for a date range (fills weekday gaps with MISSING) */
 export async function getAttendanceHistory(
   employeeId: string,
   dateFrom: string,
   dateTo: string
 ) {
   const items = await getDailySummaryRange(employeeId, dateFrom, dateTo);
-  return items.map((item) => ({
-    date: item.WorkDate.replace("DATE#", ""),
-    firstInLocal: extractTime(item.firstInLocal),
-    lastOutLocal: extractTime(item.lastOutLocal),
-    breakMinutes: Number(item.breakMinutes ?? 0),
-    workedMinutes: Number(item.workedMinutes ?? 0),
-    workedHHMM: fmtMin(Number(item.workedMinutes ?? 0)),
-    status: item.status,
-    reasonCode: item.regularizationReasonCode ?? "",
-    reasonLabel: item.regularizationReasonLabel ?? "",
-    reasonNote: item.regularizationNote ?? "",
-    anomalies: item.anomalies ?? [],
-  }));
+
+  // Index existing summaries by date
+  const byDate = new Map<string, (typeof items)[0]>();
+  for (const item of items) {
+    byDate.set(item.WorkDate.replace("DATE#", ""), item);
+  }
+
+  // Generate all weekdays in range (up to today)
+  const today = workDateLima();
+  const start = new Date(dateFrom + "T12:00:00");
+  const end = new Date(dateTo + "T12:00:00");
+  const result: Array<{
+    date: string;
+    firstInLocal: string | null;
+    lastOutLocal: string | null;
+    breakMinutes: number;
+    workedMinutes: number;
+    workedHHMM: string;
+    status: string;
+    reasonCode: string;
+    reasonLabel: string;
+    reasonNote: string;
+    anomalies: string[];
+  }> = [];
+
+  const current = new Date(start);
+  while (current <= end) {
+    const ds = formatDate(current);
+    const dayOfWeek = current.getDay();
+    const isWeekday = dayOfWeek >= 1 && dayOfWeek <= 5;
+
+    // Only include weekdays, and don't go past today
+    if (isWeekday && ds <= today) {
+      const item = byDate.get(ds);
+      if (item) {
+        result.push({
+          date: ds,
+          firstInLocal: extractTime(item.firstInLocal),
+          lastOutLocal: extractTime(item.lastOutLocal),
+          breakMinutes: Number(item.breakMinutes ?? 0),
+          workedMinutes: Number(item.workedMinutes ?? 0),
+          workedHHMM: fmtMin(Number(item.workedMinutes ?? 0)),
+          status: item.status,
+          reasonCode: item.regularizationReasonCode ?? "",
+          reasonLabel: item.regularizationReasonLabel ?? "",
+          reasonNote: item.regularizationNote ?? "",
+          anomalies: item.anomalies ?? [],
+        });
+      } else {
+        result.push({
+          date: ds,
+          firstInLocal: null,
+          lastOutLocal: null,
+          breakMinutes: 0,
+          workedMinutes: 0,
+          workedHHMM: "00:00",
+          status: "MISSING",
+          reasonCode: "",
+          reasonLabel: "",
+          reasonNote: "",
+          anomalies: [],
+        });
+      }
+    }
+
+    current.setDate(current.getDate() + 1);
+  }
+
+  return result;
 }
 
 // ── Helpers ──

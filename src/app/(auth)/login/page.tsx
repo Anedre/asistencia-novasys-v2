@@ -158,14 +158,25 @@ function LoginContent() {
             </Button>
           </form>
 
-          <div className="mt-6 text-center text-sm text-muted-foreground">
-            ¿No tienes cuenta?{" "}
-            <Link
-              href="/register"
-              className="font-medium text-primary hover:underline"
-            >
-              Regístrate aquí
-            </Link>
+          <div className="mt-6 space-y-2 text-center text-sm text-muted-foreground">
+            <div>
+              ¿No tienes cuenta?{" "}
+              <Link
+                href="/register"
+                className="font-medium text-primary hover:underline"
+              >
+                Registrate aqui
+              </Link>
+            </div>
+            <div>
+              ¿Tienes una empresa?{" "}
+              <Link
+                href="/register-company"
+                className="font-medium text-primary hover:underline"
+              >
+                Registra tu empresa
+              </Link>
+            </div>
           </div>
         </CardContent>
       </Card>

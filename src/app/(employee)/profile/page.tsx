@@ -14,7 +14,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Camera, Loader2 } from "lucide-react";
+import { Camera, Loader2, MapPin } from "lucide-react";
+import { LocationPicker } from "@/components/shared/location-picker";
+import { LocationDisplay } from "@/components/shared/location-display";
+import type { EmployeeLocation } from "@/lib/types/employee";
 
 function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -47,6 +50,8 @@ export default function ProfilePage() {
   const [position, setPosition] = useState("");
   const [workMode, setWorkMode] = useState("");
   const [birthDate, setBirthDate] = useState("");
+  const [location, setLocation] = useState<EmployeeLocation | null>(null);
+  const [locationDirty, setLocationDirty] = useState(false);
   const [feedback, setFeedback] = useState<{
     type: "success" | "error";
     message: string;
@@ -93,6 +98,8 @@ export default function ProfilePage() {
       setPosition(employee.position ?? "");
       setWorkMode(employee.workMode ?? "ONSITE");
       setBirthDate(employee.birthDate ?? "");
+      setLocation(employee.location ?? null);
+      setLocationDirty(false);
     }
   }, [employee]);
 
@@ -155,6 +162,7 @@ export default function ProfilePage() {
       {isLoading ? (
         <ProfileSkeleton />
       ) : employee ? (
+        <>
         <div className="grid gap-6 md:grid-cols-2">
           {/* Info Card */}
           <Card>
@@ -337,6 +345,69 @@ export default function ProfilePage() {
             </CardContent>
           </Card>
         </div>
+
+        {/* Location Section */}
+        <Card className="mt-6">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <MapPin className="h-5 w-5" />
+              Ubicacion
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {employee.location && !locationDirty ? (
+              <>
+                <LocationDisplay location={employee.location} />
+                <Button
+                  variant="outline"
+                  onClick={() => setLocationDirty(true)}
+                >
+                  Cambiar ubicacion
+                </Button>
+              </>
+            ) : (
+              <>
+                <p className="text-sm text-muted-foreground">
+                  Haz clic en el mapa o busca una direccion para establecer tu ubicacion.
+                </p>
+                <LocationPicker
+                  value={location}
+                  onChange={(loc) => {
+                    setLocation(loc);
+                    setLocationDirty(true);
+                  }}
+                />
+                {locationDirty && location && (
+                  <Button
+                    onClick={async () => {
+                      setFeedback(null);
+                      try {
+                        await updateProfile.mutateAsync({ Location: location });
+                        setLocationDirty(false);
+                        setFeedback({
+                          type: "success",
+                          message: "Ubicacion guardada correctamente.",
+                        });
+                      } catch (err) {
+                        setFeedback({
+                          type: "error",
+                          message:
+                            err instanceof Error
+                              ? err.message
+                              : "Error al guardar la ubicacion.",
+                        });
+                      }
+                    }}
+                    disabled={updateProfile.isPending}
+                  >
+                    {updateProfile.isPending ? "Guardando..." : "Guardar Ubicacion"}
+                  </Button>
+                )}
+              </>
+            )}
+          </CardContent>
+        </Card>
+        </>
       ) : null}
     </div>
   );

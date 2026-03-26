@@ -74,14 +74,16 @@ export function errorResponse(error: unknown): NextResponse {
 }
 
 /** Wrap an API route handler with error handling */
-export function withErrorHandler(
-  handler: (req: Request, context?: unknown) => Promise<NextResponse>
-) {
-  return async (req: Request, context?: unknown) => {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function withErrorHandler<T extends (...args: any[]) => Promise<NextResponse>>(
+  handler: T
+): T {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (async (...args: any[]) => {
     try {
-      return await handler(req, context);
+      return await handler(...args);
     } catch (error) {
       return errorResponse(error);
     }
-  };
+  }) as T;
 }

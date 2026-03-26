@@ -31,6 +31,7 @@ export const GET = withErrorHandler(async () => {
       status: employee.EmploymentStatus,
       role: employee.Role,
       avatarUrl: employee.AvatarUrl ?? null,
+      location: employee.Location ?? null,
       schedule: employee.Schedule,
       createdAt: employee.CreatedAt,
       updatedAt: employee.UpdatedAt,

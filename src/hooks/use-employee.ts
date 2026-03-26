@@ -92,6 +92,7 @@ export function useUpdateProfile() {
       Position?: string;
       WorkMode?: string;
       BirthDate?: string;
+      Location?: { lat: number; lng: number; address: string; formattedAddress: string };
     }) => {
       const res = await fetch("/api/profile", {
         method: "PUT",

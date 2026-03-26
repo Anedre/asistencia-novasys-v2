@@ -14,6 +14,8 @@ export const TABLES = {
   USER_NOTIFICATIONS: process.env.TABLE_NOTIFICATIONS || `${prefix}UserNotifications`,
   SYSTEM_SETTINGS: process.env.TABLE_SETTINGS || `${prefix}SystemSettings`,
   TENANTS: process.env.TABLE_TENANTS || `${prefix}Tenants`,
+  INVITATIONS: process.env.TABLE_INVITATIONS || `${prefix}Invitations`,
+  EVENTS: process.env.TABLE_EVENTS_V2 || `${prefix}Events`,
 } as const;
 
 /** GSI names */
@@ -41,4 +43,11 @@ export const INDEXES = {
   EVENTS_BY_TENANT: "Tenant-Date-index",
   REQUESTS_BY_TENANT: "Tenant-Status-index",
   HR_BY_TENANT: "Tenant-Month-index",
+  // Invitations
+  INVITATIONS_BY_TENANT: "Tenant-index",
+  INVITATIONS_BY_TOKEN: "Token-index",
+  INVITATIONS_BY_EMAIL: "Email-index",
+  // Events
+  EVENTS_BY_TENANT_DATE: "Tenant-Date-index",
+  EVENTS_BY_CREATOR: "Creator-index",
 } as const;

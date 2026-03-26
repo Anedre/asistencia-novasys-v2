@@ -112,6 +112,7 @@ export async function updateEmployeeProfile(
     WorkMode?: string;
     BirthDate?: string;
     ScheduleType?: string;
+    Location?: { lat: number; lng: number; address: string; formattedAddress: string };
   }
 ): Promise<void> {
   const expressions: string[] = ["updatedAt = :now"];
@@ -151,6 +152,10 @@ export async function updateEmployeeProfile(
     // Also update the Schedule map's type field
     expressions.push("Schedule.#type = :scheduleType");
   }
+  if (updates.Location !== undefined) {
+    expressions.push("#loc = :loc");
+    values[":loc"] = updates.Location;
+  }
 
   const names: Record<string, string> = {};
   if (updates.Position !== undefined) {
@@ -158,6 +163,9 @@ export async function updateEmployeeProfile(
   }
   if (updates.ScheduleType !== undefined) {
     names["#type"] = "type";
+  }
+  if (updates.Location !== undefined) {
+    names["#loc"] = "Location";
   }
 
   await docClient.send(

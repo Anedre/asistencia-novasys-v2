@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { cognitoSignUp, getCognitoErrorMessage } from "@/lib/cognito";
 import { createEmployee } from "@/lib/db/employees";
+import { getInvitationByToken, markInvitationUsed } from "@/lib/db/invitations";
 import type { Employee } from "@/lib/types";
 
 export async function POST(request: Request) {
@@ -16,12 +17,13 @@ export async function POST(request: Request) {
   }
 
   try {
-    const { email, password, fullName, phoneNumber, nickname } = body as {
+    const { email, password, fullName, phoneNumber, nickname, inviteToken } = body as {
       email?: string;
       password?: string;
       fullName?: string;
       phoneNumber?: string;
       nickname?: string;
+      inviteToken?: string;
     };
 
     if (!email || !password || !fullName || !phoneNumber || !nickname) {
@@ -33,9 +35,54 @@ export async function POST(request: Request) {
 
     if (password.length < 8) {
       return NextResponse.json(
-        { error: "La contraseña debe tener al menos 8 caracteres" },
+        { error: "La contrasena debe tener al menos 8 caracteres" },
         { status: 400 }
       );
+    }
+
+    // Determine tenant from invite token or default
+    let tenantId = "TENANT#novasys";
+    let role: "EMPLOYEE" | "ADMIN" = "EMPLOYEE";
+    let area = "General";
+    let position = "Empleado";
+    let invitation = null;
+
+    if (inviteToken) {
+      invitation = await getInvitationByToken(inviteToken);
+
+      if (!invitation) {
+        return NextResponse.json(
+          { error: "Invitacion no encontrada o invalida" },
+          { status: 400 }
+        );
+      }
+
+      if (invitation.Status !== "PENDING") {
+        return NextResponse.json(
+          { error: "Esta invitacion ya fue utilizada o revocada" },
+          { status: 410 }
+        );
+      }
+
+      if (new Date(invitation.ExpiresAt) < new Date()) {
+        return NextResponse.json(
+          { error: "Esta invitacion ha expirado" },
+          { status: 410 }
+        );
+      }
+
+      // Validate email matches invitation
+      if (invitation.Email.toLowerCase() !== email.toLowerCase()) {
+        return NextResponse.json(
+          { error: "El correo no coincide con la invitacion" },
+          { status: 400 }
+        );
+      }
+
+      tenantId = invitation.TenantID;
+      role = invitation.Role || "EMPLOYEE";
+      area = invitation.Area || "General";
+      position = invitation.Position || "Empleado";
     }
 
     // 1) Create user in Cognito
@@ -54,7 +101,7 @@ export async function POST(request: Request) {
     const now = new Date().toISOString();
 
     const employee: Employee = {
-      TenantID: "TENANT#novasys",
+      TenantID: tenantId,
       EmployeeID: `EMP#${email.toLowerCase()}`,
       Email: email.toLowerCase(),
       DNI: `PENDING-${Date.now()}`,
@@ -62,11 +109,11 @@ export async function POST(request: Request) {
       FirstName: firstName,
       LastName: lastName,
       Phone: phoneNumber,
-      Area: "General",
-      Position: "Empleado",
+      Area: area,
+      Position: position,
       WorkMode: "ONSITE",
       EmploymentStatus: "ACTIVE",
-      Role: "EMPLOYEE",
+      Role: role,
       CognitoSub: result.userSub,
       Schedule: {
         startTime: "09:00",
@@ -83,7 +130,15 @@ export async function POST(request: Request) {
       await createEmployee(employee);
     } catch (dbError) {
       console.error("[register] Error creating employee in DynamoDB:", dbError);
-      // Don't fail registration if DB creation fails — user can still login
+    }
+
+    // 3) Mark invitation as used
+    if (invitation) {
+      try {
+        await markInvitationUsed(invitation.InviteID);
+      } catch (err) {
+        console.error("[register] Error marking invitation as used:", err);
+      }
     }
 
     return NextResponse.json({

@@ -10,6 +10,13 @@ export interface EmployeeSchedule {
   type?: ScheduleType; // "FULL_TIME" | "PART_TIME"
 }
 
+export interface EmployeeLocation {
+  lat: number;
+  lng: number;
+  address: string;
+  formattedAddress: string;
+}
+
 export interface Employee {
   EmployeeID: string; // "EMP#john@novasys.com"
   TenantID?: string; // "TENANT#novasys" — multi-tenant isolation
@@ -28,6 +35,7 @@ export interface Employee {
   Role: EmployeeRole;
   CognitoSub?: string;
   AvatarUrl?: string;
+  Location?: EmployeeLocation;
   Schedule: EmployeeSchedule;
   ScheduleType?: ScheduleType;
   CreatedAt: string;

@@ -6,6 +6,7 @@ import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
 import { MobileNav } from "@/components/layout/mobile-nav";
 import { Loader2 } from "lucide-react";
+import { Toaster } from "sonner";
 
 export default function EmployeeLayout({
   children,
@@ -46,6 +47,7 @@ export default function EmployeeLayout({
           {children}
         </main>
       </div>
+      <Toaster position="top-right" richColors />
     </div>
   );
 }
