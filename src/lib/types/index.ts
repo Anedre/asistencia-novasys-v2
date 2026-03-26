@@ -6,3 +6,6 @@ export * from "./api";
 export * from "./tenant";
 export * from "./invitation";
 export * from "./event";
+export * from "./chat";
+export * from "./channel";
+export * from "./post";

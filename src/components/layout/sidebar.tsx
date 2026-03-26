@@ -18,6 +18,9 @@ import {
   Settings,
   BarChart3,
   ArrowLeftRight,
+  MessageSquare,
+  MessageCircle,
+  Newspaper,
 } from "lucide-react";
 
 export interface NavItem {
@@ -31,6 +34,9 @@ const employeeNav: NavItem[] = [
   { title: "Historial", href: "/history", icon: CalendarDays },
   { title: "Solicitudes", href: "/requests", icon: Send },
   { title: "Eventos", href: "/events", icon: CalendarDays },
+  { title: "Mensajes", href: "/messages", icon: MessageCircle },
+  { title: "Social", href: "/feed", icon: Newspaper },
+  { title: "Chat IA", href: "/chat", icon: MessageSquare },
   { title: "Reportes", href: "/reports", icon: FileText },
   { title: "RRHH", href: "/hr", icon: Heart },
   { title: "Mi Perfil", href: "/profile", icon: User },

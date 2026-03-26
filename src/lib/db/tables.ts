@@ -16,6 +16,10 @@ export const TABLES = {
   TENANTS: process.env.TABLE_TENANTS || `${prefix}Tenants`,
   INVITATIONS: process.env.TABLE_INVITATIONS || `${prefix}Invitations`,
   EVENTS: process.env.TABLE_EVENTS_V2 || `${prefix}Events`,
+  CHAT_SESSIONS: process.env.TABLE_CHAT_SESSIONS || `${prefix}ChatSessions`,
+  CHAT_CHANNELS: process.env.TABLE_CHAT_CHANNELS || `${prefix}ChatChannels`,
+  CHAT_MESSAGES: process.env.TABLE_CHAT_MESSAGES || `${prefix}ChatMessages`,
+  POSTS: process.env.TABLE_POSTS || `${prefix}Posts`,
 } as const;
 
 /** GSI names */
@@ -50,4 +54,12 @@ export const INDEXES = {
   // Events
   EVENTS_BY_TENANT_DATE: "Tenant-Date-index",
   EVENTS_BY_CREATOR: "Creator-index",
+  // ChatSessions
+  CHAT_SESSIONS_BY_EMPLOYEE: "Employee-index",
+  // ChatChannels & ChatMessages
+  CHAT_CHANNELS_BY_TENANT: "Tenant-index",
+  CHAT_MESSAGES_BY_CHANNEL: "Channel-Timestamp-index",
+  // Posts
+  POSTS_BY_TENANT: "Tenant-CreatedAt-index",
+  POSTS_BY_AUTHOR: "Author-index",
 } as const;
