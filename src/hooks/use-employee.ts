@@ -93,6 +93,8 @@ export function useUpdateProfile() {
       WorkMode?: string;
       BirthDate?: string;
       Location?: { lat: number; lng: number; address: string; formattedAddress: string };
+      Schedule?: { startTime: string; endTime: string; breakMinutes: number; type: string };
+      ScheduleType?: string;
     }) => {
       const res = await fetch("/api/profile", {
         method: "PUT",

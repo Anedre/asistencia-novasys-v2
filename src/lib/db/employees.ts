@@ -112,6 +112,7 @@ export async function updateEmployeeProfile(
     WorkMode?: string;
     BirthDate?: string;
     ScheduleType?: string;
+    Schedule?: { startTime: string; endTime: string; breakMinutes: number; type?: string };
     Location?: { lat: number; lng: number; address: string; formattedAddress: string };
   }
 ): Promise<void> {
@@ -146,11 +147,17 @@ export async function updateEmployeeProfile(
     expressions.push("BirthDate = :birthDate");
     values[":birthDate"] = updates.BirthDate;
   }
+  if (updates.Schedule !== undefined) {
+    expressions.push("Schedule = :schedule");
+    values[":schedule"] = updates.Schedule;
+  }
   if (updates.ScheduleType !== undefined) {
     expressions.push("ScheduleType = :scheduleType");
     values[":scheduleType"] = updates.ScheduleType;
-    // Also update the Schedule map's type field
-    expressions.push("Schedule.#type = :scheduleType");
+    // Also update the Schedule map's type field if Schedule was not already replaced entirely
+    if (updates.Schedule === undefined) {
+      expressions.push("Schedule.#type = :scheduleType");
+    }
   }
   if (updates.Location !== undefined) {
     expressions.push("#loc = :loc");
@@ -161,7 +168,7 @@ export async function updateEmployeeProfile(
   if (updates.Position !== undefined) {
     names["#pos"] = "Position";
   }
-  if (updates.ScheduleType !== undefined) {
+  if (updates.ScheduleType !== undefined && updates.Schedule === undefined) {
     names["#type"] = "type";
   }
   if (updates.Location !== undefined) {
