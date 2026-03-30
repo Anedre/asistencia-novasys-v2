@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback, useRef } from "react";
+import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { useAttendanceHistory } from "@/hooks/use-attendance";
 import { StatusBadge } from "@/components/attendance/status-badge";
 import { RegularizeDialog } from "@/components/attendance/regularize-dialog";
@@ -36,6 +36,8 @@ import {
   TrendingUp,
   TrendingDown,
   AlertCircle,
+  Palette,
+  X,
 } from "lucide-react";
 
 /* ------------------------------------------------------------------ */
@@ -51,7 +53,7 @@ function getMonthRange(year: number, month: number) {
   };
 }
 
-function formatMinutes(minutes: number): string {
+function fmtMin(minutes: number): string {
   const h = Math.floor(Math.abs(minutes) / 60);
   const m = Math.abs(minutes) % 60;
   const sign = minutes < 0 ? "-" : "";
@@ -60,20 +62,12 @@ function formatMinutes(minutes: number): string {
 
 function shortTime(t: string | null): string {
   if (!t) return "--:--";
-  // "09:00:00" -> "09:00"
   return t.length > 5 ? t.substring(0, 5) : t;
 }
 
-const REGULARIZABLE_STATUSES = new Set([
-  "MISSING", "NO_RECORD", "ABSENT", "SHORT", "INCOMPLETE",
-]);
-
-const MONTH_NAMES = [
-  "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
-  "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
-];
-
-const DAY_HEADERS = ["LUN", "MAR", "MIE", "JUE", "VIE", "SAB", "DOM"];
+const REGULARIZABLE = new Set(["MISSING", "NO_RECORD", "ABSENT", "SHORT", "INCOMPLETE"]);
+const MONTHS = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+const DAYS_H = ["LUN", "MAR", "MIE", "JUE", "VIE", "SAB", "DOM"];
 
 interface HistoryDay {
   date: string;
@@ -88,76 +82,84 @@ interface HistoryDay {
   anomalies?: string[];
 }
 
-/* ── Status Color System ──────────────────────────────────────────── */
+/* ── 4 Color Themes ───────────────────────────────────────────────── */
 
-function statusStyle(status: string | undefined) {
+interface Theme {
+  name: string;
+  ok: { bg: string; border: string; dot: string; text: string };
+  open: { bg: string; border: string; dot: string; text: string };
+  short: { bg: string; border: string; dot: string; text: string };
+  reg: { bg: string; border: string; dot: string; text: string };
+  absent: { bg: string; border: string; dot: string; text: string };
+  none: { bg: string; border: string; dot: string; text: string };
+  accent: string;
+  headerBg: string;
+}
+
+const THEMES: Record<string, Theme> = {
+  aurora: {
+    name: "Aurora Boreal",
+    ok:     { bg: "bg-teal-50",    border: "border-teal-200",    dot: "bg-teal-500",    text: "text-teal-700" },
+    open:   { bg: "bg-cyan-50",    border: "border-cyan-200",    dot: "bg-cyan-500",    text: "text-cyan-700" },
+    short:  { bg: "bg-amber-50",   border: "border-amber-200",   dot: "bg-amber-500",   text: "text-amber-700" },
+    reg:    { bg: "bg-indigo-50",  border: "border-indigo-200",  dot: "bg-indigo-500",  text: "text-indigo-700" },
+    absent: { bg: "bg-rose-50",    border: "border-rose-200",    dot: "bg-rose-500",    text: "text-rose-700" },
+    none:   { bg: "bg-slate-50",   border: "border-slate-200",   dot: "bg-slate-300",   text: "text-slate-400" },
+    accent: "text-teal-600",
+    headerBg: "from-teal-500 to-cyan-500",
+  },
+  cerezo: {
+    name: "Flor de Cerezo",
+    ok:     { bg: "bg-pink-50",    border: "border-pink-200",    dot: "bg-pink-500",    text: "text-pink-700" },
+    open:   { bg: "bg-fuchsia-50", border: "border-fuchsia-200", dot: "bg-fuchsia-500", text: "text-fuchsia-700" },
+    short:  { bg: "bg-amber-50",   border: "border-amber-200",   dot: "bg-amber-500",   text: "text-amber-700" },
+    reg:    { bg: "bg-violet-50",  border: "border-violet-200",  dot: "bg-violet-500",  text: "text-violet-700" },
+    absent: { bg: "bg-red-50",     border: "border-red-200",     dot: "bg-red-400",     text: "text-red-600" },
+    none:   { bg: "bg-gray-50",    border: "border-gray-200",    dot: "bg-gray-300",    text: "text-gray-400" },
+    accent: "text-pink-600",
+    headerBg: "from-pink-500 to-fuchsia-500",
+  },
+  obsidiana: {
+    name: "Obsidiana",
+    ok:     { bg: "bg-emerald-50", border: "border-emerald-200", dot: "bg-emerald-500", text: "text-emerald-700" },
+    open:   { bg: "bg-blue-50",    border: "border-blue-200",    dot: "bg-blue-500",    text: "text-blue-700" },
+    short:  { bg: "bg-orange-50",  border: "border-orange-200",  dot: "bg-orange-500",  text: "text-orange-700" },
+    reg:    { bg: "bg-purple-50",  border: "border-purple-200",  dot: "bg-purple-500",  text: "text-purple-700" },
+    absent: { bg: "bg-red-50",     border: "border-red-200",     dot: "bg-red-500",     text: "text-red-700" },
+    none:   { bg: "bg-zinc-50",    border: "border-zinc-200",    dot: "bg-zinc-300",    text: "text-zinc-400" },
+    accent: "text-emerald-600",
+    headerBg: "from-zinc-700 to-zinc-900",
+  },
+  lavanda: {
+    name: "Jardin Lavanda",
+    ok:     { bg: "bg-lime-50",    border: "border-lime-200",    dot: "bg-lime-500",    text: "text-lime-700" },
+    open:   { bg: "bg-sky-50",     border: "border-sky-200",     dot: "bg-sky-500",     text: "text-sky-700" },
+    short:  { bg: "bg-yellow-50",  border: "border-yellow-200",  dot: "bg-yellow-500",  text: "text-yellow-700" },
+    reg:    { bg: "bg-purple-50",  border: "border-purple-200",  dot: "bg-purple-500",  text: "text-purple-700" },
+    absent: { bg: "bg-orange-50",  border: "border-orange-200",  dot: "bg-orange-500",  text: "text-orange-700" },
+    none:   { bg: "bg-gray-50",    border: "border-gray-200",    dot: "bg-gray-300",    text: "text-gray-400" },
+    accent: "text-purple-600",
+    headerBg: "from-purple-400 to-violet-500",
+  },
+};
+
+function getStatusColors(theme: Theme, status: string | undefined) {
   switch (status) {
-    case "OK":
-    case "CLOSED":
-      return {
-        bg: "bg-emerald-50 dark:bg-emerald-950/30",
-        border: "border-emerald-200 dark:border-emerald-800",
-        accent: "bg-emerald-500",
-        text: "text-emerald-700 dark:text-emerald-400",
-        label: "Completo",
-      };
-    case "OPEN":
-      return {
-        bg: "bg-blue-50 dark:bg-blue-950/30",
-        border: "border-blue-200 dark:border-blue-800",
-        accent: "bg-blue-500",
-        text: "text-blue-700 dark:text-blue-400",
-        label: "En curso",
-      };
-    case "SHORT":
-    case "INCOMPLETE":
-      return {
-        bg: "bg-amber-50 dark:bg-amber-950/30",
-        border: "border-amber-200 dark:border-amber-800",
-        accent: "bg-amber-500",
-        text: "text-amber-700 dark:text-amber-400",
-        label: "Incompleto",
-      };
-    case "REGULARIZED":
-      return {
-        bg: "bg-violet-50 dark:bg-violet-950/30",
-        border: "border-violet-200 dark:border-violet-800",
-        accent: "bg-violet-500",
-        text: "text-violet-700 dark:text-violet-400",
-        label: "Regularizado",
-      };
-    case "ABSENCE":
-    case "ABSENT":
-      return {
-        bg: "bg-orange-50 dark:bg-orange-950/30",
-        border: "border-orange-200 dark:border-orange-800",
-        accent: "bg-orange-500",
-        text: "text-orange-700 dark:text-orange-400",
-        label: "Ausencia",
-      };
-    default:
-      return {
-        bg: "bg-gray-50/50 dark:bg-gray-900/20",
-        border: "border-gray-100 dark:border-gray-800",
-        accent: "bg-gray-300 dark:bg-gray-600",
-        text: "text-gray-400 dark:text-gray-500",
-        label: "Sin registro",
-      };
+    case "OK": case "CLOSED": return theme.ok;
+    case "OPEN": return theme.open;
+    case "SHORT": case "INCOMPLETE": return theme.short;
+    case "REGULARIZED": return theme.reg;
+    case "ABSENCE": case "ABSENT": return theme.absent;
+    default: return theme.none;
   }
 }
 
 /* ------------------------------------------------------------------ */
-/*  Compact Calendar Cell                                             */
+/*  Calendar Cell                                                     */
 /* ------------------------------------------------------------------ */
 
 function CalendarCell({
-  day,
-  dateStr,
-  dayData,
-  isToday,
-  isSelected,
-  isWeekend,
-  onClick,
+  day, dateStr, dayData, isToday, isSelected, isWeekend, onClick, theme,
 }: {
   day: number | null;
   dateStr: string | null;
@@ -166,61 +168,58 @@ function CalendarCell({
   isSelected: boolean;
   isWeekend: boolean;
   onClick: () => void;
+  theme: Theme;
 }) {
-  if (day === null) {
-    return <div className="min-h-[72px]" />;
-  }
+  if (day === null) return <div className="min-h-[80px]" />;
 
-  const style = statusStyle(dayData?.status);
-  const hasData = !!dayData;
+  const c = getStatusColors(theme, dayData?.status);
+  const has = !!dayData;
 
   return (
     <button
       type="button"
       onClick={onClick}
       className={cn(
-        "relative flex flex-col rounded-lg border p-1.5 min-h-[72px] text-left transition-all duration-150",
-        "hover:shadow-md hover:scale-[1.02] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-        hasData ? style.bg : isWeekend ? "bg-gray-50/30 dark:bg-gray-900/10" : "bg-background",
-        hasData ? style.border : "border-border/50",
-        isSelected && "ring-2 ring-primary shadow-lg scale-[1.02] !border-primary/50",
-        isToday && !isSelected && "ring-1 ring-primary/40",
+        "relative flex flex-col rounded-xl border p-2 min-h-[80px] text-left transition-all duration-200",
+        "hover:shadow-lg hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        has ? c.bg : isWeekend ? "bg-gray-50/50" : "bg-background",
+        has ? c.border : "border-border/40",
+        isSelected && "ring-2 ring-primary shadow-xl -translate-y-0.5 !border-primary/50 z-10",
+        isToday && !isSelected && "ring-2 ring-primary/30",
       )}
     >
-      {/* Top row: day number + status dot */}
       <div className="flex items-center justify-between w-full">
         <span className={cn(
-          "text-xs font-semibold leading-none",
+          "text-sm font-bold leading-none",
           isToday && "text-primary",
-          hasData ? style.text : isWeekend ? "text-gray-400" : "text-muted-foreground",
+          has ? c.text : isWeekend ? "text-gray-400" : "text-foreground/60",
         )}>
           {day}
         </span>
-        {hasData && (
-          <span className={cn("size-2 rounded-full", style.accent)} />
-        )}
-        {isToday && (
-          <span className="rounded-full bg-primary px-1 py-px text-[7px] font-bold text-primary-foreground uppercase leading-none">
-            hoy
-          </span>
-        )}
+        <div className="flex items-center gap-1">
+          {has && <span className={cn("size-2.5 rounded-full", c.dot)} />}
+          {isToday && (
+            <span className="rounded-full bg-primary px-1.5 py-0.5 text-[8px] font-bold text-primary-foreground uppercase leading-none">
+              hoy
+            </span>
+          )}
+        </div>
       </div>
 
-      {/* Attendance info inside cell */}
-      {hasData && dayData ? (
+      {has && dayData ? (
         <div className="mt-auto space-y-0.5 w-full">
-          <div className="flex items-center gap-0.5 text-[9px] text-muted-foreground">
-            <span className="tabular-nums">{shortTime(dayData.firstInLocal)}</span>
-            <span>-</span>
-            <span className="tabular-nums">{shortTime(dayData.lastOutLocal)}</span>
+          <div className="flex items-center gap-1 text-[11px] text-foreground/50 tabular-nums">
+            <span>{shortTime(dayData.firstInLocal)}</span>
+            <span className="text-foreground/30">-</span>
+            <span>{shortTime(dayData.lastOutLocal)}</span>
           </div>
-          <div className={cn("text-[10px] font-bold tabular-nums", style.text)}>
-            {dayData.workedHHMM || formatMinutes(dayData.workedMinutes)}
+          <div className={cn("text-xs font-extrabold tabular-nums", c.text)}>
+            {dayData.workedHHMM || fmtMin(dayData.workedMinutes)}
           </div>
         </div>
       ) : !isWeekend ? (
         <div className="mt-auto">
-          <span className="text-[9px] text-gray-300 dark:text-gray-600">--:--</span>
+          <span className="text-[11px] text-foreground/20 tabular-nums">--:--</span>
         </div>
       ) : null}
     </button>
@@ -232,75 +231,60 @@ function CalendarCell({
 /* ------------------------------------------------------------------ */
 
 function CalendarGrid({
-  year,
-  month,
-  days,
-  onSelectDate,
-  selectedDate,
+  year, month, days, onSelectDate, selectedDate, theme,
 }: {
-  year: number;
-  month: number;
-  days: HistoryDay[];
-  onSelectDate: (date: string) => void;
-  selectedDate: string | null;
+  year: number; month: number; days: HistoryDay[];
+  onSelectDate: (d: string) => void; selectedDate: string | null;
+  theme: Theme;
 }) {
   const todayStr = new Date().toISOString().split("T")[0];
 
   const dayMap = useMemo(() => {
-    const map = new Map<string, HistoryDay>();
-    for (const d of days) map.set(d.date, d);
-    return map;
+    const m = new Map<string, HistoryDay>();
+    for (const d of days) m.set(d.date, d);
+    return m;
   }, [days]);
 
-  const calendarCells = useMemo(() => {
-    const firstOfMonth = new Date(year, month, 1);
-    const daysInMonth = new Date(year, month + 1, 0).getDate();
-    let startDow = firstOfMonth.getDay() - 1;
-    if (startDow < 0) startDow = 6;
-
-    const cells: Array<{ day: number | null; dateStr: string | null; isWeekend: boolean }> = [];
-
-    for (let i = 0; i < startDow; i++) {
-      cells.push({ day: null, dateStr: null, isWeekend: false });
-    }
-
-    for (let d = 1; d <= daysInMonth; d++) {
+  const cells = useMemo(() => {
+    const first = new Date(year, month, 1);
+    const total = new Date(year, month + 1, 0).getDate();
+    let start = first.getDay() - 1;
+    if (start < 0) start = 6;
+    const r: Array<{ day: number | null; dateStr: string | null; isWeekend: boolean }> = [];
+    for (let i = 0; i < start; i++) r.push({ day: null, dateStr: null, isWeekend: false });
+    for (let d = 1; d <= total; d++) {
       const mm = String(month + 1).padStart(2, "0");
       const dd = String(d).padStart(2, "0");
-      const dateStr = `${year}-${mm}-${dd}`;
       const dow = new Date(year, month, d).getDay();
-      cells.push({ day: d, dateStr, isWeekend: dow === 0 || dow === 6 });
+      r.push({ day: d, dateStr: `${year}-${mm}-${dd}`, isWeekend: dow === 0 || dow === 6 });
     }
-
-    while (cells.length % 7 !== 0) {
-      cells.push({ day: null, dateStr: null, isWeekend: false });
-    }
-
-    return cells;
+    while (r.length % 7 !== 0) r.push({ day: null, dateStr: null, isWeekend: false });
+    return r;
   }, [year, month]);
+
+  const legendItems = [
+    { label: "Completo", c: theme.ok.dot },
+    { label: "En curso", c: theme.open.dot },
+    { label: "Incompleto", c: theme.short.dot },
+    { label: "Regularizado", c: theme.reg.dot },
+    { label: "Ausencia", c: theme.absent.dot },
+    { label: "Sin registro", c: theme.none.dot },
+  ];
 
   return (
     <div>
-      {/* Day headers */}
-      <div className="grid grid-cols-7 gap-1 mb-1">
-        {DAY_HEADERS.map((name, i) => (
-          <div
-            key={name}
-            className={cn(
-              "py-1.5 text-center text-[10px] font-bold uppercase tracking-widest",
-              i >= 5 ? "text-gray-400" : "text-muted-foreground",
-            )}
-          >
-            {name}
-          </div>
+      <div className="grid grid-cols-7 gap-1.5 mb-1.5">
+        {DAYS_H.map((n, i) => (
+          <div key={n} className={cn(
+            "py-2 text-center text-xs font-bold uppercase tracking-wider",
+            i >= 5 ? "text-foreground/30" : "text-foreground/50",
+          )}>{n}</div>
         ))}
       </div>
-
-      {/* Cells */}
-      <div className="grid grid-cols-7 gap-1">
-        {calendarCells.map((cell, idx) => (
+      <div className="grid grid-cols-7 gap-1.5">
+        {cells.map((cell, idx) => (
           <CalendarCell
-            key={cell.dateStr || `blank-${idx}`}
+            key={cell.dateStr || `b${idx}`}
             day={cell.day}
             dateStr={cell.dateStr}
             dayData={cell.dateStr ? dayMap.get(cell.dateStr) : undefined}
@@ -308,23 +292,15 @@ function CalendarGrid({
             isSelected={cell.dateStr === selectedDate}
             isWeekend={cell.isWeekend}
             onClick={() => cell.dateStr && onSelectDate(cell.dateStr)}
+            theme={theme}
           />
         ))}
       </div>
-
-      {/* Legend */}
-      <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 mt-3">
-        {[
-          { label: "Completo", color: "bg-emerald-500" },
-          { label: "En curso", color: "bg-blue-500" },
-          { label: "Incompleto", color: "bg-amber-500" },
-          { label: "Regularizado", color: "bg-violet-500" },
-          { label: "Ausencia", color: "bg-orange-500" },
-          { label: "Sin registro", color: "bg-gray-300" },
-        ].map((item) => (
-          <div key={item.label} className="flex items-center gap-1">
-            <span className={cn("size-2 rounded-full", item.color)} />
-            <span className="text-[10px] text-muted-foreground">{item.label}</span>
+      <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 mt-4">
+        {legendItems.map((it) => (
+          <div key={it.label} className="flex items-center gap-1.5">
+            <span className={cn("size-2.5 rounded-full", it.c)} />
+            <span className="text-xs text-foreground/50">{it.label}</span>
           </div>
         ))}
       </div>
@@ -333,22 +309,20 @@ function CalendarGrid({
 }
 
 /* ------------------------------------------------------------------ */
-/*  Side Detail Panel                                                 */
+/*  Slide-in Detail Panel                                             */
 /* ------------------------------------------------------------------ */
 
 function DetailPanel({
-  day,
-  onRegularize,
-  onClose,
+  day, onRegularize, onClose, theme, visible,
 }: {
-  day: HistoryDay;
-  onRegularize: (date: string) => void;
-  onClose: () => void;
+  day: HistoryDay; onRegularize: (d: string) => void; onClose: () => void;
+  theme: Theme; visible: boolean;
 }) {
   const today = new Date().toISOString().split("T")[0];
-  const canRegularize = REGULARIZABLE_STATUSES.has(day.status) && day.date < today;
-  const style = statusStyle(day.status);
+  const canReg = REGULARIZABLE.has(day.status) && day.date < today;
+  const c = getStatusColors(theme, day.status);
   const delta = day.workedMinutes - 480;
+  const pct = Math.min(Math.round((day.workedMinutes / 480) * 100), 100);
 
   const dateObj = new Date(day.date + "T12:00:00");
   const dayName = dateObj.toLocaleDateString("es-PE", { weekday: "long" });
@@ -356,128 +330,85 @@ function DetailPanel({
   const monthName = dateObj.toLocaleDateString("es-PE", { month: "long" });
 
   return (
-    <div className="flex flex-col rounded-2xl border bg-background shadow-lg overflow-hidden h-full">
-      {/* Header with accent color */}
-      <div className={cn("px-4 py-3 border-b", style.bg, style.border)}>
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-xs font-medium capitalize text-muted-foreground">{dayName}</p>
-            <p className="text-2xl font-bold tracking-tight">
-              {dayNum} <span className="text-base font-medium capitalize">{monthName}</span>
-            </p>
-          </div>
-          <div className={cn("flex h-10 w-10 items-center justify-center rounded-xl", style.bg, "border", style.border)}>
-            <span className={cn("size-3 rounded-full", style.accent)} />
-          </div>
-        </div>
+    <div className={cn(
+      "flex flex-col rounded-2xl border bg-background shadow-2xl overflow-hidden transition-all duration-300 ease-out",
+      visible ? "translate-x-0 opacity-100" : "translate-x-8 opacity-0",
+    )}>
+      {/* Header */}
+      <div className={cn("relative px-5 py-4 text-white bg-gradient-to-r", theme.headerBg)}>
+        <button onClick={onClose} className="absolute top-3 right-3 rounded-full bg-white/20 p-1 hover:bg-white/30 transition-colors">
+          <X className="size-4" />
+        </button>
+        <p className="text-sm font-medium capitalize opacity-80">{dayName}</p>
+        <p className="text-3xl font-black tracking-tight">
+          {dayNum} <span className="text-lg font-semibold capitalize">{monthName}</span>
+        </p>
         <div className="mt-2">
           <StatusBadge status={day.status} />
         </div>
       </div>
 
-      {/* Time details */}
-      <div className="p-4 space-y-4 flex-1">
-        {/* Entry / Exit */}
+      {/* Content */}
+      <div className="p-5 space-y-4">
         <div className="grid grid-cols-2 gap-3">
-          <div className="rounded-xl bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900 p-3">
-            <div className="flex items-center gap-1.5 mb-1">
-              <LogIn className="size-3 text-emerald-600" />
-              <span className="text-[10px] font-semibold uppercase text-emerald-600">Entrada</span>
-            </div>
-            <p className="text-lg font-bold tabular-nums">{shortTime(day.firstInLocal)}</p>
-          </div>
-          <div className="rounded-xl bg-red-50 dark:bg-red-950/20 border border-red-100 dark:border-red-900 p-3">
-            <div className="flex items-center gap-1.5 mb-1">
-              <LogOut className="size-3 text-red-500" />
-              <span className="text-[10px] font-semibold uppercase text-red-500">Salida</span>
-            </div>
-            <p className="text-lg font-bold tabular-nums">{shortTime(day.lastOutLocal)}</p>
-          </div>
+          <InfoCard icon={LogIn} label="Entrada" value={shortTime(day.firstInLocal)} color="text-emerald-600" bg="bg-emerald-50" border="border-emerald-100" />
+          <InfoCard icon={LogOut} label="Salida" value={shortTime(day.lastOutLocal)} color="text-red-500" bg="bg-red-50" border="border-red-100" />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <InfoCard icon={Coffee} label="Break" value={`${day.breakMinutes} min`} color="text-amber-600" bg="bg-amber-50" border="border-amber-100" />
+          <InfoCard icon={Clock} label="Trabajado" value={day.workedHHMM || fmtMin(day.workedMinutes)} color="text-blue-600" bg="bg-blue-50" border="border-blue-100" />
         </div>
 
-        {/* Break + Worked */}
-        <div className="grid grid-cols-2 gap-3">
-          <div className="rounded-xl bg-amber-50 dark:bg-amber-950/20 border border-amber-100 dark:border-amber-900 p-3">
-            <div className="flex items-center gap-1.5 mb-1">
-              <Coffee className="size-3 text-amber-600" />
-              <span className="text-[10px] font-semibold uppercase text-amber-600">Break</span>
-            </div>
-            <p className="text-lg font-bold tabular-nums">{day.breakMinutes} min</p>
-          </div>
-          <div className="rounded-xl bg-blue-50 dark:bg-blue-950/20 border border-blue-100 dark:border-blue-900 p-3">
-            <div className="flex items-center gap-1.5 mb-1">
-              <Clock className="size-3 text-blue-600" />
-              <span className="text-[10px] font-semibold uppercase text-blue-600">Trabajado</span>
-            </div>
-            <p className="text-lg font-bold tabular-nums">{day.workedHHMM || formatMinutes(day.workedMinutes)}</p>
-          </div>
-        </div>
-
-        {/* Progress bar */}
+        {/* Progress */}
         <div>
-          <div className="flex items-center justify-between text-[10px] mb-1">
-            <span className="text-muted-foreground">Progreso del dia</span>
-            <span className="font-semibold">{Math.min(Math.round((day.workedMinutes / 480) * 100), 100)}%</span>
+          <div className="flex items-center justify-between text-xs mb-1.5">
+            <span className="text-foreground/50 font-medium">Progreso</span>
+            <span className="font-bold">{pct}%</span>
           </div>
-          <div className="h-2.5 w-full rounded-full bg-gray-100 dark:bg-gray-800 overflow-hidden">
+          <div className="h-3 w-full rounded-full bg-gray-100 overflow-hidden">
             <div
               className={cn(
-                "h-full rounded-full transition-all",
-                day.workedMinutes >= 480 ? "bg-emerald-500" : day.workedMinutes >= 360 ? "bg-blue-500" : day.workedMinutes >= 240 ? "bg-amber-500" : "bg-red-400",
+                "h-full rounded-full transition-all duration-500",
+                pct >= 100 ? "bg-emerald-500" : pct >= 75 ? "bg-blue-500" : pct >= 50 ? "bg-amber-500" : "bg-red-400",
               )}
-              style={{ width: `${Math.min((day.workedMinutes / 480) * 100, 100)}%` }}
+              style={{ width: `${pct}%` }}
             />
           </div>
         </div>
 
         {/* Delta */}
         <div className={cn(
-          "flex items-center gap-2 rounded-xl p-3 border",
-          delta >= 0 ? "bg-emerald-50 border-emerald-100 dark:bg-emerald-950/20 dark:border-emerald-900" : "bg-red-50 border-red-100 dark:bg-red-950/20 dark:border-red-900",
+          "flex items-center gap-3 rounded-xl p-3.5 border",
+          delta >= 0 ? "bg-emerald-50 border-emerald-100" : "bg-red-50 border-red-100",
         )}>
-          {delta >= 0 ? (
-            <TrendingUp className="size-4 text-emerald-600" />
-          ) : (
-            <TrendingDown className="size-4 text-red-500" />
-          )}
+          {delta >= 0 ? <TrendingUp className="size-5 text-emerald-600" /> : <TrendingDown className="size-5 text-red-500" />}
           <div>
-            <p className="text-[10px] font-semibold uppercase text-muted-foreground">Balance del dia</p>
-            <p className={cn("text-sm font-bold", delta >= 0 ? "text-emerald-700" : "text-red-600")}>
-              {delta >= 0 ? "+" : ""}{formatMinutes(delta)}
+            <p className="text-xs font-semibold text-foreground/50 uppercase">Balance</p>
+            <p className={cn("text-base font-black", delta >= 0 ? "text-emerald-700" : "text-red-600")}>
+              {delta >= 0 ? "+" : ""}{fmtMin(delta)}
             </p>
           </div>
         </div>
 
-        {/* Reason */}
         {(day.reasonLabel || day.reasonCode) && (
-          <div className="flex items-start gap-2 rounded-xl bg-muted/50 p-3 border border-border/50">
-            <AlertCircle className="size-3.5 mt-0.5 text-muted-foreground shrink-0" />
+          <div className="flex items-start gap-2.5 rounded-xl bg-muted/50 p-3 border border-border/50">
+            <AlertCircle className="size-4 mt-0.5 text-foreground/40 shrink-0" />
             <div>
-              <p className="text-[10px] font-semibold uppercase text-muted-foreground">Motivo</p>
-              <p className="text-xs">{day.reasonLabel ?? day.reasonCode}</p>
+              <p className="text-xs font-bold text-foreground/50 uppercase">Motivo</p>
+              <p className="text-sm">{day.reasonLabel ?? day.reasonCode}</p>
             </div>
           </div>
         )}
       </div>
 
-      {/* Footer actions */}
-      <div className="border-t p-3 flex gap-2">
-        {canRegularize && (
-          <Button
-            size="sm"
-            className="flex-1 gap-1.5"
-            onClick={() => onRegularize(day.date)}
-          >
-            <PenLineIcon className="size-3.5" />
-            Regularizar
+      {/* Footer */}
+      <div className="border-t p-4 flex gap-2 mt-auto">
+        {canReg && (
+          <Button size="sm" className="flex-1 gap-1.5" onClick={() => onRegularize(day.date)}>
+            <PenLineIcon className="size-4" /> Regularizar
           </Button>
         )}
-        <Button
-          variant="outline"
-          size="sm"
-          className={canRegularize ? "" : "flex-1"}
-          onClick={onClose}
-        >
+        <Button variant="outline" size="sm" className={canReg ? "" : "flex-1"} onClick={onClose}>
           Cerrar
         </Button>
       </div>
@@ -485,28 +416,22 @@ function DetailPanel({
   );
 }
 
-/* ------------------------------------------------------------------ */
-/*  Empty Detail Panel                                                */
-/* ------------------------------------------------------------------ */
-
-function EmptyDetailPanel() {
+function InfoCard({ icon: Icon, label, value, color, bg, border }: {
+  icon: typeof Clock; label: string; value: string; color: string; bg: string; border: string;
+}) {
   return (
-    <div className="flex flex-col items-center justify-center rounded-2xl border bg-muted/20 p-6 h-full text-center">
-      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/5">
-        <CalendarDays className="size-7 text-primary/40" />
+    <div className={cn("rounded-xl p-3 border", bg, border)}>
+      <div className="flex items-center gap-1.5 mb-1">
+        <Icon className={cn("size-3.5", color)} />
+        <span className={cn("text-[11px] font-bold uppercase", color)}>{label}</span>
       </div>
-      <p className="mt-3 text-sm font-medium text-muted-foreground">
-        Selecciona un dia
-      </p>
-      <p className="mt-1 text-xs text-muted-foreground/60">
-        Haz clic en cualquier dia del calendario para ver el detalle
-      </p>
+      <p className="text-xl font-black tabular-nums">{value}</p>
     </div>
   );
 }
 
 /* ------------------------------------------------------------------ */
-/*  Month Summary Bar                                                 */
+/*  Month Summary                                                     */
 /* ------------------------------------------------------------------ */
 
 function MonthSummary({ days }: { days: HistoryDay[] }) {
@@ -516,22 +441,59 @@ function MonthSummary({ days }: { days: HistoryDay[] }) {
     return dow !== 0 && dow !== 6;
   }).length * 480;
   const delta = worked - planned;
-  const complete = days.filter(d => d.status === "OK" || d.status === "CLOSED" || d.status === "REGULARIZED").length;
-  const missing = days.filter(d => d.status === "MISSING" || d.status === "NO_RECORD").length;
+  const ok = days.filter(d => ["OK","CLOSED","REGULARIZED"].includes(d.status)).length;
+  const miss = days.filter(d => ["MISSING","NO_RECORD"].includes(d.status)).length;
 
   return (
     <div className="grid grid-cols-4 gap-2">
       {[
-        { label: "Trabajado", value: formatMinutes(worked), color: "text-blue-600" },
-        { label: "Balance", value: `${delta >= 0 ? "+" : ""}${formatMinutes(delta)}`, color: delta >= 0 ? "text-emerald-600" : "text-red-500" },
-        { label: "Completos", value: `${complete}`, color: "text-emerald-600" },
-        { label: "Sin registro", value: `${missing}`, color: missing > 0 ? "text-amber-600" : "text-gray-400" },
-      ].map((item) => (
-        <div key={item.label} className="rounded-lg bg-muted/50 px-2 py-1.5 text-center">
-          <p className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">{item.label}</p>
-          <p className={cn("text-sm font-bold tabular-nums", item.color)}>{item.value}</p>
+        { label: "Trabajado", value: fmtMin(worked), color: "text-blue-600" },
+        { label: "Balance", value: `${delta >= 0 ? "+" : ""}${fmtMin(delta)}`, color: delta >= 0 ? "text-emerald-600" : "text-red-500" },
+        { label: "Completos", value: `${ok}`, color: "text-emerald-600" },
+        { label: "Sin registro", value: `${miss}`, color: miss > 0 ? "text-amber-600" : "text-foreground/30" },
+      ].map((it) => (
+        <div key={it.label} className="rounded-xl bg-muted/50 px-3 py-2 text-center border border-border/30">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-foreground/40">{it.label}</p>
+          <p className={cn("text-base font-black tabular-nums", it.color)}>{it.value}</p>
         </div>
       ))}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Theme Picker                                                      */
+/* ------------------------------------------------------------------ */
+
+function ThemePicker({ current, onChange }: { current: string; onChange: (k: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const dots: Record<string, string> = {
+    aurora: "bg-teal-500", cerezo: "bg-pink-500", obsidiana: "bg-zinc-700", lavanda: "bg-purple-500",
+  };
+
+  return (
+    <div className="relative">
+      <Button variant="outline" size="sm" className="gap-1.5 h-8" onClick={() => setOpen(!open)}>
+        <Palette className="size-3.5" />
+        <span className={cn("size-3 rounded-full", dots[current])} />
+      </Button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1 z-20 rounded-xl border bg-background shadow-xl p-2 space-y-1 w-48 animate-in fade-in slide-in-from-top-2 duration-200">
+          {Object.entries(THEMES).map(([key, t]) => (
+            <button
+              key={key}
+              onClick={() => { onChange(key); setOpen(false); }}
+              className={cn(
+                "flex items-center gap-2 w-full rounded-lg px-3 py-2 text-sm transition-colors",
+                current === key ? "bg-primary/10 text-primary font-semibold" : "hover:bg-muted",
+              )}
+            >
+              <span className={cn("size-3.5 rounded-full", dots[key])} />
+              {t.name}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -545,191 +507,181 @@ export default function HistoryPage() {
   const [calYear, setCalYear] = useState(now.getFullYear());
   const [calMonth, setCalMonth] = useState(now.getMonth());
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [panelVisible, setPanelVisible] = useState(false);
+  const [themeKey, setThemeKey] = useState("aurora");
 
-  const { from: dateFrom, to: dateTo } = useMemo(
-    () => getMonthRange(calYear, calMonth),
-    [calYear, calMonth]
-  );
+  const theme = THEMES[themeKey] || THEMES.aurora;
+
+  const { from: dateFrom, to: dateTo } = useMemo(() => getMonthRange(calYear, calMonth), [calYear, calMonth]);
 
   const [listDateFrom, setListDateFrom] = useState(dateFrom);
   const [listDateTo, setListDateTo] = useState(dateTo);
   const [activeTab, setActiveTab] = useState<string | number>("calendar");
   const [regularizeDate, setRegularizeDate] = useState<string | null>(null);
 
-  const calendarQuery = useAttendanceHistory(dateFrom, dateTo);
-  const listQuery = useAttendanceHistory(listDateFrom, listDateTo);
+  const calQ = useAttendanceHistory(dateFrom, dateTo);
+  const listQ = useAttendanceHistory(listDateFrom, listDateTo);
 
-  const calendarDays = (calendarQuery.data?.days ?? []) as HistoryDay[];
-  const listDays = (listQuery.data?.days ?? []) as HistoryDay[];
+  const calDays = (calQ.data?.days ?? []) as HistoryDay[];
+  const listDays = (listQ.data?.days ?? []) as HistoryDay[];
 
-  const totalWorked = listDays.reduce((acc, d) => acc + (d.workedMinutes ?? 0), 0);
-  const totalBreak = listDays.reduce((acc, d) => acc + (d.breakMinutes ?? 0), 0);
+  const totalWorked = listDays.reduce((a, d) => a + (d.workedMinutes ?? 0), 0);
+  const totalBreak = listDays.reduce((a, d) => a + (d.breakMinutes ?? 0), 0);
   const today = new Date().toISOString().split("T")[0];
 
   const rowRefs = useRef<Map<string, HTMLTableRowElement>>(new Map());
 
-  const navigateMonth = useCallback((delta: number) => {
-    let newMonth = calMonth + delta;
-    let newYear = calYear;
-    if (newMonth < 0) { newMonth = 11; newYear -= 1; }
-    else if (newMonth > 11) { newMonth = 0; newYear += 1; }
-    setCalMonth(newMonth);
-    setCalYear(newYear);
-    setSelectedDate(null);
+  // Animate panel slide-in
+  useEffect(() => {
+    if (selectedDate) {
+      setPanelVisible(false);
+      const t = setTimeout(() => setPanelVisible(true), 50);
+      return () => clearTimeout(t);
+    } else {
+      setPanelVisible(false);
+    }
+  }, [selectedDate]);
+
+  const navMonth = useCallback((d: number) => {
+    let nm = calMonth + d, ny = calYear;
+    if (nm < 0) { nm = 11; ny--; } else if (nm > 11) { nm = 0; ny++; }
+    setCalMonth(nm); setCalYear(ny); setSelectedDate(null);
   }, [calMonth, calYear]);
 
-  const goToToday = useCallback(() => {
+  const goToday = useCallback(() => {
     const n = new Date();
-    setCalYear(n.getFullYear());
-    setCalMonth(n.getMonth());
+    setCalYear(n.getFullYear()); setCalMonth(n.getMonth());
     setSelectedDate(n.toISOString().split("T")[0]);
   }, []);
 
-  const handleCalendarDateSelect = useCallback((date: string) => {
-    setSelectedDate((prev) => (prev === date ? null : date));
+  const selectDate = useCallback((d: string) => {
+    setSelectedDate(prev => prev === d ? null : d);
   }, []);
 
-  const handleTabChange = useCallback((value: string | number | null) => {
-    if (value !== null) setActiveTab(value);
-    if (value === "list" && selectedDate) {
-      setListDateFrom(dateFrom);
-      setListDateTo(dateTo);
+  const handleTabChange = useCallback((v: string | number | null) => {
+    if (v !== null) setActiveTab(v);
+    if (v === "list" && selectedDate) {
+      setListDateFrom(dateFrom); setListDateTo(dateTo);
       setTimeout(() => {
         const row = rowRefs.current.get(selectedDate);
-        if (row) {
-          row.scrollIntoView({ behavior: "smooth", block: "center" });
-          row.classList.add("bg-primary/5");
-          setTimeout(() => row.classList.remove("bg-primary/5"), 2000);
-        }
+        if (row) { row.scrollIntoView({ behavior: "smooth", block: "center" }); }
       }, 100);
     }
   }, [selectedDate, dateFrom, dateTo]);
 
-  const selectedDayData = useMemo(
-    () => selectedDate ? calendarDays.find((d) => d.date === selectedDate) : undefined,
-    [selectedDate, calendarDays]
+  const selectedDay = useMemo(
+    () => selectedDate ? calDays.find(d => d.date === selectedDate) : undefined,
+    [selectedDate, calDays]
   );
 
   return (
-    <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Historial de Asistencia</h1>
-        <p className="text-sm text-muted-foreground">Revisa tu historial de marcaciones</p>
+    <div className="space-y-4 max-w-6xl mx-auto">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Historial de Asistencia</h1>
+          <p className="text-sm text-muted-foreground">Revisa tu historial de marcaciones</p>
+        </div>
+        <ThemePicker current={themeKey} onChange={setThemeKey} />
       </div>
 
       <Tabs defaultValue="calendar" value={activeTab} onValueChange={handleTabChange}>
         <TabsList>
           <TabsTrigger value="calendar" className="gap-1.5">
-            <CalendarDays className="size-4" />
-            Calendario
+            <CalendarDays className="size-4" /> Calendario
           </TabsTrigger>
           <TabsTrigger value="list" className="gap-1.5">
-            <List className="size-4" />
-            Lista
+            <List className="size-4" /> Lista
           </TabsTrigger>
         </TabsList>
 
-        {/* ===================== CALENDAR VIEW ===================== */}
+        {/* ═══════════ CALENDAR ═══════════ */}
         <TabsContent value="calendar" className="mt-3">
-          {/* Month Navigation */}
           <div className="flex items-center justify-between mb-3">
-            <Button variant="ghost" size="icon" className="size-8" onClick={() => navigateMonth(-1)}>
-              <ChevronLeft className="size-4" />
+            <Button variant="ghost" size="icon" className="size-9" onClick={() => navMonth(-1)}>
+              <ChevronLeft className="size-5" />
             </Button>
             <div className="text-center">
-              <h2 className="text-base font-bold">{MONTH_NAMES[calMonth]} {calYear}</h2>
-              <button type="button" onClick={goToToday} className="text-[10px] text-primary hover:underline">
-                Ir a hoy
-              </button>
+              <h2 className="text-lg font-bold">{MONTHS[calMonth]} {calYear}</h2>
+              <button type="button" onClick={goToday} className="text-xs text-primary hover:underline">Ir a hoy</button>
             </div>
-            <Button variant="ghost" size="icon" className="size-8" onClick={() => navigateMonth(1)}>
-              <ChevronRight className="size-4" />
+            <Button variant="ghost" size="icon" className="size-9" onClick={() => navMonth(1)}>
+              <ChevronRight className="size-5" />
             </Button>
           </div>
 
-          {/* Month summary */}
-          {!calendarQuery.isLoading && calendarDays.length > 0 && (
-            <MonthSummary days={calendarDays} />
-          )}
+          {!calQ.isLoading && calDays.length > 0 && <MonthSummary days={calDays} />}
 
-          {calendarQuery.isLoading && (
+          {calQ.isLoading && (
             <div className="flex items-center justify-center py-20">
-              <p className="text-sm text-muted-foreground animate-pulse">Cargando calendario...</p>
+              <p className="text-sm text-foreground/40 animate-pulse">Cargando calendario...</p>
             </div>
           )}
 
-          {calendarQuery.isError && (
-            <p className="text-sm text-destructive py-8 text-center">Error al cargar el historial.</p>
-          )}
+          {calQ.isError && <p className="text-sm text-destructive py-8 text-center">Error al cargar el historial.</p>}
 
-          {!calendarQuery.isLoading && !calendarQuery.isError && (
-            <div className="flex gap-4 mt-3">
-              {/* Calendar grid */}
-              <div className={cn("flex-1 min-w-0 transition-all", selectedDate ? "max-w-[60%]" : "")}>
-                <div className="rounded-2xl border bg-card p-3 shadow-sm">
+          {!calQ.isLoading && !calQ.isError && (
+            <div className="flex gap-4 mt-3 items-start">
+              {/* Grid */}
+              <div className="flex-1 min-w-0">
+                <div className="rounded-2xl border bg-card p-4 shadow-sm">
                   <CalendarGrid
-                    year={calYear}
-                    month={calMonth}
-                    days={calendarDays}
-                    onSelectDate={handleCalendarDateSelect}
-                    selectedDate={selectedDate}
+                    year={calYear} month={calMonth} days={calDays}
+                    onSelectDate={selectDate} selectedDate={selectedDate}
+                    theme={theme}
                   />
                 </div>
               </div>
 
-              {/* Side detail panel */}
+              {/* Side panel with slide animation */}
               <div className={cn(
-                "transition-all duration-300 overflow-hidden",
-                selectedDate ? "w-[280px] opacity-100" : "w-0 opacity-0",
+                "shrink-0 transition-all duration-300 ease-out overflow-hidden",
+                selectedDate ? "w-[320px] opacity-100" : "w-0 opacity-0",
               )}>
-                {selectedDayData ? (
+                {selectedDay ? (
                   <DetailPanel
-                    day={selectedDayData}
+                    day={selectedDay}
                     onRegularize={setRegularizeDate}
                     onClose={() => setSelectedDate(null)}
+                    theme={theme}
+                    visible={panelVisible}
                   />
                 ) : selectedDate ? (
-                  <div className="rounded-2xl border bg-muted/20 p-6 text-center h-full flex flex-col items-center justify-center">
-                    <CalendarDays className="size-8 text-muted-foreground/30" />
-                    <p className="mt-2 text-sm text-muted-foreground">Sin registro para este dia</p>
-                    {REGULARIZABLE_STATUSES.has("NO_RECORD") && selectedDate < today && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="mt-3 gap-1.5"
-                        onClick={() => setRegularizeDate(selectedDate)}
-                      >
-                        <PenLineIcon className="size-3.5" />
-                        Regularizar
+                  <div className={cn(
+                    "rounded-2xl border bg-muted/20 p-6 text-center flex flex-col items-center justify-center min-h-[300px] transition-all duration-300",
+                    panelVisible ? "translate-x-0 opacity-100" : "translate-x-8 opacity-0",
+                  )}>
+                    <CalendarDays className="size-10 text-foreground/15" />
+                    <p className="mt-3 text-sm font-medium text-foreground/40">Sin registro</p>
+                    {selectedDate < today && (
+                      <Button size="sm" variant="outline" className="mt-4 gap-1.5" onClick={() => setRegularizeDate(selectedDate)}>
+                        <PenLineIcon className="size-4" /> Regularizar
                       </Button>
                     )}
                   </div>
-                ) : (
-                  <EmptyDetailPanel />
-                )}
+                ) : null}
               </div>
             </div>
           )}
         </TabsContent>
 
-        {/* ===================== LIST VIEW ========================= */}
+        {/* ═══════════ LIST ═══════════ */}
         <TabsContent value="list" className="mt-4 space-y-4">
           <div className="flex flex-wrap items-end gap-4">
             <div className="space-y-1.5">
               <Label htmlFor="dateFrom">Desde</Label>
-              <Input id="dateFrom" type="date" value={listDateFrom} onChange={(e) => setListDateFrom(e.target.value)} />
+              <Input id="dateFrom" type="date" value={listDateFrom} onChange={e => setListDateFrom(e.target.value)} />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="dateTo">Hasta</Label>
-              <Input id="dateTo" type="date" value={listDateTo} onChange={(e) => setListDateTo(e.target.value)} />
+              <Input id="dateTo" type="date" value={listDateTo} onChange={e => setListDateTo(e.target.value)} />
             </div>
           </div>
 
-          {listQuery.isLoading && <p className="text-sm text-muted-foreground">Cargando historial...</p>}
-          {listQuery.isError && <p className="text-sm text-destructive">Error al cargar el historial.</p>}
+          {listQ.isLoading && <p className="text-sm text-foreground/40">Cargando historial...</p>}
+          {listQ.isError && <p className="text-sm text-destructive">Error al cargar el historial.</p>}
 
-          {!listQuery.isLoading && !listQuery.isError && (
-            <div className="rounded-md border">
+          {!listQ.isLoading && !listQ.isError && (
+            <div className="rounded-xl border overflow-hidden">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -740,56 +692,46 @@ export default function HistoryPage() {
                     <TableHead>Trabajo</TableHead>
                     <TableHead>Estado</TableHead>
                     <TableHead>Razon</TableHead>
-                    <TableHead className="w-[80px]" />
+                    <TableHead className="w-[90px]" />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {listDays.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={8} className="text-center text-muted-foreground">
+                      <TableCell colSpan={8} className="text-center text-foreground/40 py-12">
                         No hay registros en el rango seleccionado
                       </TableCell>
                     </TableRow>
-                  ) : (
-                    listDays.map((day) => {
-                      const canRegularize = REGULARIZABLE_STATUSES.has(day.status) && day.date < today;
-                      return (
-                        <TableRow
-                          key={day.date}
-                          ref={(el) => { if (el) rowRefs.current.set(day.date, el); }}
-                          className={day.date === selectedDate ? "bg-primary/5 transition-colors duration-500" : "transition-colors duration-500"}
-                        >
-                          <TableCell className="font-medium">{day.date}</TableCell>
-                          <TableCell>{day.firstInLocal ?? "--:--"}</TableCell>
-                          <TableCell>{day.lastOutLocal ?? "--:--"}</TableCell>
-                          <TableCell>{formatMinutes(day.breakMinutes)}</TableCell>
-                          <TableCell>{day.workedHHMM ?? formatMinutes(day.workedMinutes)}</TableCell>
-                          <TableCell><StatusBadge status={day.status} /></TableCell>
-                          <TableCell className="text-muted-foreground">{day.reasonLabel ?? day.reasonCode ?? "-"}</TableCell>
-                          <TableCell>
-                            {canRegularize && (
-                              <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs" onClick={() => setRegularizeDate(day.date)}>
-                                <PenLineIcon className="size-3.5" />
-                                Regularizar
-                              </Button>
-                            )}
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })
-                  )}
+                  ) : listDays.map((day) => {
+                    const canR = REGULARIZABLE.has(day.status) && day.date < today;
+                    return (
+                      <TableRow key={day.date} ref={el => { if (el) rowRefs.current.set(day.date, el); }}>
+                        <TableCell className="font-medium">{day.date}</TableCell>
+                        <TableCell>{day.firstInLocal ?? "--:--"}</TableCell>
+                        <TableCell>{day.lastOutLocal ?? "--:--"}</TableCell>
+                        <TableCell>{fmtMin(day.breakMinutes)}</TableCell>
+                        <TableCell className="font-semibold">{day.workedHHMM ?? fmtMin(day.workedMinutes)}</TableCell>
+                        <TableCell><StatusBadge status={day.status} /></TableCell>
+                        <TableCell className="text-foreground/50">{day.reasonLabel ?? day.reasonCode ?? "-"}</TableCell>
+                        <TableCell>
+                          {canR && (
+                            <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs" onClick={() => setRegularizeDate(day.date)}>
+                              <PenLineIcon className="size-3.5" /> Regularizar
+                            </Button>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
                 {listDays.length > 0 && (
                   <TableFooter>
                     <TableRow>
                       <TableCell className="font-bold">Total</TableCell>
-                      <TableCell />
-                      <TableCell />
-                      <TableCell className="font-bold">{formatMinutes(totalBreak)}</TableCell>
-                      <TableCell className="font-bold">{formatMinutes(totalWorked)}</TableCell>
-                      <TableCell />
-                      <TableCell />
-                      <TableCell />
+                      <TableCell /><TableCell />
+                      <TableCell className="font-bold">{fmtMin(totalBreak)}</TableCell>
+                      <TableCell className="font-bold">{fmtMin(totalWorked)}</TableCell>
+                      <TableCell /><TableCell /><TableCell />
                     </TableRow>
                   </TableFooter>
                 )}
@@ -801,7 +743,7 @@ export default function HistoryPage() {
 
       <RegularizeDialog
         open={regularizeDate !== null}
-        onOpenChange={(open) => { if (!open) setRegularizeDate(null); }}
+        onOpenChange={open => { if (!open) setRegularizeDate(null); }}
         workDate={regularizeDate ?? ""}
       />
     </div>
