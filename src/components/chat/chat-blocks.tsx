@@ -15,9 +15,15 @@ import {
   FileText,
   TrendingUp,
   TrendingDown,
+  ChevronRight,
+  PenLine,
+  Plus,
+  User,
 } from "lucide-react";
 import { REASON_LABELS } from "@/lib/constants/reason-codes";
 import type { UIBlock } from "@/lib/types/chat";
+
+type OnAction = (message: string) => void;
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
   OK: { label: "Completo", color: "text-green-700", bg: "bg-green-50 border-green-200" },
@@ -72,6 +78,26 @@ function ProgressBar({ value, max, className }: { value: number; max: number; cl
   );
 }
 
+function ActionButton({
+  label,
+  icon: Icon,
+  onClick,
+}: {
+  label: string;
+  icon: typeof ChevronRight;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="inline-flex items-center gap-1 rounded-full border border-primary/20 bg-primary/5 px-2.5 py-1 text-[10px] font-medium text-primary hover:bg-primary/10 hover:border-primary/40 transition-colors active:scale-95"
+    >
+      <Icon className="h-3 w-3" />
+      {label}
+    </button>
+  );
+}
+
 function hhmmToMinutes(hhmm: string): number {
   const negative = hhmm.startsWith("-");
   const clean = hhmm.replace("-", "");
@@ -80,9 +106,18 @@ function hhmmToMinutes(hhmm: string): number {
   return negative ? -total : total;
 }
 
+function formatShortDate(iso: string | null | undefined): string {
+  if (!iso) return "";
+  try {
+    return new Date(iso).toLocaleDateString("es-PE", { day: "2-digit", month: "short" });
+  } catch {
+    return iso;
+  }
+}
+
 // ── Block Renderers ─────────────────────────────────────────────────
 
-function AttendanceTodayCard({ block }: { block: Extract<UIBlock, { type: "attendance_today" }> }) {
+function AttendanceTodayCard({ block, onAction }: { block: Extract<UIBlock, { type: "attendance_today" }>; onAction?: OnAction }) {
   const worked = hhmmToMinutes(block.workedHHMM);
   const delta = hhmmToMinutes(block.deltaHHMM);
 
@@ -121,13 +156,32 @@ function AttendanceTodayCard({ block }: { block: Extract<UIBlock, { type: "atten
             {block.deltaHHMM}
           </div>
         </div>
+        {/* Action buttons */}
+        {onAction && (
+          <div className="flex flex-wrap gap-1.5 pt-1 border-t border-dashed">
+            {block.firstIn === "Sin registro" && (
+              <ActionButton label="Marcar Entrada" icon={LogIn} onClick={() => onAction("Marca mi entrada")} />
+            )}
+            {block.hasOpenShift && (
+              <>
+                <ActionButton label="Inicio Break" icon={Coffee} onClick={() => onAction("Marca inicio de break")} />
+                <ActionButton label="Marcar Salida" icon={LogOut} onClick={() => onAction("Marca mi salida")} />
+              </>
+            )}
+            {(block.status === "CLOSED" || block.status === "OK") && (
+              <ActionButton label="Resumen semanal" icon={CalendarDays} onClick={() => onAction("Dame mi resumen semanal de horas")} />
+            )}
+            {(block.status === "MISSING" || block.status === "NO_RECORD") && (
+              <ActionButton label="Regularizar hoy" icon={PenLine} onClick={() => onAction(`Quiero regularizar mi asistencia del ${block.date}`)} />
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
-function WeekSummaryCard({ block }: { block: Extract<UIBlock, { type: "week_summary" }> }) {
-  const totalWorked = hhmmToMinutes(block.totalWorkedHHMM);
+function WeekSummaryCard({ block, onAction }: { block: Extract<UIBlock, { type: "week_summary" }>; onAction?: OnAction }) {
   const totalDelta = hhmmToMinutes(block.totalDeltaHHMM);
 
   return (
@@ -138,7 +192,6 @@ function WeekSummaryCard({ block }: { block: Extract<UIBlock, { type: "week_summ
         <span className="ml-auto text-[10px] text-purple-600">{block.fromDate} — {block.toDate}</span>
       </div>
       <div className="p-2">
-        {/* Summary row */}
         <div className="flex items-center gap-3 rounded-lg bg-gray-50 px-3 py-2 mb-2">
           <div className="text-center flex-1">
             <div className="text-[10px] text-muted-foreground">Trabajado</div>
@@ -157,23 +210,34 @@ function WeekSummaryCard({ block }: { block: Extract<UIBlock, { type: "week_summ
             </div>
           </div>
         </div>
-        {/* Days */}
         <div className="space-y-0.5">
           {block.days.map((day) => {
             const dayWorked = hhmmToMinutes(day.workedHHMM);
+            const canRegularize = day.status === "MISSING" || day.status === "NO_RECORD" || day.status === "SHORT";
             return (
               <div
                 key={day.date}
-                className="flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-gray-50 transition-colors"
+                className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 hover:bg-gray-50 transition-colors"
               >
-                <span className="w-8 text-[10px] font-medium text-muted-foreground">{day.weekday}</span>
+                <span className="w-7 text-[10px] font-medium text-muted-foreground">{day.weekday}</span>
                 <span className="w-10 text-[10px] tabular-nums">{day.firstIn}</span>
                 <span className="w-10 text-[10px] tabular-nums">{day.lastOut}</span>
-                <div className="flex-1">
+                <div className="flex-1 min-w-6">
                   <ProgressBar value={dayWorked} max={480} />
                 </div>
                 <span className="w-10 text-[10px] font-medium tabular-nums text-right">{day.workedHHMM}</span>
-                <StatusBadge status={day.status} />
+                {canRegularize && onAction ? (
+                  <button
+                    onClick={() => onAction(`Quiero regularizar mi asistencia del ${day.date}`)}
+                    className="inline-flex items-center gap-0.5 rounded-full border border-red-200 bg-red-50 px-1.5 py-0.5 text-[9px] font-semibold text-red-600 hover:bg-red-100 transition-colors"
+                    title={`Regularizar ${day.date}`}
+                  >
+                    <PenLine className="h-2.5 w-2.5" />
+                    Regularizar
+                  </button>
+                ) : (
+                  <StatusBadge status={day.status} />
+                )}
               </div>
             );
           })}
@@ -183,7 +247,7 @@ function WeekSummaryCard({ block }: { block: Extract<UIBlock, { type: "week_summ
   );
 }
 
-function RequestCreatedCard({ block }: { block: Extract<UIBlock, { type: "request_created" }> }) {
+function RequestCreatedCard({ block, onAction }: { block: Extract<UIBlock, { type: "request_created" }>; onAction?: OnAction }) {
   const typeLabel = REQUEST_TYPE_LABELS[block.requestType] || block.requestType;
   const reasonLabel = REASON_LABELS[block.reasonCode] || block.reasonCode;
   const dateDisplay = block.date || (block.dateFrom && block.dateTo ? `${block.dateFrom} — ${block.dateTo}` : "—");
@@ -199,6 +263,12 @@ function RequestCreatedCard({ block }: { block: Extract<UIBlock, { type: "reques
           <span className="text-xs font-semibold">{typeLabel}</span>
           <StatusBadge status={block.status} />
         </div>
+        {block.employeeName && (
+          <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+            <User className="h-3 w-3" />
+            <span>{block.employeeName}</span>
+          </div>
+        )}
         <div className="space-y-1.5 text-[11px]">
           <div className="flex items-center gap-2">
             <CalendarDays className="h-3 w-3 text-muted-foreground" />
@@ -215,12 +285,17 @@ function RequestCreatedCard({ block }: { block: Extract<UIBlock, { type: "reques
             Un administrador revisara tu solicitud pronto.
           </p>
         </div>
+        {onAction && (
+          <div className="flex flex-wrap gap-1.5 pt-1">
+            <ActionButton label="Ver mis solicitudes" icon={Send} onClick={() => onAction("Muestra el estado de mis solicitudes")} />
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
-function RequestListCard({ block }: { block: Extract<UIBlock, { type: "request_list" }> }) {
+function RequestListCard({ block, onAction }: { block: Extract<UIBlock, { type: "request_list" }>; onAction?: OnAction }) {
   return (
     <div className="rounded-xl border bg-background shadow-sm overflow-hidden">
       <div className="flex items-center gap-2 bg-indigo-50 px-3 py-2 border-b border-indigo-100">
@@ -228,48 +303,77 @@ function RequestListCard({ block }: { block: Extract<UIBlock, { type: "request_l
         <span className="text-[11px] font-semibold text-indigo-800">Mis Solicitudes</span>
         <span className="ml-auto text-[10px] text-indigo-500">{block.total} total</span>
       </div>
-      <div className="divide-y max-h-48 overflow-y-auto">
+      <div className="divide-y max-h-52 overflow-y-auto">
         {block.requests.length === 0 ? (
           <p className="text-[11px] text-muted-foreground text-center py-4">No tienes solicitudes</p>
         ) : (
           block.requests.map((req) => {
             const typeLabel = REQUEST_TYPE_LABELS[req.type] || req.type;
+            const statusLabel = STATUS_CONFIG[req.status]?.label || req.status;
             return (
-              <div key={req.id} className="flex items-center gap-2 px-3 py-2">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[11px] font-medium truncate">{typeLabel}</span>
-                    <StatusBadge status={req.status} />
-                  </div>
-                  <div className="text-[10px] text-muted-foreground mt-0.5">
-                    {req.date} - {REASON_LABELS[req.reasonCode] || req.reasonCode}
-                  </div>
+              <div key={req.id} className="px-3 py-2 space-y-0.5">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[11px] font-medium truncate flex-1">{typeLabel}</span>
+                  <StatusBadge status={req.status} />
                 </div>
+                <div className="text-[10px] text-muted-foreground">
+                  {req.date} - {REASON_LABELS[req.reasonCode] || req.reasonCode}
+                </div>
+                <div className="text-[10px] text-muted-foreground">
+                  Creado: {formatShortDate(req.createdAt)}
+                </div>
+                {req.reviewedBy && (
+                  <div className="text-[10px] font-medium text-muted-foreground flex items-center gap-1">
+                    <User className="h-2.5 w-2.5" />
+                    {statusLabel} por {req.reviewedBy}
+                    {req.reviewedAt && ` - ${formatShortDate(req.reviewedAt)}`}
+                  </div>
+                )}
               </div>
             );
           })
         )}
       </div>
+      {/* Action buttons */}
+      {onAction && (
+        <div className="flex flex-wrap gap-1.5 px-3 py-2 border-t">
+          <ActionButton label="Nueva solicitud" icon={Plus} onClick={() => onAction("Quiero solicitar un permiso")} />
+          <ActionButton label="Regularizar fecha" icon={PenLine} onClick={() => onAction("Quiero regularizar mi asistencia")} />
+        </div>
+      )}
     </div>
   );
 }
 
-function AttendanceRecordedCard({ block }: { block: Extract<UIBlock, { type: "attendance_recorded" }> }) {
+function AttendanceRecordedCard({ block, onAction }: { block: Extract<UIBlock, { type: "attendance_recorded" }>; onAction?: OnAction }) {
   const config = EVENT_TYPE_CONFIG[block.eventType] || { label: block.eventType, icon: Clock, color: "text-gray-600" };
   const Icon = config.icon;
 
+  const nextActions: Record<string, { label: string; icon: typeof LogIn; message: string }> = {
+    START: { label: "Inicio Break", icon: Coffee, message: "Marca inicio de break" },
+    BREAK_START: { label: "Fin Break", icon: Coffee, message: "Marca fin de break" },
+    BREAK_END: { label: "Marcar Salida", icon: LogOut, message: "Marca mi salida" },
+    END: { label: "Ver asistencia hoy", icon: Clock, message: "Muestra mi asistencia de hoy" },
+  };
+  const next = nextActions[block.eventType];
+
   return (
     <div className="rounded-xl border bg-background shadow-sm overflow-hidden">
-      <div className={cn("flex items-center gap-3 p-3", "bg-gradient-to-r from-green-50 to-emerald-50")}>
+      <div className={cn("flex items-center gap-3 px-3 py-3", "bg-gradient-to-r from-green-50 to-emerald-50")}>
         <div className={cn("flex h-10 w-10 items-center justify-center rounded-full bg-white shadow-sm", config.color)}>
           <Icon className="h-5 w-5" />
         </div>
-        <div>
+        <div className="flex-1">
           <p className="text-xs font-semibold text-green-800">{config.label}</p>
           <p className="text-lg font-bold text-green-900">{block.time}</p>
         </div>
-        <CheckCircle className="ml-auto h-5 w-5 text-green-500" />
+        <CheckCircle className="h-5 w-5 text-green-500 shrink-0" />
       </div>
+      {onAction && next && (
+        <div className="flex px-3 py-2 border-t">
+          <ActionButton label={next.label} icon={next.icon} onClick={() => onAction(next.message)} />
+        </div>
+      )}
     </div>
   );
 }
@@ -288,18 +392,18 @@ function ErrorCard({ block }: { block: Extract<UIBlock, { type: "error" }> }) {
 
 // ── Main Export ──────────────────────────────────────────────────────
 
-export function ChatBlockRenderer({ block }: { block: UIBlock }) {
+export function ChatBlockRenderer({ block, onAction }: { block: UIBlock; onAction?: OnAction }) {
   switch (block.type) {
     case "attendance_today":
-      return <AttendanceTodayCard block={block} />;
+      return <AttendanceTodayCard block={block} onAction={onAction} />;
     case "week_summary":
-      return <WeekSummaryCard block={block} />;
+      return <WeekSummaryCard block={block} onAction={onAction} />;
     case "request_created":
-      return <RequestCreatedCard block={block} />;
+      return <RequestCreatedCard block={block} onAction={onAction} />;
     case "request_list":
-      return <RequestListCard block={block} />;
+      return <RequestListCard block={block} onAction={onAction} />;
     case "attendance_recorded":
-      return <AttendanceRecordedCard block={block} />;
+      return <AttendanceRecordedCard block={block} onAction={onAction} />;
     case "error":
       return <ErrorCard block={block} />;
     default:

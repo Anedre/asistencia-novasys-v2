@@ -67,6 +67,7 @@ export interface RequestCreatedBlock {
   dateFrom?: string;
   dateTo?: string;
   reasonCode: string;
+  employeeName?: string;
 }
 
 export interface RequestListBlock {
@@ -80,6 +81,7 @@ export interface RequestListBlock {
     reasonCode: string;
     createdAt: string;
     reviewedBy: string | null;
+    reviewedAt: string | null;
   }[];
 }
 

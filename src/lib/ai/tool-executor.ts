@@ -87,6 +87,7 @@ async function handleCreateRegularization(
       dateFrom: input.dateFrom as string | undefined,
       dateTo: input.dateTo as string | undefined,
       reasonCode: input.reasonCode as string,
+      employeeName: ctx.employeeName,
     },
   };
 }
@@ -113,6 +114,7 @@ async function handleCreatePermission(
       dateFrom: input.dateFrom as string,
       dateTo: input.dateTo as string,
       reasonCode: input.reasonCode as string,
+      employeeName: ctx.employeeName,
     },
   };
 }
@@ -183,6 +185,7 @@ async function handleCheckRequests(ctx: ToolContext): Promise<ToolExecResult> {
     reasonCode: r.reasonCode,
     createdAt: r.createdAt,
     reviewedBy: r.reviewedByName || null,
+    reviewedAt: r.reviewedAt || null,
   }));
 
   return {

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
@@ -19,6 +20,8 @@ import {
   FileText,
   LogIn,
   Sparkles,
+  LayoutGrid,
+  UserCog,
 } from "lucide-react";
 import {
   useChatSessions,
@@ -27,7 +30,7 @@ import {
   useSendMessage,
 } from "@/hooks/use-chat";
 import { ChatBlockRenderer } from "./chat-blocks";
-import type { AIChatMessage, UIBlock } from "@/lib/types/chat";
+import type { AIChatMessage } from "@/lib/types/chat";
 import { toast } from "sonner";
 
 const QUICK_ACTIONS = [
@@ -37,15 +40,18 @@ const QUICK_ACTIONS = [
   { label: "Marcar entrada", icon: LogIn, message: "Marca mi entrada" },
   { label: "Solicitar permiso", icon: Send, message: "Quiero solicitar un permiso" },
   { label: "Mis solicitudes", icon: FileText, message: "Muestra el estado de mis solicitudes" },
+  { label: "Editar perfil", icon: UserCog, message: "__NAVIGATE:/profile" },
 ];
 
 export function ChatWidget() {
+  const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [localMessages, setLocalMessages] = useState<AIChatMessage[]>([]);
   const [inputValue, setInputValue] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [showSessions, setShowSessions] = useState(false);
+  const [showQuickMenu, setShowQuickMenu] = useState(false);
   const [pendingMessage, setPendingMessage] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -58,7 +64,7 @@ export function ChatWidget() {
   const sessions = data?.sessions ?? [];
   const activeSession = sessions.find((s) => s.SessionID === activeSessionId);
 
-  // Sync from server only when switching sessions, not on refetch
+  // Sync from server only when switching sessions
   const prevSessionIdRef = useRef<string | null>(null);
   useEffect(() => {
     if (!activeSession) {
@@ -66,7 +72,6 @@ export function ChatWidget() {
       prevSessionIdRef.current = null;
       return;
     }
-    // Only sync from server when the session ID actually changes
     if (prevSessionIdRef.current !== activeSession.SessionID) {
       setLocalMessages(activeSession.Messages);
       prevSessionIdRef.current = activeSession.SessionID;
@@ -121,6 +126,7 @@ export function ChatWidget() {
     if (!content.trim() || !activeSessionId || isSending) return;
 
     setInputValue("");
+    setShowQuickMenu(false);
     setIsSending(true);
 
     if (textareaRef.current) {
@@ -149,24 +155,33 @@ export function ChatWidget() {
     }
   }, [activeSessionId, isSending, sendMessage]);
 
-  const handleSend = useCallback(() => {
-    sendContent(inputValue);
-  }, [inputValue, sendContent]);
+  /** Central action handler — intercepts navigation sentinels, otherwise sends to AI */
+  const handleAction = useCallback((message: string) => {
+    if (message.startsWith("__NAVIGATE:")) {
+      const path = message.replace("__NAVIGATE:", "");
+      router.push(path);
+      setIsOpen(false);
+      return;
+    }
 
-  const handleQuickAction = async (message: string) => {
     if (!activeSessionId) {
-      try {
-        const result = await createSession.mutateAsync();
+      // Need to create session first
+      createSession.mutateAsync().then((result) => {
         setActiveSessionId(result.session.SessionID);
         setLocalMessages([]);
         setPendingMessage(message);
-      } catch {
+      }).catch(() => {
         toast.error("Error al crear la conversación");
-      }
+      });
       return;
     }
+
     sendContent(message);
-  };
+  }, [activeSessionId, sendContent, router, createSession]);
+
+  const handleSend = useCallback(() => {
+    handleAction(inputValue);
+  }, [inputValue, handleAction]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -330,7 +345,7 @@ export function ChatWidget() {
                 {QUICK_ACTIONS.map((action) => (
                   <button
                     key={action.label}
-                    onClick={() => handleQuickAction(action.message)}
+                    onClick={() => handleAction(action.message)}
                     disabled={createSession.isPending}
                     className="flex items-center gap-2 rounded-xl border bg-background p-3 text-left transition-all hover:border-primary/30 hover:bg-primary/5 hover:shadow-sm active:scale-[0.98] disabled:opacity-50"
                   >
@@ -356,12 +371,11 @@ export function ChatWidget() {
                         Escribe un mensaje o usa una accion rapida
                       </p>
                     </div>
-                    {/* Quick action chips */}
                     <div className="flex flex-wrap gap-1.5 justify-center">
-                      {QUICK_ACTIONS.map((action) => (
+                      {QUICK_ACTIONS.filter(a => !a.message.startsWith("__NAVIGATE")).map((action) => (
                         <button
                           key={action.label}
-                          onClick={() => sendContent(action.message)}
+                          onClick={() => handleAction(action.message)}
                           className="inline-flex items-center gap-1.5 rounded-full border bg-background px-3 py-1.5 text-[10px] font-medium transition-all hover:border-primary/30 hover:bg-primary/5"
                         >
                           <action.icon className="h-3 w-3 text-primary" />
@@ -375,7 +389,6 @@ export function ChatWidget() {
                 {localMessages.map((msg, idx) => (
                   <div key={idx}>
                     {msg.role === "user" ? (
-                      /* User message */
                       <div className="flex gap-2 max-w-[85%] ml-auto flex-row-reverse">
                         <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
                           <User className="h-3 w-3" />
@@ -385,9 +398,7 @@ export function ChatWidget() {
                         </div>
                       </div>
                     ) : (
-                      /* Assistant message */
                       <div className="space-y-2">
-                        {/* Text part */}
                         {msg.content && (
                           <div className="flex gap-2 max-w-[92%] mr-auto">
                             <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-primary/20 to-primary/5">
@@ -398,11 +409,10 @@ export function ChatWidget() {
                             </div>
                           </div>
                         )}
-                        {/* Rich blocks */}
                         {msg.blocks && msg.blocks.length > 0 && (
                           <div className="pl-8 space-y-2">
                             {msg.blocks.map((block, bIdx) => (
-                              <ChatBlockRenderer key={bIdx} block={block} />
+                              <ChatBlockRenderer key={bIdx} block={block} onAction={handleAction} />
                             ))}
                           </div>
                         )}
@@ -411,7 +421,6 @@ export function ChatWidget() {
                   </div>
                 ))}
 
-                {/* Loading indicator */}
                 {isSending && (
                   <div className="flex gap-2 max-w-[85%] mr-auto">
                     <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-primary/20 to-primary/5">
@@ -431,9 +440,40 @@ export function ChatWidget() {
                 <div ref={messagesEndRef} />
               </div>
 
+              {/* Quick actions menu (toggle) */}
+              {showQuickMenu && (
+                <div className="border-t px-3 py-2 bg-muted/30">
+                  <div className="flex flex-wrap gap-1.5">
+                    {QUICK_ACTIONS.map((action) => (
+                      <button
+                        key={action.label}
+                        onClick={() => handleAction(action.message)}
+                        disabled={isSending}
+                        className="inline-flex items-center gap-1.5 rounded-full border bg-background px-2.5 py-1.5 text-[10px] font-medium transition-all hover:border-primary/30 hover:bg-primary/5 disabled:opacity-50"
+                      >
+                        <action.icon className="h-3 w-3 text-primary" />
+                        {action.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Input */}
               <div className="border-t bg-background px-3 py-2.5">
-                <div className="flex items-end gap-2">
+                <div className="flex items-end gap-1.5">
+                  <button
+                    onClick={() => setShowQuickMenu(!showQuickMenu)}
+                    className={cn(
+                      "flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border transition-colors",
+                      showQuickMenu
+                        ? "bg-primary/10 border-primary/30 text-primary"
+                        : "bg-muted/50 border-transparent text-muted-foreground hover:text-foreground hover:bg-muted"
+                    )}
+                    title="Acciones rapidas"
+                  >
+                    <LayoutGrid className="h-4 w-4" />
+                  </button>
                   <textarea
                     ref={textareaRef}
                     value={inputValue}
