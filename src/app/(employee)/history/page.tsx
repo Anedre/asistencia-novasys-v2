@@ -360,55 +360,108 @@ function DetailPanel({
   const d = new Date(day.date + "T12:00:00");
   const dn = d.toLocaleDateString("es-PE", { weekday: "long" });
   const dm = d.getDate(), mn = d.toLocaleDateString("es-PE", { month: "long" });
+  const corp = t.key === "corporativo";
 
   return (
     <div className={cn(
-      "flex flex-col rounded-2xl border bg-background shadow-2xl overflow-hidden transition-all duration-300 ease-out",
+      "flex flex-col border bg-background shadow-2xl overflow-hidden transition-all duration-300 ease-out",
+      corp ? "rounded-lg" : "rounded-2xl",
       vis ? "translate-x-0 opacity-100" : "translate-x-10 opacity-0",
     )}>
-      <div className={cn("relative px-5 py-4 text-white bg-gradient-to-r", t.headerGrad)}>
-        <button onClick={onClose} className="absolute top-3 right-3 rounded-full bg-white/20 p-1.5 hover:bg-white/30 transition-colors">
+      {/* Header */}
+      <div className={cn(
+        "relative px-5 py-4",
+        corp ? "bg-slate-800 text-white" : cn("text-white bg-gradient-to-r", t.headerGrad),
+      )}>
+        <button onClick={onClose} className={cn(
+          "absolute top-3 right-3 rounded-full p-1.5 transition-colors",
+          corp ? "bg-slate-700 hover:bg-slate-600" : "bg-white/20 hover:bg-white/30",
+        )}>
           <X className="size-4" />
         </button>
-        <p className="text-sm font-medium capitalize opacity-80">{dn}</p>
+        <p className={cn("text-sm font-medium capitalize", corp ? "text-slate-300" : "opacity-80")}>{dn}</p>
         <p className="text-3xl font-black tracking-tight">{dm} <span className="text-lg font-semibold capitalize">{mn}</span></p>
         <div className="mt-2"><StatusBadge status={day.status} /></div>
       </div>
+
+      {/* Content */}
       <div className="p-5 space-y-4 flex-1">
-        <div className="grid grid-cols-2 gap-3">
-          <ICard icon={LogIn} label="Entrada" value={shortT(day.firstInLocal)} color="text-emerald-600" bg="bg-emerald-50" b="border-emerald-100" />
-          <ICard icon={LogOut} label="Salida" value={shortT(day.lastOutLocal)} color="text-red-500" bg="bg-red-50" b="border-red-100" />
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <ICard icon={Coffee} label="Break" value={`${day.breakMinutes} min`} color="text-amber-600" bg="bg-amber-50" b="border-amber-100" />
-          <ICard icon={Clock} label="Trabajado" value={day.workedHHMM || fmtMin(day.workedMinutes)} color="text-blue-600" bg="bg-blue-50" b="border-blue-100" />
-        </div>
-        <div>
-          <div className="flex items-center justify-between text-xs mb-1.5">
-            <span className="text-foreground/50 font-medium">Progreso</span>
-            <span className="font-bold">{pct}%</span>
-          </div>
-          <div className="h-3 w-full rounded-full bg-gray-100 overflow-hidden">
-            <div className={cn("h-full rounded-full transition-all duration-500",
-              pct >= 100 ? "bg-emerald-500" : pct >= 75 ? "bg-blue-500" : pct >= 50 ? "bg-amber-500" : "bg-red-400"
-            )} style={{ width: `${pct}%` }} />
-          </div>
-        </div>
-        <div className={cn("flex items-center gap-3 rounded-xl p-3.5 border",
-          delta >= 0 ? "bg-emerald-50 border-emerald-100" : "bg-red-50 border-red-100")}>
-          {delta >= 0 ? <TrendingUp className="size-5 text-emerald-600" /> : <TrendingDown className="size-5 text-red-500" />}
-          <div>
-            <p className="text-xs font-semibold text-foreground/50 uppercase">Balance</p>
-            <p className={cn("text-base font-black", delta >= 0 ? "text-emerald-700" : "text-red-600")}>{delta >= 0 ? "+" : ""}{fmtMin(delta)}</p>
-          </div>
-        </div>
+        {corp ? (
+          /* ── Corporativo: monochrome table-style rows ── */
+          <>
+            <div className="divide-y border rounded-lg overflow-hidden">
+              <CorpRow label="Entrada" value={shortT(day.firstInLocal)} icon={LogIn} />
+              <CorpRow label="Salida" value={shortT(day.lastOutLocal)} icon={LogOut} />
+              <CorpRow label="Break" value={`${day.breakMinutes} min`} icon={Coffee} />
+              <CorpRow label="Trabajado" value={day.workedHHMM || fmtMin(day.workedMinutes)} icon={Clock} bold />
+            </div>
+            <div>
+              <div className="flex items-center justify-between text-xs mb-1.5">
+                <span className="text-slate-500 font-medium">Progreso</span>
+                <span className="font-bold text-slate-700">{pct}%</span>
+              </div>
+              <div className="h-2 w-full rounded-full bg-slate-100 overflow-hidden">
+                <div className="h-full rounded-full bg-blue-600 transition-all duration-500" style={{ width: `${pct}%` }} />
+              </div>
+            </div>
+            <div className="flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+              {delta >= 0 ? <TrendingUp className="size-4 text-blue-600" /> : <TrendingDown className="size-4 text-slate-500" />}
+              <div>
+                <p className="text-[10px] font-semibold text-slate-400 uppercase">Balance del dia</p>
+                <p className={cn("text-base font-black", delta >= 0 ? "text-blue-700" : "text-slate-700")}>
+                  {delta >= 0 ? "+" : ""}{fmtMin(delta)}
+                </p>
+              </div>
+            </div>
+          </>
+        ) : (
+          /* ── Other themes: colorful cards ── */
+          <>
+            <div className="grid grid-cols-2 gap-3">
+              <ICard icon={LogIn} label="Entrada" value={shortT(day.firstInLocal)} color="text-emerald-600" bg="bg-emerald-50" b="border-emerald-100" />
+              <ICard icon={LogOut} label="Salida" value={shortT(day.lastOutLocal)} color="text-red-500" bg="bg-red-50" b="border-red-100" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <ICard icon={Coffee} label="Break" value={`${day.breakMinutes} min`} color="text-amber-600" bg="bg-amber-50" b="border-amber-100" />
+              <ICard icon={Clock} label="Trabajado" value={day.workedHHMM || fmtMin(day.workedMinutes)} color="text-blue-600" bg="bg-blue-50" b="border-blue-100" />
+            </div>
+            <div>
+              <div className="flex items-center justify-between text-xs mb-1.5">
+                <span className="text-foreground/50 font-medium">Progreso</span>
+                <span className="font-bold">{pct}%</span>
+              </div>
+              <div className="h-3 w-full rounded-full bg-gray-100 overflow-hidden">
+                <div className={cn("h-full rounded-full transition-all duration-500",
+                  pct >= 100 ? "bg-emerald-500" : pct >= 75 ? "bg-blue-500" : pct >= 50 ? "bg-amber-500" : "bg-red-400"
+                )} style={{ width: `${pct}%` }} />
+              </div>
+            </div>
+            <div className={cn("flex items-center gap-3 rounded-xl p-3.5 border",
+              delta >= 0 ? "bg-emerald-50 border-emerald-100" : "bg-red-50 border-red-100")}>
+              {delta >= 0 ? <TrendingUp className="size-5 text-emerald-600" /> : <TrendingDown className="size-5 text-red-500" />}
+              <div>
+                <p className="text-xs font-semibold text-foreground/50 uppercase">Balance</p>
+                <p className={cn("text-base font-black", delta >= 0 ? "text-emerald-700" : "text-red-600")}>{delta >= 0 ? "+" : ""}{fmtMin(delta)}</p>
+              </div>
+            </div>
+          </>
+        )}
+
         {(day.reasonLabel || day.reasonCode) && (
-          <div className="flex items-start gap-2.5 rounded-xl bg-muted/50 p-3 border border-border/50">
-            <AlertCircle className="size-4 mt-0.5 text-foreground/40 shrink-0" />
-            <div><p className="text-xs font-bold text-foreground/50 uppercase">Motivo</p><p className="text-sm">{day.reasonLabel ?? day.reasonCode}</p></div>
+          <div className={cn(
+            "flex items-start gap-2.5 p-3 border",
+            corp ? "rounded-lg bg-slate-50 border-slate-200" : "rounded-xl bg-muted/50 border-border/50",
+          )}>
+            <AlertCircle className={cn("size-4 mt-0.5 shrink-0", corp ? "text-slate-400" : "text-foreground/40")} />
+            <div>
+              <p className={cn("text-xs font-bold uppercase", corp ? "text-slate-400" : "text-foreground/50")}>Motivo</p>
+              <p className="text-sm">{day.reasonLabel ?? day.reasonCode}</p>
+            </div>
           </div>
         )}
       </div>
+
+      {/* Footer */}
       <div className="border-t p-4 flex gap-2 mt-auto">
         {canR && <Button size="sm" className="flex-1 gap-1.5" onClick={() => onReg(day.date)}><PenLineIcon className="size-4" /> Regularizar</Button>}
         <Button variant="outline" size="sm" className={canR ? "" : "flex-1"} onClick={onClose}>Cerrar</Button>
@@ -417,6 +470,18 @@ function DetailPanel({
   );
 }
 
+/* Corporativo row for detail panel */
+function CorpRow({ label, value, icon: Icon, bold }: { label: string; value: string; icon: typeof Clock; bold?: boolean }) {
+  return (
+    <div className="flex items-center gap-3 px-3.5 py-3 bg-white">
+      <Icon className="size-4 text-slate-400 shrink-0" />
+      <span className="text-xs font-medium text-slate-500 w-20">{label}</span>
+      <span className={cn("text-base tabular-nums ml-auto", bold ? "font-black text-slate-800" : "font-semibold text-slate-700")}>{value}</span>
+    </div>
+  );
+}
+
+/* Colorful card for non-corp themes */
 function ICard({ icon: Icon, label, value, color, bg, b }: {
   icon: typeof Clock; label: string; value: string; color: string; bg: string; b: string;
 }) {
