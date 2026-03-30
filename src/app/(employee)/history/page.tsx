@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
 import {
   PenLineIcon, CalendarDays, List, ChevronLeft, ChevronRight, Clock,
   LogIn, LogOut, Coffee, TrendingUp, TrendingDown, AlertCircle, X,
-  Sparkles, Cherry, Mountain, Flower2,
+  Sparkles, Cherry, Mountain, Flower2, Briefcase,
 } from "lucide-react";
 
 /* ── Helpers ──────────────────────────────────────────────────────── */
@@ -41,7 +41,7 @@ interface HDay {
 
 /* ── Theme System ─────────────────────────────────────────────────── */
 
-type ThemeKey = "aurora" | "cerezo" | "obsidiana" | "lavanda";
+type ThemeKey = "aurora" | "cerezo" | "obsidiana" | "lavanda" | "corporativo";
 
 interface StatusColors { bg: string; dot: string; text: string; bar: string }
 
@@ -148,6 +148,25 @@ const THEMES: Record<ThemeKey, CalTheme> = {
     reg:    { bg: "bg-purple-100", dot: "bg-purple-500",  text: "text-purple-700",  bar: "bg-purple-500" },
     absent: { bg: "bg-orange-50",  dot: "bg-orange-500",  text: "text-orange-700",  bar: "bg-orange-500" },
     none:   { bg: "bg-violet-50/40",dot:"bg-gray-300",    text: "text-gray-400",    bar: "bg-gray-300" },
+  },
+  /* ─ 5. Corporativo: clean office style, blue/gray, thin borders, no color fills ─ */
+  corporativo: {
+    key: "corporativo", name: "Corporativo", desc: "Limpio y profesional, estilo Office",
+    icon: Briefcase, preview: "from-blue-600 to-slate-700", headerGrad: "from-blue-700 to-slate-800",
+    cellBase: "rounded-md border border-slate-200 p-2 min-h-[76px] flex flex-col text-left transition-all duration-100 hover:bg-blue-50/50",
+    cellHasData: (_c) => "bg-white border-slate-200",
+    cellEmpty: "bg-white border-slate-100",
+    cellWeekend: "bg-slate-50 border-slate-100",
+    cellSelected: "!bg-blue-50 ring-1 ring-blue-500 z-10 border-blue-300",
+    cellToday: "border-blue-400 border-2",
+    gap: "gap-px", gridBg: "rounded-lg border border-slate-200 bg-slate-100 p-px overflow-hidden",
+    dayHeaderCls: "text-[10px] font-semibold uppercase tracking-wider text-slate-500 bg-slate-50 border-b border-slate-200 py-2",
+    ok:     { bg: "bg-white", dot: "bg-blue-600",    text: "text-slate-700",  bar: "bg-blue-600" },
+    open:   { bg: "bg-white", dot: "bg-blue-400",    text: "text-blue-700",   bar: "bg-blue-400" },
+    short:  { bg: "bg-white", dot: "bg-amber-500",   text: "text-amber-700",  bar: "bg-amber-500" },
+    reg:    { bg: "bg-white", dot: "bg-slate-500",   text: "text-slate-600",  bar: "bg-slate-500" },
+    absent: { bg: "bg-white", dot: "bg-red-500",     text: "text-red-600",    bar: "bg-red-500" },
+    none:   { bg: "bg-white", dot: "bg-slate-200",   text: "text-slate-300",  bar: "bg-slate-200" },
   },
 };
 
