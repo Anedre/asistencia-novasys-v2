@@ -5,7 +5,7 @@ import {
   getChatSession,
   updateChatSessionMessages,
 } from "@/lib/db/chat-sessions";
-import { sendMessage } from "@/lib/ai/bedrock";
+import { sendMessageWithTools } from "@/lib/ai/bedrock";
 import type { AIChatMessage } from "@/lib/types/chat";
 
 export const POST = withErrorHandler(
@@ -46,8 +46,13 @@ export const POST = withErrorHandler(
     };
     const updatedMessages = [...session.Messages, userMessage];
 
-    // Call Bedrock
-    const assistantContent = await sendMessage(updatedMessages);
+    // Call Bedrock with tool use support
+    const { content: assistantContent, toolActions } =
+      await sendMessageWithTools(updatedMessages, {
+        employeeId: user.employeeId,
+        employeeName: user.name,
+        tenantId: user.tenantId,
+      });
 
     const assistantMessage: AIChatMessage = {
       role: "assistant",
@@ -67,6 +72,9 @@ export const POST = withErrorHandler(
 
     await updateChatSessionMessages(id, updatedMessages, title);
 
-    return NextResponse.json({ message: assistantMessage });
+    return NextResponse.json({
+      message: assistantMessage,
+      toolActions: toolActions.length > 0 ? toolActions : undefined,
+    });
   }
 );

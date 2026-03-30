@@ -9,9 +9,17 @@ import {
   CalendarDays,
   User,
   MessageSquare,
+  History,
 } from "lucide-react";
-import { usePendingRequests, useReviewRequest } from "@/hooks/use-requests";
-import { REQUEST_TYPE_LABELS, REQUEST_STATUS_LABELS } from "@/lib/constants/event-types";
+import {
+  usePendingRequests,
+  useReviewRequest,
+  useApprovalHistory,
+} from "@/hooks/use-requests";
+import {
+  REQUEST_TYPE_LABELS,
+  REQUEST_STATUS_LABELS,
+} from "@/lib/constants/event-types";
 import { REASON_LABELS } from "@/lib/constants/reason-codes";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -35,6 +43,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/shared/empty-state";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { ApprovalRequest } from "@/lib/types";
 
 function ApprovalCardSkeleton() {
@@ -69,11 +78,14 @@ function formatDate(iso: string | undefined) {
 function ApprovalCard({
   request,
   onAction,
+  showActions = true,
 }: {
   request: ApprovalRequest;
-  onAction: (requestId: string, action: "APPROVE" | "REJECT") => void;
+  onAction?: (requestId: string, action: "APPROVE" | "REJECT") => void;
+  showActions?: boolean;
 }) {
-  const typeLabel = REQUEST_TYPE_LABELS[request.requestType] ?? request.requestType;
+  const typeLabel =
+    REQUEST_TYPE_LABELS[request.requestType] ?? request.requestType;
   const reasonLabel = REASON_LABELS[request.reasonCode] ?? request.reasonCode;
   const statusInfo = REQUEST_STATUS_LABELS[request.status] ?? {
     label: request.status,
@@ -135,27 +147,98 @@ function ApprovalCard({
         <div className="text-xs text-muted-foreground">
           Creado el {formatDate(request.createdAt)}
         </div>
+
+        {/* Reviewer info for history items */}
+        {request.reviewedByName && (
+          <div className="mt-2 rounded-lg bg-muted/50 p-2 text-xs space-y-1">
+            <div className="flex items-center gap-1.5">
+              <User className="h-3 w-3 text-muted-foreground" />
+              <span className="font-medium">
+                Revisado por: {request.reviewedByName}
+              </span>
+            </div>
+            {request.reviewedAt && (
+              <div className="text-muted-foreground">
+                Fecha: {formatDate(request.reviewedAt)}
+              </div>
+            )}
+            {request.reviewerNote && (
+              <div className="text-muted-foreground">
+                Nota: {request.reviewerNote}
+              </div>
+            )}
+          </div>
+        )}
       </CardContent>
 
-      <CardFooter className="gap-2">
-        <Button
-          size="sm"
-          className="bg-green-600 text-white hover:bg-green-700"
-          onClick={() => onAction(request.RequestID, "APPROVE")}
-        >
-          <CheckCircle className="h-4 w-4" />
-          Aprobar
-        </Button>
-        <Button
-          variant="destructive"
-          size="sm"
-          onClick={() => onAction(request.RequestID, "REJECT")}
-        >
-          <XCircle className="h-4 w-4" />
-          Rechazar
-        </Button>
-      </CardFooter>
+      {showActions && onAction && (
+        <CardFooter className="gap-2">
+          <Button
+            size="sm"
+            className="bg-green-600 text-white hover:bg-green-700"
+            onClick={() => onAction(request.RequestID, "APPROVE")}
+          >
+            <CheckCircle className="h-4 w-4" />
+            Aprobar
+          </Button>
+          <Button
+            variant="destructive"
+            size="sm"
+            onClick={() => onAction(request.RequestID, "REJECT")}
+          >
+            <XCircle className="h-4 w-4" />
+            Rechazar
+          </Button>
+        </CardFooter>
+      )}
     </Card>
+  );
+}
+
+function HistoryTab({ status }: { status: "APPROVED" | "REJECTED" }) {
+  const { data, isLoading, isError, error } = useApprovalHistory(status);
+  const requests = data?.requests ?? [];
+
+  if (isLoading) {
+    return (
+      <div className="grid gap-4 md:grid-cols-2">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <ApprovalCardSkeleton key={i} />
+        ))}
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <Card>
+        <CardContent className="py-6 text-center text-sm text-destructive">
+          Error al cargar historial: {(error as Error).message}
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (requests.length === 0) {
+    return (
+      <EmptyState
+        icon={History}
+        title={`Sin solicitudes ${status === "APPROVED" ? "aprobadas" : "rechazadas"}`}
+        description={`No hay solicitudes ${status === "APPROVED" ? "aprobadas" : "rechazadas"} en el historial.`}
+      />
+    );
+  }
+
+  return (
+    <div className="grid gap-4 md:grid-cols-2">
+      {requests.map((req) => (
+        <ApprovalCard
+          key={req.RequestID}
+          request={req}
+          showActions={false}
+        />
+      ))}
+    </div>
   );
 }
 
@@ -165,8 +248,12 @@ export default function ApprovalsPage() {
   const requests = data?.requests ?? [];
 
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
-  const [selectedAction, setSelectedAction] = useState<"APPROVE" | "REJECT">("APPROVE");
+  const [selectedRequestId, setSelectedRequestId] = useState<string | null>(
+    null
+  );
+  const [selectedAction, setSelectedAction] = useState<"APPROVE" | "REJECT">(
+    "APPROVE"
+  );
   const [reviewerNote, setReviewerNote] = useState("");
 
   const handleAction = (requestId: string, action: "APPROVE" | "REJECT") => {
@@ -200,45 +287,65 @@ export default function ApprovalsPage() {
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Aprobaciones</h1>
         <p className="text-muted-foreground">
-          Cola de solicitudes pendientes de aprobacion
+          Gestiona solicitudes pendientes y revisa el historial
         </p>
       </div>
 
-      {isLoading && (
-        <div className="grid gap-4 md:grid-cols-2">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <ApprovalCardSkeleton key={i} />
-          ))}
-        </div>
-      )}
+      <Tabs defaultValue="pending">
+        <TabsList>
+          <TabsTrigger value="pending">
+            Pendientes{requests.length > 0 ? ` (${requests.length})` : ""}
+          </TabsTrigger>
+          <TabsTrigger value="approved">Aprobadas</TabsTrigger>
+          <TabsTrigger value="rejected">Rechazadas</TabsTrigger>
+        </TabsList>
 
-      {isError && (
-        <Card>
-          <CardContent className="py-6 text-center text-sm text-destructive">
-            Error al cargar solicitudes: {(error as Error).message}
-          </CardContent>
-        </Card>
-      )}
+        <TabsContent value="pending" className="mt-4">
+          {isLoading && (
+            <div className="grid gap-4 md:grid-cols-2">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <ApprovalCardSkeleton key={i} />
+              ))}
+            </div>
+          )}
 
-      {!isLoading && !isError && requests.length === 0 && (
-        <EmptyState
-          icon={Inbox}
-          title="Sin solicitudes pendientes"
-          description="No hay solicitudes que requieran tu aprobacion en este momento."
-        />
-      )}
+          {isError && (
+            <Card>
+              <CardContent className="py-6 text-center text-sm text-destructive">
+                Error al cargar solicitudes: {(error as Error).message}
+              </CardContent>
+            </Card>
+          )}
 
-      {!isLoading && requests.length > 0 && (
-        <div className="grid gap-4 md:grid-cols-2">
-          {requests.map((req) => (
-            <ApprovalCard
-              key={req.RequestID}
-              request={req}
-              onAction={handleAction}
+          {!isLoading && !isError && requests.length === 0 && (
+            <EmptyState
+              icon={Inbox}
+              title="Sin solicitudes pendientes"
+              description="No hay solicitudes que requieran tu aprobacion en este momento."
             />
-          ))}
-        </div>
-      )}
+          )}
+
+          {!isLoading && requests.length > 0 && (
+            <div className="grid gap-4 md:grid-cols-2">
+              {requests.map((req) => (
+                <ApprovalCard
+                  key={req.RequestID}
+                  request={req}
+                  onAction={handleAction}
+                />
+              ))}
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="approved" className="mt-4">
+          <HistoryTab status="APPROVED" />
+        </TabsContent>
+
+        <TabsContent value="rejected" className="mt-4">
+          <HistoryTab status="REJECTED" />
+        </TabsContent>
+      </Tabs>
 
       {/* Review Confirmation Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -288,7 +395,9 @@ export default function ApprovalsPage() {
                 disabled={reviewMutation.isPending}
               >
                 <CheckCircle className="h-4 w-4" />
-                {reviewMutation.isPending ? "Procesando..." : "Confirmar aprobacion"}
+                {reviewMutation.isPending
+                  ? "Procesando..."
+                  : "Confirmar aprobacion"}
               </Button>
             ) : (
               <Button
@@ -297,7 +406,9 @@ export default function ApprovalsPage() {
                 disabled={reviewMutation.isPending}
               >
                 <XCircle className="h-4 w-4" />
-                {reviewMutation.isPending ? "Procesando..." : "Confirmar rechazo"}
+                {reviewMutation.isPending
+                  ? "Procesando..."
+                  : "Confirmar rechazo"}
               </Button>
             )}
           </DialogFooter>

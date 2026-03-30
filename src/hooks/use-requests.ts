@@ -31,6 +31,16 @@ export function usePendingRequests() {
   });
 }
 
+export function useApprovalHistory(status: "APPROVED" | "REJECTED") {
+  return useQuery({
+    queryKey: ["requests", "history", status],
+    queryFn: () =>
+      fetchJson<{ ok: boolean; requests: ApprovalRequest[] }>(
+        `/api/admin/approvals?status=${status}`
+      ),
+  });
+}
+
 export function useCreateRequest() {
   const queryClient = useQueryClient();
 

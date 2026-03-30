@@ -7,6 +7,7 @@ import { Header } from "@/components/layout/header";
 import { MobileNav } from "@/components/layout/mobile-nav";
 import { Loader2 } from "lucide-react";
 import { Toaster } from "sonner";
+import { ChatWidget } from "@/components/chat/chat-widget";
 
 export default function EmployeeLayout({
   children,
@@ -48,6 +49,7 @@ export default function EmployeeLayout({
         </main>
       </div>
       <Toaster position="top-right" richColors />
+      <ChatWidget />
     </div>
   );
 }
