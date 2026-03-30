@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import type { ChatSession, AIChatMessage } from "@/lib/types/chat";
+import type { ChatSession, AIChatMessage, UIBlock } from "@/lib/types/chat";
 
 export function useChatSessions() {
   return useQuery<{ sessions: ChatSession[] }>({
@@ -62,7 +62,7 @@ export function useSendMessage(sessionId: string) {
         const e = await res.json();
         throw new Error(e.error || "Error al enviar mensaje");
       }
-      return res.json() as Promise<{ message: AIChatMessage }>;
+      return res.json() as Promise<{ message: AIChatMessage; blocks?: UIBlock[] }>;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["chat-sessions"] });

@@ -5,7 +5,7 @@ import {
   type ContentBlock,
   type ToolResultContentBlock,
 } from "@aws-sdk/client-bedrock-runtime";
-import type { AIChatMessage } from "@/lib/types/chat";
+import type { AIChatMessage, UIBlock } from "@/lib/types/chat";
 import { AI_TOOLS } from "./tools";
 import { executeTool } from "./tool-executor";
 import type { ToolName } from "./tools";
@@ -60,9 +60,10 @@ export async function sendMessageWithTools(
   messages: AIChatMessage[],
   toolCtx: ToolCallContext,
   systemPrompt?: string
-): Promise<{ content: string; toolActions: string[] }> {
+): Promise<{ content: string; toolActions: string[]; blocks: UIBlock[] }> {
   const bedrockMessages: Message[] = toBedrockMessages(messages);
   const toolActions: string[] = [];
+  const blocks: UIBlock[] = [];
   let maxIterations = 5;
 
   while (maxIterations-- > 0) {
@@ -85,6 +86,7 @@ export async function sendMessageWithTools(
       return {
         content: "No pude generar una respuesta. Por favor, intenta de nuevo.",
         toolActions,
+        blocks,
       };
     }
 
@@ -107,18 +109,19 @@ export async function sendMessageWithTools(
           const { toolUseId, name, input } = block.toolUse;
           const toolInput = (input ?? {}) as Record<string, unknown>;
 
-          const result = await executeTool(
+          const execResult = await executeTool(
             name as ToolName,
             toolInput,
             toolCtx
           );
 
-          toolActions.push(`${name}: ${result}`);
+          toolActions.push(`${name}: ${execResult.textForAI}`);
+          blocks.push(execResult.block);
 
           toolResults.push({
             toolResult: {
               toolUseId,
-              content: [{ text: result } as ToolResultContentBlock],
+              content: [{ text: execResult.textForAI } as ToolResultContentBlock],
             },
           } as ContentBlock);
         }
@@ -141,12 +144,13 @@ export async function sendMessageWithTools(
         ? textBlock.text!
         : "No pude generar una respuesta. Por favor, intenta de nuevo.";
 
-    return { content, toolActions };
+    return { content, toolActions, blocks };
   }
 
   return {
     content: "Se alcanzó el límite de iteraciones. Por favor, intenta de nuevo.",
     toolActions,
+    blocks,
   };
 }
 

@@ -47,7 +47,7 @@ export const POST = withErrorHandler(
     const updatedMessages = [...session.Messages, userMessage];
 
     // Call Bedrock with tool use support
-    const { content: assistantContent, toolActions } =
+    const { content: assistantContent, blocks } =
       await sendMessageWithTools(updatedMessages, {
         employeeId: user.employeeId,
         employeeName: user.name,
@@ -74,7 +74,7 @@ export const POST = withErrorHandler(
 
     return NextResponse.json({
       message: assistantMessage,
-      toolActions: toolActions.length > 0 ? toolActions : undefined,
+      blocks: blocks.length > 0 ? blocks : undefined,
     });
   }
 );
