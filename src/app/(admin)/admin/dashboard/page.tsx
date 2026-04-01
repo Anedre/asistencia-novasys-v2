@@ -442,7 +442,7 @@ export default function AdminDashboard() {
         <h2 className="text-lg font-semibold">Acciones Rapidas</h2>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <QuickAction
-            href="/admin/requests"
+            href="/admin/approvals"
             icon={ClipboardList}
             label="Aprobar Solicitudes"
             description={`${pendingRequests} solicitudes pendientes`}

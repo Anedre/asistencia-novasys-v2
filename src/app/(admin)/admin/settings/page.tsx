@@ -162,10 +162,11 @@ export default function SettingsPage() {
     fetch("/api/tenant/settings")
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
-        if (!data) return;
-        if (data.defaultSchedule) setSchedule(data.defaultSchedule);
-        if (data.holidays) setHolidays(data.holidays);
-        if (data.notifications) setNotifications(data.notifications);
+        if (!data?.tenant?.settings) return;
+        const s = data.tenant.settings;
+        if (s.defaultSchedule) setSchedule(s.defaultSchedule);
+        if (s.holidays) setHolidays(s.holidays);
+        if (s.notifications) setNotifications(s.notifications);
       })
       .catch(() => {
         // Silently use defaults
