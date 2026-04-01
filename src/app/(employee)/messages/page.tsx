@@ -671,7 +671,7 @@ export default function MessagesPage() {
 
       {/* Messages area */}
       <ScrollArea className="flex-1">
-        <div className="px-4 py-4 space-y-1">
+        <div className="mx-auto max-w-3xl px-4 py-4 space-y-1">
           {messagesLoading ? (
             <div className="space-y-4 py-8">
               {[1, 2, 3].map((i) => (
@@ -804,7 +804,7 @@ export default function MessagesPage() {
 
       {/* Input area */}
       <form onSubmit={handleSend} className="border-t bg-card/80 px-3 py-3">
-        <div className="flex items-end gap-2">
+        <div className="mx-auto max-w-3xl flex items-end gap-2">
           {/* Plus / share toggle */}
           <Button
             type="button"
@@ -896,16 +896,18 @@ export default function MessagesPage() {
   // =======================================================================
 
   return (
-    <div className="flex h-[calc(100vh-8rem)] overflow-hidden rounded-xl border bg-card shadow-sm">
-      {/* Desktop: both panels */}
-      <div className="hidden md:flex md:w-80 lg:w-96 shrink-0 border-r">
-        {channelListPanel}
-      </div>
-      <div className="hidden md:flex md:flex-1">{threadPanel}</div>
+    <div className="mx-auto max-w-7xl h-[calc(100vh-8rem)]">
+      <div className="flex h-full overflow-hidden rounded-xl border bg-card shadow-sm">
+        {/* Desktop: both panels */}
+        <div className="hidden md:flex md:w-[340px] lg:w-[380px] shrink-0 border-r">
+          {channelListPanel}
+        </div>
+        <div className="hidden md:flex md:flex-1 md:max-w-4xl">{threadPanel}</div>
 
-      {/* Mobile: one or the other */}
-      <div className="flex flex-1 md:hidden">
-        {showMobileThread && selectedChannelId ? threadPanel : channelListPanel}
+        {/* Mobile: one or the other */}
+        <div className="flex flex-1 md:hidden">
+          {showMobileThread && selectedChannelId ? threadPanel : channelListPanel}
+        </div>
       </div>
     </div>
   );

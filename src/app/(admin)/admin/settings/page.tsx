@@ -136,6 +136,13 @@ async function saveSetting(key: string, value: unknown) {
   return res.json();
 }
 
+async function fetchSettings() {
+  const res = await fetch("/api/tenant/settings");
+  if (!res.ok) return null;
+  const data = await res.json();
+  return data?.tenant?.settings ?? null;
+}
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -193,10 +200,20 @@ export default function SettingsPage() {
   }, [holidays, sortAsc]);
 
   // -- Save handlers --------------------------------------------------------
+  /** Refetch settings from server and sync local state */
+  const refetchAndSync = useCallback(async () => {
+    const s = await fetchSettings();
+    if (!s) return;
+    if (s.defaultSchedule) setSchedule(s.defaultSchedule);
+    if (s.holidays) setHolidays(s.holidays);
+    if (s.notifications) setNotifications(s.notifications);
+  }, []);
+
   const handleSaveSchedule = useCallback(async () => {
     setSavingSchedule(true);
     try {
       await saveSetting("defaultSchedule", schedule);
+      await refetchAndSync();
       toast.success("Horario guardado correctamente");
     } catch (err: unknown) {
       toast.error(
@@ -205,12 +222,13 @@ export default function SettingsPage() {
     } finally {
       setSavingSchedule(false);
     }
-  }, [schedule]);
+  }, [schedule, refetchAndSync]);
 
   const handleSaveHolidays = useCallback(async () => {
     setSavingHolidays(true);
     try {
       await saveSetting("holidays", holidays);
+      await refetchAndSync();
       toast.success("Feriados guardados correctamente");
     } catch (err: unknown) {
       toast.error(
@@ -219,12 +237,13 @@ export default function SettingsPage() {
     } finally {
       setSavingHolidays(false);
     }
-  }, [holidays]);
+  }, [holidays, refetchAndSync]);
 
   const handleSaveNotifications = useCallback(async () => {
     setSavingNotifications(true);
     try {
       await saveSetting("notifications", notifications);
+      await refetchAndSync();
       toast.success("Notificaciones guardadas correctamente");
     } catch (err: unknown) {
       toast.error(
@@ -233,7 +252,7 @@ export default function SettingsPage() {
     } finally {
       setSavingNotifications(false);
     }
-  }, [notifications]);
+  }, [notifications, refetchAndSync]);
 
   const handleAddHoliday = () => {
     if (!newHolidayDate || !newHolidayName.trim()) {
