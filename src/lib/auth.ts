@@ -1,7 +1,7 @@
 import type { NextAuthOptions, Session } from "next-auth";
 import type { JWT } from "next-auth/jwt";
 import CredentialsProvider from "next-auth/providers/credentials";
-import { QueryCommand } from "@aws-sdk/lib-dynamodb";
+import { QueryCommand, GetCommand } from "@aws-sdk/lib-dynamodb";
 import { docClient } from "@/lib/db/client";
 import { TABLES, INDEXES } from "@/lib/db/tables";
 import { cognitoSignIn, getCognitoErrorMessage, isCognitoError } from "@/lib/cognito";
@@ -154,6 +154,28 @@ export const authOptions: NextAuthOptions = {
         token.tenantId = u.tenantId || "TENANT#novasys";
         token.tenantSlug = u.tenantSlug || "novasys";
       }
+
+      // Refresh role from DB on every token renewal so admin promotions
+      // take effect without requiring the user to log out and back in.
+      if (token.employeeId) {
+        try {
+          const result = await docClient.send(
+            new GetCommand({
+              TableName: TABLES.EMPLOYEES,
+              Key: { EmployeeID: token.employeeId as string },
+              ProjectionExpression: "#r, Area",
+              ExpressionAttributeNames: { "#r": "Role" },
+            })
+          );
+          if (result.Item) {
+            token.role = (result.Item.Role as UserRole) || token.role;
+            token.area = (result.Item.Area as string) || token.area;
+          }
+        } catch {
+          // If DB lookup fails, keep existing token values
+        }
+      }
+
       return token;
     },
 
