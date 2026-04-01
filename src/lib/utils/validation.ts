@@ -78,6 +78,9 @@ export const createHREventSchema = z.object({
 
 // ── Employee Profile ──
 export const updateProfileSchema = z.object({
+  FullName: z.string().min(2).max(100).optional(),
+  FirstName: z.string().max(50).optional(),
+  LastName: z.string().max(50).optional(),
   Phone: z.string().max(20).optional(),
   AvatarUrl: z.string().url().optional(),
   DNI: z.string().max(20).optional(),

@@ -102,6 +102,7 @@ export default function ProfilePage() {
   const updateProfile = useUpdateProfile();
 
   /* -- editable state -- */
+  const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
   const [dni, setDni] = useState("");
   const [area, setArea] = useState("");
@@ -130,6 +131,7 @@ export default function ProfilePage() {
   /* -- sync server -> local state -- */
   useEffect(() => {
     if (employee) {
+      setFullName(employee.fullName ?? "");
       setPhone(employee.phone ?? "");
       setDni(employee.dni ?? "");
       setArea(employee.area ?? "");
@@ -182,6 +184,12 @@ export default function ProfilePage() {
     try {
       const updates: Record<string, unknown> = {};
 
+      if (fullName !== (employee?.fullName ?? "")) {
+        updates.FullName = fullName || undefined;
+        const parts = fullName.trim().split(/\s+/);
+        updates.FirstName = parts[0] || undefined;
+        updates.LastName = parts.slice(1).join(" ") || undefined;
+      }
       if (phone !== (employee?.phone ?? "")) updates.Phone = phone || undefined;
       if (dni !== (employee?.dni ?? "")) updates.DNI = dni || undefined;
       if (area !== (employee?.area ?? "")) updates.Area = area || undefined;
@@ -457,6 +465,15 @@ export default function ProfilePage() {
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="fullName">Nombre Completo</Label>
+                      <Input
+                        id="fullName"
+                        value={fullName}
+                        onChange={(e) => setFullName(e.target.value)}
+                        placeholder="Juan Perez Lopez"
+                      />
+                    </div>
                     <div className="space-y-1.5">
                       <Label htmlFor="dni">DNI</Label>
                       <Input

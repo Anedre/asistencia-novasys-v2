@@ -16,6 +16,7 @@ export type NotificationType =
   | "REQUEST_REJECTED"
   | "NEW_REQUEST"
   | "HR_EVENT"
+  | "ANNOUNCEMENT"
   | "SYSTEM";
 
 export interface UserNotification {

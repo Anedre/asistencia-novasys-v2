@@ -80,7 +80,7 @@ export const PATCH = withErrorHandler(async (req: Request, context: unknown) => 
 
   // If updating profile fields
   const updates: Record<string, string> = {};
-  for (const key of ["Phone", "DNI", "Area", "Position", "WorkMode", "BirthDate"]) {
+  for (const key of ["FullName", "FirstName", "LastName", "Phone", "DNI", "Area", "Position", "WorkMode", "BirthDate"]) {
     if (body[key] !== undefined) {
       updates[key] = body[key];
     }

@@ -104,6 +104,9 @@ export async function createEmployee(employee: Employee): Promise<void> {
 export async function updateEmployeeProfile(
   employeeId: string,
   updates: {
+    FullName?: string;
+    FirstName?: string;
+    LastName?: string;
     Phone?: string;
     AvatarUrl?: string;
     DNI?: string;
@@ -119,6 +122,18 @@ export async function updateEmployeeProfile(
   const expressions: string[] = ["updatedAt = :now"];
   const values: Record<string, unknown> = { ":now": new Date().toISOString() };
 
+  if (updates.FullName !== undefined) {
+    expressions.push("FullName = :fullName");
+    values[":fullName"] = updates.FullName;
+  }
+  if (updates.FirstName !== undefined) {
+    expressions.push("FirstName = :firstName");
+    values[":firstName"] = updates.FirstName;
+  }
+  if (updates.LastName !== undefined) {
+    expressions.push("LastName = :lastName");
+    values[":lastName"] = updates.LastName;
+  }
   if (updates.Phone !== undefined) {
     expressions.push("Phone = :phone");
     values[":phone"] = updates.Phone;
