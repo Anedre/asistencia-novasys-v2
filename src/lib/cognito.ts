@@ -9,6 +9,8 @@ import {
   SignUpCommand,
   ConfirmSignUpCommand,
   ResendConfirmationCodeCommand,
+  ForgotPasswordCommand,
+  ConfirmForgotPasswordCommand,
   type AuthenticationResultType,
 } from "@aws-sdk/client-cognito-identity-provider";
 
@@ -148,6 +150,34 @@ export async function cognitoResendCode(username: string): Promise<void> {
     new ResendConfirmationCodeCommand({
       ClientId: PASSWORD_CLIENT_ID,
       Username: username,
+    })
+  );
+}
+
+// ── Forgot Password (initiate reset) ──
+
+export async function cognitoForgotPassword(email: string): Promise<void> {
+  await cognitoClient.send(
+    new ForgotPasswordCommand({
+      ClientId: PASSWORD_CLIENT_ID,
+      Username: email.toLowerCase(),
+    })
+  );
+}
+
+// ── Confirm Forgot Password (set new password with code) ──
+
+export async function cognitoConfirmForgotPassword(
+  email: string,
+  code: string,
+  newPassword: string
+): Promise<void> {
+  await cognitoClient.send(
+    new ConfirmForgotPasswordCommand({
+      ClientId: PASSWORD_CLIENT_ID,
+      Username: email.toLowerCase(),
+      ConfirmationCode: code,
+      Password: newPassword,
     })
   );
 }

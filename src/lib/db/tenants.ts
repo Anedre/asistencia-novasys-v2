@@ -126,6 +126,18 @@ export async function updateTenantSettings(
     updates.push("settings.features = :feat");
     values[":feat"] = settings.features;
   }
+  if (settings.defaultSchedule !== undefined) {
+    updates.push("settings.defaultSchedule = :ds");
+    values[":ds"] = settings.defaultSchedule;
+  }
+  if (settings.holidays !== undefined) {
+    updates.push("settings.holidays = :hol");
+    values[":hol"] = settings.holidays;
+  }
+  if (settings.notifications !== undefined) {
+    updates.push("settings.notifications = :notif");
+    values[":notif"] = settings.notifications;
+  }
 
   if (updates.length === 0) return;
 

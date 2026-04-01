@@ -12,6 +12,9 @@ export interface TenantSettings {
   defaultScheduleType: "FULL_TIME" | "PART_TIME";
   timezone: string;
   features: TenantFeatures;
+  defaultSchedule?: { startTime: string; endTime: string; breakMinutes: number };
+  holidays?: { date: string; name: string }[];
+  notifications?: Record<string, boolean>;
 }
 
 export interface TenantBranding {

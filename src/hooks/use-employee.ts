@@ -115,7 +115,7 @@ export function useUpdateEmployeeRole() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, role }: { id: string; role: string }) => {
-      const res = await fetch(`/api/admin/employees/${id}`, {
+      const res = await fetch(`/api/admin/employees/${encodeURIComponent(id)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ role }),
@@ -134,7 +134,7 @@ export function useDeactivateEmployee() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => {
-      const res = await fetch(`/api/admin/employees/${id}`, {
+      const res = await fetch(`/api/admin/employees/${encodeURIComponent(id)}`, {
         method: "DELETE",
       });
       if (!res.ok) {
