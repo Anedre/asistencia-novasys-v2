@@ -8,6 +8,6 @@ export const GET = withErrorHandler(async (req: Request) => {
   const { searchParams } = new URL(req.url);
   const offset = parseInt(searchParams.get("offset") || "0", 10);
 
-  const summary = await getWeekSummary(user.employeeId, offset);
+  const summary = await getWeekSummary(user.employeeId, offset, user.tenantId);
   return NextResponse.json({ ok: true, ...summary });
 });

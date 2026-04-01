@@ -16,6 +16,7 @@ import { putAttendanceEvent, getEventsByEmployeeAndDate } from "@/lib/db/attenda
 import { isoUtc, isoLima, clockLima, workDateLima } from "@/lib/utils/time";
 import { ALLOWED_EVENT_TYPES } from "@/lib/constants/event-types";
 import { ConflictError, ValidationError } from "@/lib/utils/errors";
+import { getHolidaySet } from "@/lib/utils/holidays";
 import type {
   EventType,
   AttendanceEvent,
@@ -114,34 +115,48 @@ export async function recordEvent(params: RecordEventParams) {
 }
 
 /** Get today's status for an employee. Ported from asistencia-get-today-status.py */
-export async function getTodayStatus(employeeId: string): Promise<TodayStatus> {
+export async function getTodayStatus(employeeId: string, tenantId?: string): Promise<TodayStatus> {
   const todayDate = workDateLima();
   const item = await getDailySummary(employeeId, todayDate);
 
+  // Check if today is a holiday
+  let isHol = false;
+  let holName: string | undefined;
+  if (tenantId) {
+    const holMap = await getHolidaySet(tenantId);
+    if (holMap.has(todayDate)) {
+      isHol = true;
+      holName = holMap.get(todayDate);
+    }
+  }
+
   if (!item) {
+    const planned = isHol ? 0 : 480;
     return {
       employeeId,
       date: todayDate,
-      status: "NO_RECORD",
+      status: isHol ? "NO_RECORD" : "NO_RECORD",
       firstInLocal: null,
       lastOutLocal: null,
       breakStartLocal: null,
       breakMinutes: 0,
       workedMinutes: 0,
       workedHHMM: "00:00",
-      plannedMinutes: 480,
-      deltaMinutes: -480,
-      deltaHHMM: "-08:00",
+      plannedMinutes: planned,
+      deltaMinutes: isHol ? 0 : -480,
+      deltaHHMM: isHol ? "00:00" : "-08:00",
       hasOpenBreak: false,
       hasOpenShift: false,
       anomalies: [],
+      isHoliday: isHol,
+      holidayName: holName,
     };
   }
 
   const breakMinutes = Number(item.breakMinutes ?? 0);
   const workedMinutes = Number(item.workedMinutes ?? 0);
-  const plannedMinutes = Number(item.plannedMinutes ?? 480);
-  const deltaMinutes = Number(item.deltaMinutes ?? workedMinutes - plannedMinutes);
+  const plannedMinutes = isHol ? 0 : Number(item.plannedMinutes ?? 480);
+  const deltaMinutes = isHol ? workedMinutes : Number(item.deltaMinutes ?? workedMinutes - plannedMinutes);
 
   return {
     employeeId,
@@ -160,13 +175,16 @@ export async function getTodayStatus(employeeId: string): Promise<TodayStatus> {
     hasOpenShift: !!item.firstInUtc && !item.lastOutUtc,
     anomalies: item.anomalies ?? [],
     updatedAt: item.updatedAt,
+    isHoliday: isHol,
+    holidayName: holName,
   };
 }
 
 /** Get week summary. Ported from asistencia-get-week.py */
 export async function getWeekSummary(
   employeeId: string,
-  offset = 0
+  offset = 0,
+  tenantId?: string
 ): Promise<WeekSummary> {
   const now = new Date();
   const limaDate = new Date(
@@ -190,7 +208,10 @@ export async function getWeekSummary(
   const dateFrom = formatDate(dates[0]);
   const dateTo = formatDate(dates[6]);
 
-  const items = await getDailySummaryRange(employeeId, dateFrom, dateTo);
+  const [items, holMap] = await Promise.all([
+    getDailySummaryRange(employeeId, dateFrom, dateTo),
+    tenantId ? getHolidaySet(tenantId) : Promise.resolve(new Map<string, string>()),
+  ]);
   const byDate = new Map<string, typeof items[0]>();
   for (const it of items) {
     byDate.set(it.WorkDate.replace("DATE#", ""), it);
@@ -204,9 +225,13 @@ export async function getWeekSummary(
     const ds = formatDate(d);
     const item = byDate.get(ds);
     const weekday = d.toLocaleDateString("es-PE", { weekday: "short" });
+    const dow = d.getDay();
+    const isWeekend = dow === 0 || dow === 6;
+    const isHol = holMap.has(ds);
+    const dayPlanned = (isWeekend || isHol) ? 0 : 480;
 
     if (!item) {
-      totalPlanned += 480;
+      totalPlanned += dayPlanned;
       return {
         date: ds,
         weekday,
@@ -215,16 +240,16 @@ export async function getWeekSummary(
         breakMinutes: 0,
         workedMinutes: 0,
         workedHHMM: "00:00",
-        deltaMinutes: -480,
-        deltaHHMM: "-08:00",
-        status: "MISSING" as DayStatus,
+        deltaMinutes: dayPlanned === 0 ? 0 : -dayPlanned,
+        deltaHHMM: dayPlanned === 0 ? "00:00" : fmtDelta(-dayPlanned),
+        status: (isWeekend || isHol ? "NO_RECORD" : "MISSING") as DayStatus,
         anomalies: [],
       };
     }
 
     const worked = Number(item.workedMinutes ?? 0);
-    const planned = Number(item.plannedMinutes ?? 480);
-    const delta = Number(item.deltaMinutes ?? worked - planned);
+    const planned = isHol ? 0 : Number(item.plannedMinutes ?? dayPlanned);
+    const delta = worked - planned;
     const brk = Number(item.breakMinutes ?? 0);
 
     totalWorked += worked;
@@ -277,17 +302,19 @@ export async function getWeekSummary(
 export async function getAttendanceHistory(
   employeeId: string,
   dateFrom: string,
-  dateTo: string
+  dateTo: string,
+  tenantId?: string
 ) {
-  const items = await getDailySummaryRange(employeeId, dateFrom, dateTo);
+  const [items, holMap] = await Promise.all([
+    getDailySummaryRange(employeeId, dateFrom, dateTo),
+    tenantId ? getHolidaySet(tenantId) : Promise.resolve(new Map<string, string>()),
+  ]);
 
-  // Index existing summaries by date
   const byDate = new Map<string, (typeof items)[0]>();
   for (const item of items) {
     byDate.set(item.WorkDate.replace("DATE#", ""), item);
   }
 
-  // Generate all weekdays in range (up to today)
   const today = workDateLima();
   const start = new Date(dateFrom + "T12:00:00");
   const end = new Date(dateTo + "T12:00:00");
@@ -303,6 +330,8 @@ export async function getAttendanceHistory(
     reasonLabel: string;
     reasonNote: string;
     anomalies: string[];
+    isHoliday?: boolean;
+    holidayName?: string;
   }> = [];
 
   const current = new Date(start);
@@ -310,8 +339,9 @@ export async function getAttendanceHistory(
     const ds = formatDate(current);
     const dayOfWeek = current.getDay();
     const isWeekday = dayOfWeek >= 1 && dayOfWeek <= 5;
+    const isHol = holMap.has(ds);
+    const holName = holMap.get(ds);
 
-    // Only include weekdays, and don't go past today
     if (isWeekday && ds <= today) {
       const item = byDate.get(ds);
       if (item) {
@@ -322,11 +352,29 @@ export async function getAttendanceHistory(
           breakMinutes: Number(item.breakMinutes ?? 0),
           workedMinutes: Number(item.workedMinutes ?? 0),
           workedHHMM: fmtMin(Number(item.workedMinutes ?? 0)),
-          status: item.status,
+          status: isHol ? "HOLIDAY" : item.status,
           reasonCode: item.regularizationReasonCode ?? "",
-          reasonLabel: item.regularizationReasonLabel ?? "",
+          reasonLabel: isHol ? holName ?? "Feriado" : (item.regularizationReasonLabel ?? ""),
           reasonNote: item.regularizationNote ?? "",
           anomalies: item.anomalies ?? [],
+          isHoliday: isHol,
+          holidayName: holName,
+        });
+      } else if (isHol) {
+        result.push({
+          date: ds,
+          firstInLocal: null,
+          lastOutLocal: null,
+          breakMinutes: 0,
+          workedMinutes: 0,
+          workedHHMM: "00:00",
+          status: "HOLIDAY",
+          reasonCode: "",
+          reasonLabel: holName ?? "Feriado",
+          reasonNote: "",
+          anomalies: [],
+          isHoliday: true,
+          holidayName: holName,
         });
       } else {
         result.push({

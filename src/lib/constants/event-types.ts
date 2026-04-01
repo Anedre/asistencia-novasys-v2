@@ -40,6 +40,7 @@ export const STATUS_LABELS: Record<string, { label: string; variant: "default" |
   MISSING: { label: "Sin registro", variant: "destructive" },
   NO_RECORD: { label: "Sin registro", variant: "outline" },
   "No Laborable": { label: "No Laborable", variant: "secondary" },
+  HOLIDAY: { label: "Feriado", variant: "secondary" },
 } as const;
 
 export const REQUEST_STATUS_LABELS: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {

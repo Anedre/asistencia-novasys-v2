@@ -73,6 +73,8 @@ export interface TodayStatus {
   hasOpenShift: boolean;
   anomalies: string[];
   updatedAt?: string;
+  isHoliday?: boolean;
+  holidayName?: string;
 }
 
 export interface WeekDay {

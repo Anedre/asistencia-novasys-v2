@@ -5,6 +5,6 @@ import { withErrorHandler } from "@/lib/utils/errors";
 
 export const GET = withErrorHandler(async () => {
   const user = await requireSession();
-  const status = await getTodayStatus(user.employeeId);
+  const status = await getTodayStatus(user.employeeId, user.tenantId);
   return NextResponse.json({ ok: true, ...status });
 });

@@ -41,6 +41,8 @@ interface DashboardData {
   absentToday: number;
   avgHoursPerDay?: number;
   weeklyAttendancePct?: number;
+  isHoliday?: boolean;
+  holidayName?: string;
   recentActivity?: Array<{
     id: string;
     employeeName: string;
@@ -55,6 +57,17 @@ interface DashboardData {
     absence: number;
     regularized: number;
   };
+  presence?: Array<{
+    employeeId: string;
+    fullName: string;
+    area: string;
+    position: string;
+    avatarUrl?: string;
+    status: string;
+    firstInLocal: string | null;
+    lastOutLocal: string | null;
+    workedMinutes: number;
+  }>;
 }
 
 /* ------------------------------------------------------------------ */
@@ -228,6 +241,17 @@ export default function AdminDashboard() {
             </p>
           </CardContent>
         </Card>
+      )}
+
+      {/* Holiday Banner */}
+      {dashboard?.isHoliday && (
+        <div className="flex items-center gap-3 rounded-xl bg-amber-50 border border-amber-200 p-4">
+          <span className="text-2xl">🏖️</span>
+          <div>
+            <p className="text-sm font-semibold text-amber-800">Hoy es feriado: {dashboard.holidayName ?? "Feriado"}</p>
+            <p className="text-xs text-amber-600">No se contabiliza asistencia obligatoria para hoy</p>
+          </div>
+        </div>
       )}
 
       {/* ============================================ */}
@@ -434,6 +458,67 @@ export default function AdminDashboard() {
           </CardContent>
         </Card>
       </div>
+
+      {/* ============================================ */}
+      {/* REAL-TIME PRESENCE                            */}
+      {/* ============================================ */}
+      {!isLoading && dashboard?.presence && dashboard.presence.length > 0 && (
+        <section className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold">Estado en Tiempo Real</h2>
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <span className="size-2 rounded-full bg-green-500 animate-pulse" />
+              En vivo
+            </div>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {dashboard.presence.slice(0, 12).map((emp) => {
+              const statusConfig: Record<string, { label: string; color: string; dot: string }> = {
+                WORKING: { label: "Trabajando", color: "text-green-700 bg-green-50 border-green-200", dot: "bg-green-500" },
+                ON_BREAK: { label: "En break", color: "text-amber-700 bg-amber-50 border-amber-200", dot: "bg-amber-500" },
+                COMPLETED: { label: "Jornada completa", color: "text-blue-700 bg-blue-50 border-blue-200", dot: "bg-blue-500" },
+                NOT_CHECKED_IN: { label: "Sin marcar", color: "text-gray-500 bg-gray-50 border-gray-200", dot: "bg-gray-300" },
+              };
+              const cfg = statusConfig[emp.status] || statusConfig.NOT_CHECKED_IN;
+              const initials = emp.fullName.split(" ").map(n => n[0]).join("").slice(0, 2);
+              const hours = Math.floor(emp.workedMinutes / 60);
+              const mins = emp.workedMinutes % 60;
+
+              return (
+                <div key={emp.employeeId} className={`flex items-center gap-3 rounded-xl border p-3 ${cfg.color}`}>
+                  <div className="relative">
+                    {emp.avatarUrl ? (
+                      <img src={emp.avatarUrl} alt="" className="size-10 rounded-full object-cover" />
+                    ) : (
+                      <div className="flex size-10 items-center justify-center rounded-full bg-primary/10 text-primary text-xs font-bold">
+                        {initials}
+                      </div>
+                    )}
+                    <span className={`absolute -bottom-0.5 -right-0.5 size-3 rounded-full border-2 border-white ${cfg.dot}`} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-semibold truncate">{emp.fullName}</p>
+                    <p className="text-[10px] opacity-70">{emp.area || emp.position}</p>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="text-[10px] font-medium">{cfg.label}</p>
+                    {emp.firstInLocal && (
+                      <p className="text-[10px] opacity-60 tabular-nums">
+                        {emp.firstInLocal.substring(0, 5)} {hours > 0 || mins > 0 ? `· ${hours}h${mins > 0 ? String(mins).padStart(2, "0") + "m" : ""}` : ""}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {dashboard.presence.length > 12 && (
+            <p className="text-xs text-center text-muted-foreground">
+              y {dashboard.presence.length - 12} empleados más
+            </p>
+          )}
+        </section>
+      )}
 
       {/* ============================================ */}
       {/* QUICK ACTIONS                                */}

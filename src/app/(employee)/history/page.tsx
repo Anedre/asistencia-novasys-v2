@@ -177,6 +177,7 @@ function getS(t: CalTheme, s: string | undefined): StatusColors {
     case "SHORT": case "INCOMPLETE": return t.short;
     case "REGULARIZED": return t.reg;
     case "ABSENCE": case "ABSENT": return t.absent;
+    case "HOLIDAY": return t.reg; // Use regularized color for holidays (purple-ish)
     default: return t.none;
   }
 }
@@ -269,7 +270,7 @@ function CalGrid({
   const legend = [
     { l: "Completo", c: t.ok.dot }, { l: "En curso", c: t.open.dot },
     { l: "Incompleto", c: t.short.dot }, { l: "Regularizado", c: t.reg.dot },
-    { l: "Ausencia", c: t.absent.dot }, { l: "Sin registro", c: t.none.dot },
+    { l: "Ausencia", c: t.absent.dot }, { l: "Feriado", c: t.reg.dot }, { l: "Sin registro", c: t.none.dot },
   ];
 
   return (

@@ -13,6 +13,6 @@ export const GET = withErrorHandler(async (req: Request) => {
     throw new ValidationError("Faltan parámetros dateFrom y dateTo");
   }
 
-  const history = await getAttendanceHistory(user.employeeId, dateFrom, dateTo);
+  const history = await getAttendanceHistory(user.employeeId, dateFrom, dateTo, user.tenantId);
   return NextResponse.json({ ok: true, days: history });
 });

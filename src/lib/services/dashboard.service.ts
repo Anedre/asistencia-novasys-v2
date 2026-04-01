@@ -5,7 +5,20 @@
 import { getAllActiveEmployees } from "@/lib/db/employees";
 import { getDailySummariesByDate } from "@/lib/db/daily-summary";
 import { getRequestsByStatus } from "@/lib/db/requests";
-import { workDateLima } from "@/lib/utils/time";
+import { workDateLima, clockLima } from "@/lib/utils/time";
+import { getHolidaySet } from "@/lib/utils/holidays";
+
+export interface EmployeePresence {
+  employeeId: string;
+  fullName: string;
+  area: string;
+  position: string;
+  avatarUrl?: string;
+  status: string; // "WORKING" | "ON_BREAK" | "COMPLETED" | "NOT_CHECKED_IN"
+  firstInLocal: string | null;
+  lastOutLocal: string | null;
+  workedMinutes: number;
+}
 
 export interface DashboardMetrics {
   totalActiveEmployees: number;
@@ -15,6 +28,8 @@ export interface DashboardMetrics {
   pendingRequests: number;
   anomaliesToday: number;
   todayDate: string;
+  isHoliday: boolean;
+  holidayName?: string;
   statusBreakdown: {
     ok: number;
     open: number;
@@ -23,16 +38,22 @@ export interface DashboardMetrics {
     absence: number;
     regularized: number;
   };
+  /** Real-time employee presence list */
+  presence: EmployeePresence[];
 }
 
 export async function getDashboardMetrics(tenantId?: string): Promise<DashboardMetrics> {
   const todayDate = workDateLima();
 
-  const [employees, summaries, pendingRequests] = await Promise.all([
+  const [employees, summaries, pendingRequests, holMap] = await Promise.all([
     getAllActiveEmployees(tenantId),
     getDailySummariesByDate(todayDate, tenantId),
     getRequestsByStatus("PENDING", 200, tenantId),
+    tenantId ? getHolidaySet(tenantId) : Promise.resolve(new Map<string, string>()),
   ]);
+
+  const isHol = holMap.has(todayDate);
+  const holName = holMap.get(todayDate);
 
   const statusBreakdown = {
     ok: 0,
@@ -46,11 +67,40 @@ export async function getDashboardMetrics(tenantId?: string): Promise<DashboardM
   let onBreak = 0;
   let anomalies = 0;
 
-  const employeeIds = new Set(employees.map((e) => e.EmployeeID));
+  // Build employee lookup
+  const empMap = new Map<string, (typeof employees)[0]>();
+  for (const e of employees) empMap.set(e.EmployeeID, e);
+
   const checkedIn = new Set<string>();
+  const presence: EmployeePresence[] = [];
 
   for (const s of summaries) {
     checkedIn.add(s.EmployeeID);
+    const emp = empMap.get(s.EmployeeID);
+
+    // Determine real-time status
+    let presenceStatus = "NOT_CHECKED_IN";
+    const hasIn = !!s.firstInUtc;
+    const hasOut = !!s.lastOutUtc;
+    const hasBreakStart = !!s.breakStartUtc;
+
+    if (hasIn && !hasOut) {
+      presenceStatus = hasBreakStart ? "ON_BREAK" : "WORKING";
+    } else if (hasIn && hasOut) {
+      presenceStatus = "COMPLETED";
+    }
+
+    presence.push({
+      employeeId: s.EmployeeID,
+      fullName: emp?.FullName ?? s.EmployeeID,
+      area: emp?.Area ?? "",
+      position: emp?.Position ?? "",
+      avatarUrl: emp?.AvatarUrl,
+      status: presenceStatus,
+      firstInLocal: s.firstInLocal ?? null,
+      lastOutLocal: s.lastOutLocal ?? null,
+      workedMinutes: Number(s.workedMinutes ?? 0),
+    });
 
     switch (s.status) {
       case "OK":
@@ -72,13 +122,33 @@ export async function getDashboardMetrics(tenantId?: string): Promise<DashboardM
         statusBreakdown.missing++;
     }
 
-    if (s.breakStartUtc) onBreak++;
+    if (hasBreakStart && !hasOut) onBreak++;
     if (s.anomalies && s.anomalies.length > 0) anomalies++;
   }
 
-  // People who didn't check in at all
+  // Add employees who didn't check in
+  for (const emp of employees) {
+    if (!checkedIn.has(emp.EmployeeID)) {
+      presence.push({
+        employeeId: emp.EmployeeID,
+        fullName: emp.FullName,
+        area: emp.Area ?? "",
+        position: emp.Position ?? "",
+        avatarUrl: emp.AvatarUrl,
+        status: "NOT_CHECKED_IN",
+        firstInLocal: null,
+        lastOutLocal: null,
+        workedMinutes: 0,
+      });
+    }
+  }
+
   const missingCount = employees.length - checkedIn.size;
   statusBreakdown.missing += missingCount;
+
+  // Sort: working first, then on break, then completed, then not checked in
+  const statusOrder: Record<string, number> = { WORKING: 0, ON_BREAK: 1, COMPLETED: 2, NOT_CHECKED_IN: 3 };
+  presence.sort((a, b) => (statusOrder[a.status] ?? 9) - (statusOrder[b.status] ?? 9));
 
   return {
     totalActiveEmployees: employees.length,
@@ -88,6 +158,9 @@ export async function getDashboardMetrics(tenantId?: string): Promise<DashboardM
     pendingRequests: pendingRequests.length,
     anomaliesToday: anomalies,
     todayDate,
+    isHoliday: isHol,
+    holidayName: holName,
     statusBreakdown,
+    presence,
   };
 }
