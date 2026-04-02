@@ -70,7 +70,8 @@ function buildAbsenceItem(
   ds: string,
   reasonCode: string,
   reasonNote: string,
-  regId: string
+  regId: string,
+  planned = 480
 ): Record<string, unknown> {
   const nowIso = new Date().toISOString();
   return {
@@ -82,8 +83,8 @@ function buildAbsenceItem(
     lastOutLocal: "-",
     breakMinutes: 0,
     workedMinutes: 0,
-    plannedMinutes: 480,
-    deltaMinutes: -480,
+    plannedMinutes: planned,
+    deltaMinutes: -planned,
     status: "ABSENCE",
     source: "REGULARIZATION_RANGE",
     regularizationMode: "DATE_RANGE",
@@ -106,7 +107,8 @@ function buildWorkdayItem(
   breakMinutes: number,
   reasonCode: string,
   reasonNote: string,
-  regId: string
+  regId: string,
+  planned = 480
 ): Record<string, unknown> {
   const total = hhmmToMinutes(endHhmm) - hhmmToMinutes(startHhmm);
   if (total < 0) {
@@ -116,7 +118,7 @@ function buildWorkdayItem(
   }
 
   const workedMinutes = Math.max(0, total - breakMinutes);
-  const plannedMinutes = 480;
+  const plannedMinutes = planned;
   const deltaMinutes = workedMinutes - plannedMinutes;
   const nowIso = new Date().toISOString();
 

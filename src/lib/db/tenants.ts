@@ -138,6 +138,10 @@ export async function updateTenantSettings(
     updates.push("settings.notifications = :notif");
     values[":notif"] = settings.notifications;
   }
+  if (settings.workPolicy !== undefined) {
+    updates.push("settings.workPolicy = :wp");
+    values[":wp"] = settings.workPolicy;
+  }
 
   if (updates.length === 0) return;
 

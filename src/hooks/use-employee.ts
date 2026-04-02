@@ -55,6 +55,7 @@ export function useAdminAttendance(date?: string) {
       if (!res.ok) throw new Error("Error fetching attendance");
       return res.json();
     },
+    refetchInterval: 60000,
   });
 }
 
@@ -108,6 +109,34 @@ export function useUpdateProfile() {
       return res.json();
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["profile"] }),
+  });
+}
+
+export function useUpdateEmployeeProfile() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      id,
+      updates,
+    }: {
+      id: string;
+      updates: Record<string, string>;
+    }) => {
+      const res = await fetch(`/api/admin/employees/${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updates),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Error al actualizar empleado");
+      }
+      return res.json();
+    },
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({ queryKey: ["admin", "employees"] });
+      qc.invalidateQueries({ queryKey: ["admin", "employee", variables.id] });
+    },
   });
 }
 

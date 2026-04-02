@@ -8,6 +8,8 @@ import { MobileNav } from "@/components/layout/mobile-nav";
 import { Loader2 } from "lucide-react";
 import { Toaster } from "sonner";
 import { ChatWidget } from "@/components/chat/chat-widget";
+import { MessagingWidget } from "@/components/messaging/messaging-widget";
+import { useHeartbeat } from "@/hooks/use-presence";
 
 export default function EmployeeLayout({
   children,
@@ -16,6 +18,7 @@ export default function EmployeeLayout({
 }) {
   const { data: session, status } = useSession();
   const [mobileOpen, setMobileOpen] = useState(false);
+  useHeartbeat();
 
   if (status === "loading") {
     return (
@@ -49,6 +52,7 @@ export default function EmployeeLayout({
         </main>
       </div>
       <Toaster position="top-right" richColors />
+      <MessagingWidget />
       <ChatWidget />
     </div>
   );

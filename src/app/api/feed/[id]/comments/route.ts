@@ -39,7 +39,7 @@ export const DELETE = withErrorHandler(
     const url = new URL(req.url);
     const commentId = url.searchParams.get("commentId");
     if (!commentId) {
-      return NextResponse.json({ error: "commentId requerido" }, { status: 400 });
+      return NextResponse.json({ error: "Comentario no especificado" }, { status: 400 });
     }
 
     const post = await getPostById(id);

@@ -1,5 +1,5 @@
 export type EventType = "START" | "BREAK_START" | "BREAK_END" | "END";
-export type EventSource = "WEB" | "MOBILE" | "REGULARIZATION" | "REGULARIZATION_RANGE" | "SYSTEM";
+export type EventSource = "WEB" | "MOBILE" | "REGULARIZATION" | "REGULARIZATION_RANGE" | "SYSTEM" | "CUSTOM_TIME";
 
 export type DayStatus =
   | "OPEN"
@@ -9,7 +9,8 @@ export type DayStatus =
   | "OK"
   | "SHORT"
   | "MISSING"
-  | "NO_RECORD";
+  | "NO_RECORD"
+  | "HOLIDAY";
 
 export interface AttendanceEvent {
   EmployeeID: string;
@@ -89,6 +90,8 @@ export interface WeekDay {
   deltaHHMM: string;
   status: DayStatus;
   anomalies: string[];
+  isHoliday?: boolean;
+  holidayName?: string;
 }
 
 export interface WeekSummary {

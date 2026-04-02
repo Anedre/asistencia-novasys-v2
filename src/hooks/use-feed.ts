@@ -35,6 +35,7 @@ export function useCreatePost() {
       visibility: string;
       targetArea?: string;
       imageUrl?: string;
+      embed?: { type: string; data: Record<string, unknown> };
     }) => {
       const res = await fetch("/api/feed", {
         method: "POST",

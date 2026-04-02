@@ -44,3 +44,30 @@ export function useArchiveHREvent() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["hr"] }),
   });
 }
+
+export function useResendAnnouncement() {
+  return useMutation({
+    mutationFn: async (opts: {
+      id: string;
+      broadcast?: boolean;
+      employeeIds?: string[];
+    }) => {
+      const res = await fetch(
+        `/api/admin/hr/events/${encodeURIComponent(opts.id)}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            broadcast: opts.broadcast,
+            employeeIds: opts.employeeIds,
+          }),
+        }
+      );
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Error al reenviar comunicado");
+      }
+      return res.json();
+    },
+  });
+}

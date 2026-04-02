@@ -2,6 +2,8 @@ import { docClient } from "./client";
 import { TABLES, INDEXES } from "./tables";
 import {
   PutCommand,
+  GetCommand,
+  UpdateCommand,
   QueryCommand,
   BatchWriteCommand,
 } from "@aws-sdk/lib-dynamodb";
@@ -24,6 +26,18 @@ export async function getMessagesByChannel(
   return (result.Items as ChatMessage[]) ?? [];
 }
 
+export async function getMessageById(
+  messageId: string
+): Promise<ChatMessage | null> {
+  const result = await docClient.send(
+    new GetCommand({
+      TableName: TABLES.CHAT_MESSAGES,
+      Key: { MessageID: messageId },
+    })
+  );
+  return (result.Item as ChatMessage) ?? null;
+}
+
 export async function createMessage(message: ChatMessage): Promise<void> {
   await docClient.send(
     new PutCommand({
@@ -33,10 +47,49 @@ export async function createMessage(message: ChatMessage): Promise<void> {
   );
 }
 
+/** Toggle a reaction on a message */
+export async function toggleReaction(
+  messageId: string,
+  emoji: string,
+  userId: string,
+  userName: string
+): Promise<void> {
+  const msg = await getMessageById(messageId);
+  if (!msg) return;
+
+  const reactions = msg.Reactions ?? {};
+  const existing = reactions[emoji] ?? { userIds: [], userNames: [] };
+
+  const idx = existing.userIds.indexOf(userId);
+  if (idx >= 0) {
+    // Remove reaction
+    existing.userIds.splice(idx, 1);
+    existing.userNames.splice(idx, 1);
+  } else {
+    // Add reaction
+    existing.userIds.push(userId);
+    existing.userNames.push(userName);
+  }
+
+  if (existing.userIds.length === 0) {
+    delete reactions[emoji];
+  } else {
+    reactions[emoji] = existing;
+  }
+
+  await docClient.send(
+    new UpdateCommand({
+      TableName: TABLES.CHAT_MESSAGES,
+      Key: { MessageID: messageId },
+      UpdateExpression: "SET Reactions = :r",
+      ExpressionAttributeValues: { ":r": Object.keys(reactions).length > 0 ? reactions : null },
+    })
+  );
+}
+
 export async function deleteMessagesByChannel(
   channelId: string
 ): Promise<void> {
-  // First query all message IDs for this channel
   const result = await docClient.send(
     new QueryCommand({
       TableName: TABLES.CHAT_MESSAGES,
@@ -50,7 +103,6 @@ export async function deleteMessagesByChannel(
   const items = result.Items ?? [];
   if (items.length === 0) return;
 
-  // BatchWrite in chunks of 25
   const chunks: { MessageID: string }[][] = [];
   for (let i = 0; i < items.length; i += 25) {
     chunks.push(items.slice(i, i + 25) as { MessageID: string }[]);

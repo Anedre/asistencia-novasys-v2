@@ -269,3 +269,65 @@ export async function getAllEmployees(tenantId?: string): Promise<Employee[]> {
   } while (lastKey);
   return items;
 }
+
+// ── Presence ──────────────────────────────────────────────────────
+
+export async function updatePresence(
+  employeeId: string,
+  status: "online" | "idle" | "offline"
+): Promise<void> {
+  await docClient.send(
+    new UpdateCommand({
+      TableName: TABLES.EMPLOYEES,
+      Key: { EmployeeID: employeeId },
+      UpdateExpression: "SET LastActivityAt = :ts, PresenceStatus = :st",
+      ExpressionAttributeValues: {
+        ":ts": new Date().toISOString(),
+        ":st": status,
+      },
+    })
+  );
+}
+
+export async function updateTypingStatus(
+  employeeId: string,
+  channelId: string | null
+): Promise<void> {
+  if (channelId) {
+    await docClient.send(
+      new UpdateCommand({
+        TableName: TABLES.EMPLOYEES,
+        Key: { EmployeeID: employeeId },
+        UpdateExpression: "SET TypingInChannel = :ch",
+        ExpressionAttributeValues: { ":ch": channelId },
+      })
+    );
+  } else {
+    await docClient.send(
+      new UpdateCommand({
+        TableName: TABLES.EMPLOYEES,
+        Key: { EmployeeID: employeeId },
+        UpdateExpression: "REMOVE TypingInChannel",
+      })
+    );
+  }
+}
+
+export async function getPresenceForEmployees(
+  employeeIds: string[]
+): Promise<Record<string, { status: string; lastActivity: string; typingIn?: string }>> {
+  const result: Record<string, { status: string; lastActivity: string; typingIn?: string }> = {};
+  const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+  const twoMinAgo = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+
+  for (const id of employeeIds) {
+    const emp = await getEmployeeById(id);
+    if (!emp) continue;
+    const lastAct = emp.LastActivityAt ?? "";
+    let status: string = "offline";
+    if (lastAct > twoMinAgo) status = "online";
+    else if (lastAct > fiveMinAgo) status = "idle";
+    result[id] = { status, lastActivity: lastAct, typingIn: emp.TypingInChannel };
+  }
+  return result;
+}

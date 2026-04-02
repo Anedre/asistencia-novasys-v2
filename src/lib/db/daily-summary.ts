@@ -94,31 +94,39 @@ export async function applyStart(
   employeeId: string,
   workDate: string,
   tsUtc: string,
-  tsLocal: string
+  tsLocal: string,
+  tenantId?: string
 ): Promise<void> {
+  const updateParts = [
+    "firstInUtc = :utc",
+    "firstInLocal = :local",
+    "#st = :open",
+    "#src = :src",
+    "updatedAt = :utc",
+    "updatedAtLocal = :local",
+    "eventsCount = if_not_exists(eventsCount, :zero) + :one",
+  ];
+  const values: Record<string, unknown> = {
+    ":utc": tsUtc,
+    ":local": tsLocal,
+    ":open": "OPEN",
+    ":src": "REALTIME",
+    ":zero": 0,
+    ":one": 1,
+  };
+  if (tenantId) {
+    updateParts.push("TenantID = :tid");
+    values[":tid"] = tenantId;
+  }
+
   await docClient.send(
     new UpdateCommand({
       TableName: TABLES.DAILY_SUMMARY,
       Key: key(employeeId, workDate),
-      UpdateExpression: `
-        SET firstInUtc = :utc,
-            firstInLocal = :local,
-            #st = :open,
-            #src = :src,
-            updatedAt = :utc,
-            updatedAtLocal = :local,
-            eventsCount = if_not_exists(eventsCount, :zero) + :one
-      `,
+      UpdateExpression: `SET ${updateParts.join(", ")}`,
       ConditionExpression: "attribute_not_exists(firstInUtc)",
       ExpressionAttributeNames: { "#st": "status", "#src": "source" },
-      ExpressionAttributeValues: {
-        ":utc": tsUtc,
-        ":local": tsLocal,
-        ":open": "OPEN",
-        ":src": "REALTIME",
-        ":zero": 0,
-        ":one": 1,
-      },
+      ExpressionAttributeValues: values,
     })
   );
 }
@@ -130,30 +138,38 @@ export async function applyBreakStart(
   employeeId: string,
   workDate: string,
   tsUtc: string,
-  tsLocal: string
+  tsLocal: string,
+  tenantId?: string
 ): Promise<void> {
+  const updateParts = [
+    "breakStartUtc = :utc",
+    "breakStartLocal = :local",
+    "updatedAt = :utc",
+    "updatedAtLocal = :local",
+    "eventsCount = if_not_exists(eventsCount, :zero) + :one",
+  ];
+  const values: Record<string, unknown> = {
+    ":utc": tsUtc,
+    ":local": tsLocal,
+    ":zero": 0,
+    ":one": 1,
+  };
+  if (tenantId) {
+    updateParts.push("TenantID = :tid");
+    values[":tid"] = tenantId;
+  }
+
   await docClient.send(
     new UpdateCommand({
       TableName: TABLES.DAILY_SUMMARY,
       Key: key(employeeId, workDate),
-      UpdateExpression: `
-        SET breakStartUtc = :utc,
-            breakStartLocal = :local,
-            updatedAt = :utc,
-            updatedAtLocal = :local,
-            eventsCount = if_not_exists(eventsCount, :zero) + :one
-      `,
+      UpdateExpression: `SET ${updateParts.join(", ")}`,
       ConditionExpression: `
         attribute_exists(firstInUtc)
         AND attribute_not_exists(lastOutUtc)
         AND attribute_not_exists(breakStartUtc)
       `,
-      ExpressionAttributeValues: {
-        ":utc": tsUtc,
-        ":local": tsLocal,
-        ":zero": 0,
-        ":one": 1,
-      },
+      ExpressionAttributeValues: values,
     })
   );
 }
@@ -165,7 +181,8 @@ export async function applyBreakEnd(
   employeeId: string,
   workDate: string,
   tsUtc: string,
-  tsLocal: string
+  tsLocal: string,
+  tenantId?: string
 ): Promise<void> {
   // First read current to get breakStartUtc
   const current = await getDailySummary(employeeId, workDate);
@@ -177,29 +194,35 @@ export async function applyBreakEnd(
   const breakEndMs = new Date(tsUtc).getTime();
   const mins = Math.max(0, Math.floor((breakEndMs - breakStartMs) / 60000));
 
+  const setParts = [
+    "breakMinutes = if_not_exists(breakMinutes, :zero) + :mins",
+    "updatedAt = :utc",
+    "updatedAtLocal = :local",
+    "eventsCount = if_not_exists(eventsCount, :zero) + :one",
+  ];
+  const values: Record<string, unknown> = {
+    ":mins": mins,
+    ":utc": tsUtc,
+    ":local": tsLocal,
+    ":zero": 0,
+    ":one": 1,
+  };
+  if (tenantId) {
+    setParts.push("TenantID = :tid");
+    values[":tid"] = tenantId;
+  }
+
   await docClient.send(
     new UpdateCommand({
       TableName: TABLES.DAILY_SUMMARY,
       Key: key(employeeId, workDate),
-      UpdateExpression: `
-        REMOVE breakStartUtc, breakStartLocal
-        SET breakMinutes = if_not_exists(breakMinutes, :zero) + :mins,
-            updatedAt = :utc,
-            updatedAtLocal = :local,
-            eventsCount = if_not_exists(eventsCount, :zero) + :one
-      `,
+      UpdateExpression: `REMOVE breakStartUtc, breakStartLocal SET ${setParts.join(", ")}`,
       ConditionExpression: `
         attribute_exists(firstInUtc)
         AND attribute_exists(breakStartUtc)
         AND attribute_not_exists(lastOutUtc)
       `,
-      ExpressionAttributeValues: {
-        ":mins": mins,
-        ":utc": tsUtc,
-        ":local": tsLocal,
-        ":zero": 0,
-        ":one": 1,
-      },
+      ExpressionAttributeValues: values,
     })
   );
 }
@@ -211,32 +234,40 @@ export async function applyEnd(
   employeeId: string,
   workDate: string,
   tsUtc: string,
-  tsLocal: string
+  tsLocal: string,
+  tenantId?: string
 ): Promise<void> {
+  const updateParts = [
+    "lastOutUtc = :utc",
+    "lastOutLocal = :local",
+    "#st = :closed",
+    "updatedAt = :utc",
+    "updatedAtLocal = :local",
+    "eventsCount = if_not_exists(eventsCount, :zero) + :one",
+  ];
+  const values: Record<string, unknown> = {
+    ":utc": tsUtc,
+    ":local": tsLocal,
+    ":closed": "CLOSED",
+    ":zero": 0,
+    ":one": 1,
+  };
+  if (tenantId) {
+    updateParts.push("TenantID = :tid");
+    values[":tid"] = tenantId;
+  }
+
   await docClient.send(
     new UpdateCommand({
       TableName: TABLES.DAILY_SUMMARY,
       Key: key(employeeId, workDate),
-      UpdateExpression: `
-        SET lastOutUtc = :utc,
-            lastOutLocal = :local,
-            #st = :closed,
-            updatedAt = :utc,
-            updatedAtLocal = :local,
-            eventsCount = if_not_exists(eventsCount, :zero) + :one
-      `,
+      UpdateExpression: `SET ${updateParts.join(", ")}`,
       ConditionExpression: `
         attribute_exists(firstInUtc)
         AND attribute_not_exists(lastOutUtc)
       `,
       ExpressionAttributeNames: { "#st": "status" },
-      ExpressionAttributeValues: {
-        ":utc": tsUtc,
-        ":local": tsLocal,
-        ":closed": "CLOSED",
-        ":zero": 0,
-        ":one": 1,
-      },
+      ExpressionAttributeValues: values,
     })
   );
 }
@@ -247,10 +278,23 @@ export async function applyEnd(
  */
 export async function recalcDay(
   employeeId: string,
-  workDate: string
+  workDate: string,
+  tenantId?: string
 ): Promise<void> {
   const current = await getDailySummary(employeeId, workDate);
   if (!current) return;
+
+  // Get tenant config for planned minutes and work policies
+  let planned = 480;
+  let strictSchedule = false;
+  let allowOvertime = true;
+  if (tenantId) {
+    const { getTenantPlannedMinutes, getTenantWorkPolicy } = await import("@/lib/utils/holidays");
+    planned = await getTenantPlannedMinutes(tenantId);
+    const policy = await getTenantWorkPolicy(tenantId);
+    strictSchedule = policy.strictSchedule;
+    allowOvertime = policy.allowOvertime;
+  }
 
   const firstIn = current.firstInUtc;
   const lastOut = current.lastOutUtc;
@@ -271,8 +315,12 @@ export async function recalcDay(
     anomalies.push("Sin marcación completa");
   }
 
-  const planned = 480;
-  const delta = worked - planned;
+  // Apply strict schedule: cap worked to planned max
+  if (strictSchedule && lastOut) {
+    worked = Math.min(worked, planned);
+  }
+
+  const delta = allowOvertime ? worked - planned : Math.min(0, worked - planned);
 
   let finalStatus: string;
   if (current.status === "OPEN" && !lastOut) {

@@ -4,6 +4,14 @@ import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { Pin, Trash2, MessageCircle, Loader2 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { es } from "date-fns/locale/es";
@@ -78,11 +86,12 @@ export function PostCard({ post, currentUserId, isAdmin }: PostCardProps) {
     }
   };
 
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const handleDelete = async () => {
-    if (!confirm("¿Eliminar esta publicacion?")) return;
     try {
       await deletePost.mutateAsync(post.PostID);
       toast.success("Publicacion eliminada");
+      setShowDeleteConfirm(false);
     } catch {
       toast.error("Error al eliminar publicacion");
     }
@@ -130,7 +139,7 @@ export function PostCard({ post, currentUserId, isAdmin }: PostCardProps) {
                 variant="ghost"
                 size="icon"
                 className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                onClick={handleDelete}
+                onClick={() => setShowDeleteConfirm(true)}
                 disabled={deletePost.isPending}
               >
                 <Trash2 className="h-4 w-4" />
@@ -251,6 +260,25 @@ export function PostCard({ post, currentUserId, isAdmin }: PostCardProps) {
           </div>
         )}
       </CardContent>
+
+      {/* Delete confirmation dialog */}
+      <Dialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Eliminar publicacion</DialogTitle>
+            <DialogDescription>
+              Esta accion no se puede deshacer. ¿Estas seguro?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowDeleteConfirm(false)}>Cancelar</Button>
+            <Button variant="destructive" onClick={handleDelete} disabled={deletePost.isPending}>
+              {deletePost.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Eliminar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

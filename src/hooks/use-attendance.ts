@@ -50,6 +50,7 @@ export function useRecordEvent() {
     mutationFn: async (data: {
       eventType: EventType;
       note?: string;
+      customTime?: string; // HH:MM format — overrides start time
     }) => {
       const res = await fetch("/api/attendance/record", {
         method: "POST",

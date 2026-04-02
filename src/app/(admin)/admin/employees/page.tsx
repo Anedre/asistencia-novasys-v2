@@ -10,16 +10,19 @@ import {
   ShieldOff,
   UserX,
   Loader2,
+  Pencil,
 } from "lucide-react";
 import {
   useAdminEmployees,
   useUpdateEmployeeRole,
+  useUpdateEmployeeProfile,
   useDeactivateEmployee,
 } from "@/hooks/use-employee";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -149,6 +152,7 @@ function ConfirmDialog({
 export default function EmployeesPage() {
   const { data, isLoading, isError } = useAdminEmployees(false);
   const updateRole = useUpdateEmployeeRole();
+  const updateProfile = useUpdateEmployeeProfile();
   const deactivate = useDeactivateEmployee();
 
   const [search, setSearch] = useState("");
@@ -167,6 +171,29 @@ export default function EmployeesPage() {
     empId: string;
     empName: string;
   }>({ open: false, empId: "", empName: "" });
+
+  // Edit dialog state
+  const [editDialog, setEditDialog] = useState<{
+    open: boolean;
+    empId: string;
+    FullName: string;
+    FirstName: string;
+    LastName: string;
+    Phone: string;
+    DNI: string;
+    Area: string;
+    Position: string;
+  }>({
+    open: false,
+    empId: "",
+    FullName: "",
+    FirstName: "",
+    LastName: "",
+    Phone: "",
+    DNI: "",
+    Area: "",
+    Position: "",
+  });
 
   const [feedback, setFeedback] = useState<{
     type: "success" | "error";
@@ -216,6 +243,36 @@ export default function EmployeesPage() {
       setFeedback({
         type: "error",
         text: err instanceof Error ? err.message : "Error al cambiar rol",
+      });
+    }
+  }
+
+  async function handleEditSave() {
+    setFeedback(null);
+    try {
+      const { empId, open: _open, ...fields } = editDialog;
+      // Auto-derive FirstName/LastName from FullName
+      const nameParts = fields.FullName.trim().split(/\s+/);
+      const updates: Record<string, string> = {
+        FullName: fields.FullName.trim(),
+        FirstName: nameParts[0] || fields.FirstName,
+        LastName: nameParts.slice(1).join(" ") || fields.LastName,
+        Phone: fields.Phone,
+        DNI: fields.DNI,
+        Area: fields.Area,
+        Position: fields.Position,
+      };
+      // Remove empty values to avoid overwriting with blanks
+      for (const k of Object.keys(updates)) {
+        if (!updates[k]) delete updates[k];
+      }
+      await updateProfile.mutateAsync({ id: empId, updates });
+      setFeedback({ type: "success", text: "Empleado actualizado correctamente" });
+      setEditDialog((d) => ({ ...d, open: false }));
+    } catch (err) {
+      setFeedback({
+        type: "error",
+        text: err instanceof Error ? err.message : "Error al actualizar",
       });
     }
   }
@@ -354,6 +411,25 @@ export default function EmployeesPage() {
                               <MoreHorizontal className="h-4 w-4" />
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                onClick={() =>
+                                  setEditDialog({
+                                    open: true,
+                                    empId: emp.employeeId,
+                                    FullName: emp.fullName,
+                                    FirstName: emp.firstName ?? "",
+                                    LastName: emp.lastName ?? "",
+                                    Phone: emp.phone ?? "",
+                                    DNI: emp.dni ?? "",
+                                    Area: emp.area,
+                                    Position: emp.position,
+                                  })
+                                }
+                              >
+                                <Pencil className="mr-2 h-4 w-4" />
+                                Editar datos
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
                               {emp.role === "EMPLOYEE" ? (
                                 <DropdownMenuItem
                                   onClick={() =>
@@ -438,6 +514,99 @@ export default function EmployeesPage() {
         loading={deactivate.isPending}
         onConfirm={handleDeactivate}
       />
+
+      {/* Edit employee dialog */}
+      <Dialog
+        open={editDialog.open}
+        onOpenChange={(open) => setEditDialog((d) => ({ ...d, open }))}
+      >
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Editar Empleado</DialogTitle>
+            <DialogDescription>
+              Modifica los datos del empleado. Los cambios se aplicaran inmediatamente.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="grid gap-1.5">
+              <Label htmlFor="edit-name">Nombre completo</Label>
+              <Input
+                id="edit-name"
+                value={editDialog.FullName}
+                onChange={(e) =>
+                  setEditDialog((d) => ({ ...d, FullName: e.target.value }))
+                }
+                placeholder="Nombre completo"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-1.5">
+                <Label htmlFor="edit-dni">DNI</Label>
+                <Input
+                  id="edit-dni"
+                  value={editDialog.DNI}
+                  onChange={(e) =>
+                    setEditDialog((d) => ({ ...d, DNI: e.target.value }))
+                  }
+                  placeholder="DNI"
+                />
+              </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor="edit-phone">Telefono</Label>
+                <Input
+                  id="edit-phone"
+                  value={editDialog.Phone}
+                  onChange={(e) =>
+                    setEditDialog((d) => ({ ...d, Phone: e.target.value }))
+                  }
+                  placeholder="Telefono"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-1.5">
+                <Label htmlFor="edit-area">Area</Label>
+                <Input
+                  id="edit-area"
+                  value={editDialog.Area}
+                  onChange={(e) =>
+                    setEditDialog((d) => ({ ...d, Area: e.target.value }))
+                  }
+                  placeholder="Area"
+                />
+              </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor="edit-position">Cargo</Label>
+                <Input
+                  id="edit-position"
+                  value={editDialog.Position}
+                  onChange={(e) =>
+                    setEditDialog((d) => ({ ...d, Position: e.target.value }))
+                  }
+                  placeholder="Cargo"
+                />
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setEditDialog((d) => ({ ...d, open: false }))}
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleEditSave}
+              disabled={updateProfile.isPending || !editDialog.FullName.trim()}
+            >
+              {updateProfile.isPending && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
+              Guardar cambios
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

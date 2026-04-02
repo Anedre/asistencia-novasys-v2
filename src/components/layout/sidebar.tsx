@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { useTenant } from "@/lib/contexts/tenant-context";
+import { useTenantConfig } from "@/hooks/use-tenant";
 import {
   Clock,
   CalendarDays,
@@ -61,7 +62,17 @@ interface SidebarProps {
 export function Sidebar({ role, isAdmin, className }: SidebarProps) {
   const pathname = usePathname();
   const { tenantName, logoUrl } = useTenant();
-  const items = role === "ADMIN" ? adminNav : employeeNav;
+  const { data: tenantConfig } = useTenantConfig();
+  const features = tenantConfig?.settings?.features;
+
+  // Filter nav items based on tenant features
+  const rawItems = role === "ADMIN" ? adminNav : employeeNav;
+  const items = rawItems.filter((item) => {
+    if (item.href === "/messages" && features?.chat === false) return false;
+    if (item.href === "/feed" && features?.social === false) return false;
+    if (item.href === "/chat" && features?.aiAssistant === false) return false;
+    return true;
+  });
   const showSwitch = isAdmin === true;
   const isAdminView = role === "ADMIN";
 

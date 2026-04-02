@@ -23,6 +23,7 @@ export const POST = withErrorHandler(async (req: Request) => {
     eventType: parsed.eventType,
     note: parsed.note,
     clientTime: parsed.clientTime,
+    customTime: parsed.customTime,
     deviceId: parsed.deviceId,
     ip,
     userAgent: ua,

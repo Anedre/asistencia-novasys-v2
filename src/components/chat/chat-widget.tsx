@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { useTenantConfig } from "@/hooks/use-tenant";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
@@ -45,6 +46,8 @@ const QUICK_ACTIONS = [
 
 export function ChatWidget() {
   const router = useRouter();
+  const { data: tenant } = useTenantConfig();
+  const aiEnabled = tenant?.settings?.features?.aiAssistant !== false;
   const [isOpen, setIsOpen] = useState(false);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [localMessages, setLocalMessages] = useState<AIChatMessage[]>([]);
@@ -196,6 +199,8 @@ export function ChatWidget() {
     textarea.style.height = "auto";
     textarea.style.height = Math.min(textarea.scrollHeight, 120) + "px";
   };
+
+  if (!aiEnabled) return null;
 
   return (
     <>

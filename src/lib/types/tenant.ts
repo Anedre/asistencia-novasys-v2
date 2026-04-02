@@ -7,6 +7,12 @@ export interface TenantFeatures {
   aiAssistant: boolean;
 }
 
+export interface WorkPolicy {
+  allowHolidayWork: boolean;
+  allowOvertime: boolean;
+  strictSchedule: boolean;
+}
+
 export interface TenantSettings {
   approvalRequired: boolean;
   defaultScheduleType: "FULL_TIME" | "PART_TIME";
@@ -15,6 +21,7 @@ export interface TenantSettings {
   defaultSchedule?: { startTime: string; endTime: string; breakMinutes: number };
   holidays?: { date: string; name: string }[];
   notifications?: Record<string, boolean>;
+  workPolicy?: WorkPolicy;
 }
 
 export interface TenantBranding {

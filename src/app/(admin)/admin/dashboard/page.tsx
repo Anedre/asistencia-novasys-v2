@@ -25,6 +25,9 @@ import {
   ClipboardList,
   FileBarChart,
   FilePenLine,
+  MessageSquare,
+  FileText,
+  Calendar,
 } from "lucide-react";
 
 /* ------------------------------------------------------------------ */
@@ -45,8 +48,10 @@ interface DashboardData {
   holidayName?: string;
   recentActivity?: Array<{
     id: string;
+    type: "attendance" | "post" | "request" | "event";
     employeeName: string;
     action: string;
+    detail?: string;
     time: string;
   }>;
   statusBreakdown?: {
@@ -67,6 +72,7 @@ interface DashboardData {
     firstInLocal: string | null;
     lastOutLocal: string | null;
     workedMinutes: number;
+    anomalies: string[];
   }>;
 }
 
@@ -421,28 +427,39 @@ export default function AdminDashboard() {
                 ))}
               </div>
             ) : recentActivity.length > 0 ? (
-              <div className="space-y-3">
-                {recentActivity.slice(0, 5).map((item) => (
-                  <div
-                    key={item.id}
-                    className="flex items-center gap-3 rounded-lg border p-2.5 transition-colors hover:bg-muted/40"
-                  >
-                    <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10">
-                      <Activity className="size-3.5 text-primary" />
+              <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1">
+                {recentActivity.slice(0, 15).map((item) => {
+                  const iconConfig: Record<string, { icon: typeof Activity; bg: string; fg: string }> = {
+                    attendance: { icon: Activity, bg: "bg-green-100 dark:bg-green-900/30", fg: "text-green-600 dark:text-green-400" },
+                    post: { icon: MessageSquare, bg: "bg-blue-100 dark:bg-blue-900/30", fg: "text-blue-600 dark:text-blue-400" },
+                    request: { icon: FileText, bg: "bg-amber-100 dark:bg-amber-900/30", fg: "text-amber-600 dark:text-amber-400" },
+                    event: { icon: Calendar, bg: "bg-violet-100 dark:bg-violet-900/30", fg: "text-violet-600 dark:text-violet-400" },
+                  };
+                  const cfg = iconConfig[item.type] ?? iconConfig.attendance;
+                  const Icon = cfg.icon;
+                  return (
+                    <div
+                      key={item.id}
+                      className="flex items-center gap-3 rounded-lg border p-2.5 transition-colors hover:bg-muted/40"
+                    >
+                      <div className={`flex size-8 shrink-0 items-center justify-center rounded-full ${cfg.bg}`}>
+                        <Icon className={`size-3.5 ${cfg.fg}`} />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium">
+                          {item.employeeName}
+                        </p>
+                        <p className="truncate text-xs text-muted-foreground">
+                          {item.action}
+                          {item.detail && <span className="ml-1 opacity-70">— {item.detail}</span>}
+                        </p>
+                      </div>
+                      <span className="shrink-0 text-[10px] text-muted-foreground tabular-nums">
+                        {item.time}
+                      </span>
                     </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium">
-                        {item.employeeName}
-                      </p>
-                      <p className="truncate text-xs text-muted-foreground">
-                        {item.action}
-                      </p>
-                    </div>
-                    <span className="shrink-0 text-[10px] text-muted-foreground">
-                      {item.time}
-                    </span>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             ) : (
               <div className="flex flex-col items-center justify-center py-10 text-center">
@@ -451,13 +468,97 @@ export default function AdminDashboard() {
                 </div>
                 <p className="mt-3 text-sm font-medium">Sin actividad reciente</p>
                 <p className="mt-0.5 text-xs text-muted-foreground">
-                  Los eventos de asistencia aparecen aqui
+                  La actividad del dia aparece aqui
                 </p>
               </div>
             )}
           </CardContent>
         </Card>
       </div>
+
+      {/* ============================================ */}
+      {/* ANOMALIES DETAIL                              */}
+      {/* ============================================ */}
+      {!isLoading && anomalies > 0 && dashboard?.presence && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="size-5 text-amber-500" />
+              <CardTitle className="text-base">
+                Detalle de Anomalias ({anomalies})
+              </CardTitle>
+            </div>
+            <CardDescription>
+              Registros de asistencia que requieren atencion o revision
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {dashboard.presence
+                .filter((emp) => emp.anomalies && emp.anomalies.length > 0)
+                .map((emp) => (
+                  <div key={emp.employeeId} className="flex items-center gap-3 rounded-lg border p-3">
+                    <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+                      <AlertTriangle className="size-4" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium truncate">{emp.fullName}</p>
+                      <p className="text-xs text-muted-foreground">{emp.area}</p>
+                    </div>
+                    <div className="shrink-0 flex flex-col items-end gap-1">
+                      {emp.anomalies.map((anomaly, idx) => {
+                        const explanations: Record<string, { label: string; color: string }> = {
+                          "Jornada abierta": {
+                            label: "Entrada sin salida — el empleado no ha cerrado su jornada",
+                            color: "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300",
+                          },
+                          "END sin START": {
+                            label: "Salida sin entrada — se registro salida sin haber marcado entrada",
+                            color: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300",
+                          },
+                          "Sin marcación completa": {
+                            label: "Sin entrada ni salida — el registro existe pero sin marcaciones",
+                            color: "bg-gray-100 text-gray-800 dark:bg-gray-800/50 dark:text-gray-300",
+                          },
+                        };
+                        const info = explanations[anomaly] ?? {
+                          label: anomaly,
+                          color: "bg-muted text-muted-foreground",
+                        };
+                        return (
+                          <span
+                            key={idx}
+                            className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-medium ${info.color}`}
+                            title={info.label}
+                          >
+                            {anomaly}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+            </div>
+            <div className="mt-4 rounded-lg bg-muted/50 p-3">
+              <p className="text-xs font-medium text-muted-foreground mb-1.5">Tipos de anomalia:</p>
+              <ul className="space-y-1 text-xs text-muted-foreground">
+                <li className="flex items-start gap-2">
+                  <span className="mt-0.5 size-1.5 rounded-full bg-amber-500 shrink-0" />
+                  <span><strong>Jornada abierta:</strong> El empleado marco entrada pero aun no ha marcado salida. Se resuelve automaticamente al cerrar jornada.</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="mt-0.5 size-1.5 rounded-full bg-red-500 shrink-0" />
+                  <span><strong>END sin START:</strong> Se registro una salida sin entrada previa. Requiere regularizacion manual.</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="mt-0.5 size-1.5 rounded-full bg-gray-400 shrink-0" />
+                  <span><strong>Sin marcacion completa:</strong> Existe un registro pero sin marcaciones de entrada o salida. Requiere revision.</span>
+                </li>
+              </ul>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* ============================================ */}
       {/* REAL-TIME PRESENCE                            */}

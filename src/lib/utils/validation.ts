@@ -5,6 +5,7 @@ export const recordEventSchema = z.object({
   eventType: z.enum(["START", "BREAK_START", "BREAK_END", "END"]),
   note: z.string().max(500).optional(),
   clientTime: z.string().optional(),
+  customTime: z.string().regex(/^\d{2}:\d{2}$/).optional(),
   deviceId: z.string().optional(),
 });
 

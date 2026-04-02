@@ -40,6 +40,10 @@ export interface Employee {
   ScheduleType?: ScheduleType;
   CreatedAt: string;
   UpdatedAt: string;
+  // Presence
+  LastActivityAt?: string;  // ISO timestamp of last heartbeat
+  PresenceStatus?: "online" | "idle" | "offline";
+  TypingInChannel?: string; // ChannelID where currently typing
 }
 
 export interface EmployeeSummary {

@@ -13,10 +13,10 @@ import {
   getDailySummaryRange,
 } from "@/lib/db/daily-summary";
 import { putAttendanceEvent, getEventsByEmployeeAndDate } from "@/lib/db/attendance";
-import { isoUtc, isoLima, clockLima, workDateLima } from "@/lib/utils/time";
+import { isoUtc, isoLima, clockLima, workDateLima, buildLocalIso } from "@/lib/utils/time";
 import { ALLOWED_EVENT_TYPES } from "@/lib/constants/event-types";
 import { ConflictError, ValidationError } from "@/lib/utils/errors";
-import { getHolidaySet } from "@/lib/utils/holidays";
+import { getHolidaySet, getTenantPlannedMinutes } from "@/lib/utils/holidays";
 import type {
   EventType,
   AttendanceEvent,
@@ -31,6 +31,7 @@ interface RecordEventParams {
   eventType: EventType;
   note?: string;
   clientTime?: string;
+  customTime?: string; // HH:MM — override start time (Lima timezone)
   deviceId?: string;
   ip: string;
   userAgent: string;
@@ -38,7 +39,7 @@ interface RecordEventParams {
 }
 
 export async function recordEvent(params: RecordEventParams) {
-  const { employeeId, eventType, note, clientTime, deviceId, ip, userAgent, tenantId } =
+  const { employeeId, eventType, note, clientTime, customTime, deviceId, ip, userAgent, tenantId } =
     params;
 
   if (!ALLOWED_EVENT_TYPES.has(eventType)) {
@@ -46,25 +47,40 @@ export async function recordEvent(params: RecordEventParams) {
   }
 
   const now = new Date();
-  const serverTsUtc = isoUtc(now);
-  const serverTsLocal = isoLima(now);
-  const serverClockLocal = clockLima(now);
   const workDate = workDateLima(now);
+
+  // If customTime provided (HH:MM) for START, use that instead of server time
+  let serverTsUtc: string;
+  let serverTsLocal: string;
+  let serverClockLocal: string;
+  let eventSource: "WEB" | "CUSTOM_TIME" = "WEB";
+
+  if (customTime && eventType === "START") {
+    // Build Lima local ISO from today's date + custom time
+    serverTsLocal = buildLocalIso(workDate, customTime);
+    serverTsUtc = new Date(serverTsLocal).toISOString();
+    serverClockLocal = `${customTime}:00`;
+    eventSource = "CUSTOM_TIME";
+  } else {
+    serverTsUtc = isoUtc(now);
+    serverTsLocal = isoLima(now);
+    serverClockLocal = clockLima(now);
+  }
 
   // 1) Apply to daily summary (state machine with ConditionExpressions)
   try {
     switch (eventType) {
       case "START":
-        await applyStart(employeeId, workDate, serverTsUtc, serverTsLocal);
+        await applyStart(employeeId, workDate, serverTsUtc, serverTsLocal, tenantId);
         break;
       case "BREAK_START":
-        await applyBreakStart(employeeId, workDate, serverTsUtc, serverTsLocal);
+        await applyBreakStart(employeeId, workDate, serverTsUtc, serverTsLocal, tenantId);
         break;
       case "BREAK_END":
-        await applyBreakEnd(employeeId, workDate, serverTsUtc, serverTsLocal);
+        await applyBreakEnd(employeeId, workDate, serverTsUtc, serverTsLocal, tenantId);
         break;
       case "END":
-        await applyEnd(employeeId, workDate, serverTsUtc, serverTsLocal);
+        await applyEnd(employeeId, workDate, serverTsUtc, serverTsLocal, tenantId);
         break;
     }
   } catch (error: unknown) {
@@ -84,7 +100,7 @@ export async function recordEvent(params: RecordEventParams) {
     EmployeeID: employeeId,
     EventTS: `TS#${serverTsUtc}`,
     eventType,
-    source: "WEB",
+    source: eventSource,
     serverTimeUtc: serverTsUtc,
     serverTimeLocal: serverTsLocal,
     serverClockLocal,
@@ -102,7 +118,7 @@ export async function recordEvent(params: RecordEventParams) {
   await putAttendanceEvent(event);
 
   // 3) Recalculate day totals
-  await recalcDay(employeeId, workDate);
+  await recalcDay(employeeId, workDate, tenantId);
 
   return {
     employeeId,
@@ -110,7 +126,16 @@ export async function recordEvent(params: RecordEventParams) {
     serverTimeUtc: serverTsUtc,
     serverTimeLocal: serverTsLocal,
     serverClockLocal,
-    message: `${eventType} OK. Hora Lima: ${serverClockLocal}`,
+    message: (() => {
+      const time = serverClockLocal.substring(0, 5);
+      switch (eventType) {
+        case "START": return `¡Jornada iniciada! Entrada registrada a las ${time}`;
+        case "END": return `¡Jornada finalizada! Salida registrada a las ${time}`;
+        case "BREAK_START": return `Break iniciado a las ${time}. ¡Buen descanso!`;
+        case "BREAK_END": return `Break finalizado a las ${time}. ¡De vuelta al trabajo!`;
+        default: return `Registro exitoso a las ${time}`;
+      }
+    })(),
   };
 }
 
@@ -119,10 +144,12 @@ export async function getTodayStatus(employeeId: string, tenantId?: string): Pro
   const todayDate = workDateLima();
   const item = await getDailySummary(employeeId, todayDate);
 
-  // Check if today is a holiday
+  // Get tenant config
+  let defaultPlanned = 480;
   let isHol = false;
   let holName: string | undefined;
   if (tenantId) {
+    defaultPlanned = await getTenantPlannedMinutes(tenantId);
     const holMap = await getHolidaySet(tenantId);
     if (holMap.has(todayDate)) {
       isHol = true;
@@ -131,11 +158,11 @@ export async function getTodayStatus(employeeId: string, tenantId?: string): Pro
   }
 
   if (!item) {
-    const planned = isHol ? 0 : 480;
+    const planned = isHol ? 0 : defaultPlanned;
     return {
       employeeId,
       date: todayDate,
-      status: isHol ? "NO_RECORD" : "NO_RECORD",
+      status: isHol ? "HOLIDAY" as DayStatus : "NO_RECORD",
       firstInLocal: null,
       lastOutLocal: null,
       breakStartLocal: null,
@@ -143,8 +170,8 @@ export async function getTodayStatus(employeeId: string, tenantId?: string): Pro
       workedMinutes: 0,
       workedHHMM: "00:00",
       plannedMinutes: planned,
-      deltaMinutes: isHol ? 0 : -480,
-      deltaHHMM: isHol ? "00:00" : "-08:00",
+      deltaMinutes: isHol ? 0 : -planned,
+      deltaHHMM: isHol ? "00:00" : fmtDelta(-planned),
       hasOpenBreak: false,
       hasOpenShift: false,
       anomalies: [],
@@ -155,13 +182,13 @@ export async function getTodayStatus(employeeId: string, tenantId?: string): Pro
 
   const breakMinutes = Number(item.breakMinutes ?? 0);
   const workedMinutes = Number(item.workedMinutes ?? 0);
-  const plannedMinutes = isHol ? 0 : Number(item.plannedMinutes ?? 480);
+  const plannedMinutes = isHol ? 0 : Number(item.plannedMinutes ?? defaultPlanned);
   const deltaMinutes = isHol ? workedMinutes : Number(item.deltaMinutes ?? workedMinutes - plannedMinutes);
 
   return {
     employeeId,
     date: todayDate,
-    status: item.status as DayStatus,
+    status: isHol ? "HOLIDAY" as DayStatus : (item.status as DayStatus),
     firstInLocal: extractTime(item.firstInLocal),
     lastOutLocal: extractTime(item.lastOutLocal),
     breakStartLocal: extractTime(item.breakStartLocal),
@@ -208,9 +235,10 @@ export async function getWeekSummary(
   const dateFrom = formatDate(dates[0]);
   const dateTo = formatDate(dates[6]);
 
-  const [items, holMap] = await Promise.all([
+  const [items, holMap, tenantPlanned] = await Promise.all([
     getDailySummaryRange(employeeId, dateFrom, dateTo),
     tenantId ? getHolidaySet(tenantId) : Promise.resolve(new Map<string, string>()),
+    tenantId ? getTenantPlannedMinutes(tenantId) : Promise.resolve(480),
   ]);
   const byDate = new Map<string, typeof items[0]>();
   for (const it of items) {
@@ -228,7 +256,7 @@ export async function getWeekSummary(
     const dow = d.getDay();
     const isWeekend = dow === 0 || dow === 6;
     const isHol = holMap.has(ds);
-    const dayPlanned = (isWeekend || isHol) ? 0 : 480;
+    const dayPlanned = (isWeekend || isHol) ? 0 : tenantPlanned;
 
     if (!item) {
       totalPlanned += dayPlanned;
@@ -242,8 +270,9 @@ export async function getWeekSummary(
         workedHHMM: "00:00",
         deltaMinutes: dayPlanned === 0 ? 0 : -dayPlanned,
         deltaHHMM: dayPlanned === 0 ? "00:00" : fmtDelta(-dayPlanned),
-        status: (isWeekend || isHol ? "NO_RECORD" : "MISSING") as DayStatus,
+        status: (isHol ? "HOLIDAY" : isWeekend ? "NO_RECORD" : "MISSING") as DayStatus,
         anomalies: [],
+        ...(isHol && { isHoliday: true, holidayName: holMap.get(ds) }),
       };
     }
 
@@ -266,8 +295,9 @@ export async function getWeekSummary(
       workedHHMM: fmtMin(worked),
       deltaMinutes: delta,
       deltaHHMM: fmtDelta(delta),
-      status: (item.status as DayStatus) ?? "OPEN",
+      status: isHol ? ("HOLIDAY" as DayStatus) : ((item.status as DayStatus) ?? "OPEN"),
       anomalies: item.anomalies ?? [],
+      ...(isHol && { isHoliday: true, holidayName: holMap.get(ds) }),
     };
   });
 

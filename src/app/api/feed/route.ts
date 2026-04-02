@@ -30,7 +30,7 @@ export const POST = withErrorHandler(async (req: Request) => {
   const user = await requireSession();
   const body = await req.json();
 
-  const { content, visibility, targetArea, imageUrl } = body;
+  const { content, visibility, targetArea, imageUrl, embed } = body;
 
   if (!content || !visibility) {
     return NextResponse.json(
@@ -60,6 +60,7 @@ export const POST = withErrorHandler(async (req: Request) => {
     Comments: [],
     Reactions: [],
     IsPinned: false,
+    ...(embed && { Embed: embed }),
     CreatedAt: now,
     UpdatedAt: now,
   };

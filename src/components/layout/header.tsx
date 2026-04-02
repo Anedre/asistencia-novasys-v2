@@ -53,15 +53,13 @@ export function Header({ onMenuClick }: HeaderProps) {
       {/* Right side */}
       <div className="flex items-center gap-2">
         {/* Notifications */}
-        <Button
-          variant="ghost"
-          size="icon"
-          className="relative h-9 w-9"
-          render={<Link href={user?.role === "ADMIN" ? "/admin/approvals" : "/requests"} />}
+        <Link
+          href={user?.role === "ADMIN" ? "/admin/approvals" : "/requests"}
+          className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
         >
           <Bell className="h-4 w-4" />
           <span className="sr-only">Notificaciones</span>
-        </Button>
+        </Link>
 
         {/* Theme Toggle */}
         <ThemeToggle />

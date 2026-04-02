@@ -17,6 +17,13 @@ export interface PostReaction {
 
 export type PostVisibility = "company" | "area" | "private";
 
+export type PostEmbedType = "attendance_today" | "week_summary" | "achievement";
+
+export interface PostEmbed {
+  type: PostEmbedType;
+  data: Record<string, unknown>;
+}
+
 export interface Post {
   PostID: string;           // "POST#uuid"
   TenantID: string;
@@ -32,6 +39,7 @@ export interface Post {
   Comments: PostComment[];
   Reactions: PostReaction[];
   IsPinned?: boolean;
+  Embed?: PostEmbed;
   CreatedAt: string;
   UpdatedAt: string;
 }

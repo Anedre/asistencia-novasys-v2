@@ -9,6 +9,8 @@ import { Loader2 } from "lucide-react";
 import { redirect } from "next/navigation";
 import { Toaster } from "sonner";
 import { ChatWidget } from "@/components/chat/chat-widget";
+import { MessagingWidget } from "@/components/messaging/messaging-widget";
+import { useHeartbeat } from "@/hooks/use-presence";
 
 export default function AdminLayout({
   children,
@@ -17,6 +19,7 @@ export default function AdminLayout({
 }) {
   const { data: session, status } = useSession();
   const [mobileOpen, setMobileOpen] = useState(false);
+  useHeartbeat();
 
   if (status === "loading") {
     return (
@@ -47,6 +50,7 @@ export default function AdminLayout({
         </main>
       </div>
       <Toaster position="top-right" richColors />
+      <MessagingWidget />
       <ChatWidget />
     </div>
   );
