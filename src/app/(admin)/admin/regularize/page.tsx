@@ -155,11 +155,23 @@ export default function RegularizePage() {
         throw new Error(data.error || "Error al regularizar rango");
       }
 
+      const processedCount =
+        (data.totalCreated ?? 0) + (data.totalOverwritten ?? 0);
+      const parts: string[] = [
+        `Regularización aplicada a ${processedCount} día(s)`,
+      ];
+      if (data.totalIgnoredHolidays) {
+        parts.push(`${data.totalIgnoredHolidays} feriado(s) respetado(s)`);
+      }
+      if (data.totalIgnoredWeekends) {
+        parts.push(`${data.totalIgnoredWeekends} fin(es) de semana omitido(s)`);
+      }
+      if (data.totalSkipped) {
+        parts.push(`${data.totalSkipped} ya existente(s) sin sobrescribir`);
+      }
       setRangeMessage({
         type: "success",
-        text:
-          data.message ||
-          `Regularizacion aplicada a ${data.daysProcessed ?? "varios"} dias`,
+        text: data.message || parts.join(" · "),
       });
     } catch (err) {
       setRangeMessage({

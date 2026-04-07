@@ -130,7 +130,8 @@ export const authOptions: NextAuthOptions = {
   },
   session: {
     strategy: "jwt",
-    maxAge: 12 * 60 * 60, // 12 hours
+    maxAge: 30 * 24 * 60 * 60, // 30 días
+    updateAge: 24 * 60 * 60,   // refresca el JWT como máximo 1 vez al día
   },
   callbacks: {
     async jwt({ token, user }) {

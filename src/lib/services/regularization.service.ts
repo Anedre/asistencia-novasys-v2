@@ -11,6 +11,7 @@ import {
 } from "@/lib/constants/reason-codes";
 import { LIMA_OFFSET } from "@/lib/constants/timezone";
 import { ValidationError } from "@/lib/utils/errors";
+import { getHolidaySet } from "@/lib/utils/holidays";
 
 interface RegularizeSingleParams {
   employeeId: string;
@@ -233,7 +234,16 @@ export async function regularizeRange(params: RegularizeRangeParams) {
   let skipped = 0;
   let ignoredWeekends = 0;
   let ignoredNonPast = 0;
+  let ignoredHolidays = 0;
   const processedDates: string[] = [];
+  const ignoredHolidayDates: string[] = [];
+
+  // Cargar feriados del tenant una sola vez para todo el rango.
+  // Los feriados NUNCA deben ser sobrescritos por una regularización en bloque:
+  // permanecen fijos y se saltan igual que los fines de semana.
+  const holidaySet = tenantId
+    ? await getHolidaySet(tenantId)
+    : new Map<string, string>();
 
   const current = new Date(startD);
   while (current <= endD) {
@@ -247,6 +257,13 @@ export async function regularizeRange(params: RegularizeRangeParams) {
 
     if (pastDatesOnly && !isPastDate(current)) {
       ignoredNonPast++;
+      current.setDate(current.getDate() + 1);
+      continue;
+    }
+
+    if (holidaySet.has(ds)) {
+      ignoredHolidays++;
+      ignoredHolidayDates.push(ds);
       current.setDate(current.getDate() + 1);
       continue;
     }
@@ -291,7 +308,9 @@ export async function regularizeRange(params: RegularizeRangeParams) {
     totalSkipped: skipped,
     totalIgnoredWeekends: ignoredWeekends,
     totalIgnoredNonPast: ignoredNonPast,
+    totalIgnoredHolidays: ignoredHolidays,
     processedDates,
+    ignoredHolidayDates,
   };
 }
 

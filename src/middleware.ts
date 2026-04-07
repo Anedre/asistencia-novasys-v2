@@ -34,8 +34,16 @@ export async function middleware(request: NextRequest) {
     secret: process.env.NEXTAUTH_SECRET,
   });
 
-  // Not authenticated — redirect to login
+  // Not authenticated
   if (!token) {
+    // Para rutas de API: devolver 401 JSON (NO redirigir a /login,
+    // porque el navegador convertiría POST → GET y obtendría 405).
+    if (pathname.startsWith("/api/")) {
+      return NextResponse.json(
+        { error: "UNAUTHORIZED" },
+        { status: 401 }
+      );
+    }
     const loginUrl = new URL("/login", request.url);
     loginUrl.searchParams.set("callbackUrl", pathname);
     return NextResponse.redirect(loginUrl);
