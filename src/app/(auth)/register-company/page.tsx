@@ -1,16 +1,10 @@
 "use client";
 
 import { Suspense, useState, useCallback } from "react";
+import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -21,11 +15,26 @@ import {
   CheckCircle2,
   Mail,
   ArrowLeft,
-  LogIn,
   ArrowRight,
+  LogIn,
+  AlertTriangle,
+  User,
+  Phone,
+  Lock,
+  Sparkles,
+  AtSign,
 } from "lucide-react";
+import { AuthLayout } from "@/components/auth/AuthLayout";
+import { CompanyPreviewPanel } from "@/components/auth/BrandPanel";
+import { StepProgress } from "@/components/auth/StepProgress";
 
 type Step = "company" | "admin" | "confirm" | "success";
+
+const STEPS = [
+  { id: "company", label: "Empresa" },
+  { id: "admin", label: "Admin" },
+  { id: "confirm", label: "Código" },
+];
 
 function slugify(text: string): string {
   return text
@@ -46,12 +55,10 @@ function RegisterCompanyContent() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Company form
   const [companyName, setCompanyName] = useState("");
   const [companySlug, setCompanySlug] = useState("");
   const [slugTouched, setSlugTouched] = useState(false);
 
-  // Admin form
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
@@ -59,7 +66,6 @@ function RegisterCompanyContent() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
 
-  // Confirm form
   const [cognitoUsername, setCognitoUsername] = useState("");
   const [code, setCode] = useState("");
   const [resendCooldown, setResendCooldown] = useState(0);
@@ -67,41 +73,35 @@ function RegisterCompanyContent() {
   const handleCompanyNameChange = useCallback(
     (value: string) => {
       setCompanyName(value);
-      if (!slugTouched) {
-        setCompanySlug(slugify(value));
-      }
+      if (!slugTouched) setCompanySlug(slugify(value));
     },
     [slugTouched]
   );
 
-  const handleNextToAdmin = (e: React.FormEvent) => {
+  function handleNextToAdmin(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-
     if (!companyName.trim() || !companySlug.trim()) {
       setError("Nombre y slug de empresa son requeridos");
       return;
     }
-
     if (companySlug.length < 3) {
       setError("El slug debe tener al menos 3 caracteres");
       return;
     }
-
     setStep("admin");
-  };
+  }
 
-  const handleRegister = async (e: React.FormEvent) => {
+  async function handleRegister(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
 
     if (password !== confirmPassword) {
-      setError("Las contrasenas no coinciden");
+      setError("Las contraseñas no coinciden");
       return;
     }
-
     if (password.length < 8) {
-      setError("La contrasena debe tener al menos 8 caracteres");
+      setError("La contraseña debe tener al menos 8 caracteres");
       return;
     }
 
@@ -120,29 +120,25 @@ function RegisterCompanyContent() {
           nickname: companySlug.trim(),
         }),
       });
-
       const data = await res.json();
-
       if (!res.ok) {
         setError(data.error || "Error al registrar la empresa");
         return;
       }
-
       setCognitoUsername(data.username);
       setStep("confirm");
     } catch {
-      setError("Error de conexion. Intenta nuevamente.");
+      setError("Error de conexión. Intenta nuevamente.");
     } finally {
       setIsLoading(false);
     }
-  };
+  }
 
-  const handleConfirm = async (e: React.FormEvent) => {
+  async function handleConfirm(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-
     if (code.length !== 6) {
-      setError("El codigo debe tener 6 digitos");
+      setError("El código debe tener 6 dígitos");
       return;
     }
 
@@ -156,33 +152,43 @@ function RegisterCompanyContent() {
           code: code.trim(),
         }),
       });
-
       const data = await res.json();
-
       if (!res.ok) {
         setError(data.error || "Error al confirmar la cuenta");
         return;
       }
 
+      // Auto sign-in so the new admin lands on the onboarding wizard
+      // without a login step in the middle.
+      const signInResult = await signIn("cognito-credentials", {
+        email: email.trim(),
+        password,
+        redirect: false,
+      });
+
+      if (signInResult?.ok) {
+        router.push("/welcome");
+        return;
+      }
+
+      // Fallback: couldn't auto-sign-in, show success step with login CTA.
       setStep("success");
     } catch {
-      setError("Error de conexion. Intenta nuevamente.");
+      setError("Error de conexión. Intenta nuevamente.");
     } finally {
       setIsLoading(false);
     }
-  };
+  }
 
-  const handleResendCode = async () => {
+  async function handleResendCode() {
     if (resendCooldown > 0) return;
     setError(null);
-
     try {
       const res = await fetch("/api/auth/resend-code", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username: cognitoUsername }),
       });
-
       if (res.ok) {
         setResendCooldown(60);
         const interval = setInterval(() => {
@@ -196,88 +202,84 @@ function RegisterCompanyContent() {
         }, 1000);
       } else {
         const data = await res.json();
-        setError(data.error || "Error al reenviar el codigo");
+        setError(data.error || "Error al reenviar el código");
       }
     } catch {
-      setError("Error de conexion");
+      setError("Error de conexión");
     }
-  };
+  }
+
+  const currentStepIndex =
+    step === "success" ? STEPS.length - 1 : STEPS.findIndex((s) => s.id === step);
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-br from-background to-muted p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="text-center space-y-4">
-          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-primary text-primary-foreground">
-            <Building2 className="h-8 w-8" />
+    <AuthLayout
+      brandPanel={
+        <CompanyPreviewPanel
+          companyName={companyName}
+          companySlug={companySlug}
+        />
+      }
+    >
+      <div className="space-y-8">
+        {/* Progress */}
+        {step !== "success" && (
+          <StepProgress steps={STEPS} currentIndex={currentStepIndex} />
+        )}
+
+        {/* Heading */}
+        <div className="space-y-2">
+          <h1 className="text-3xl font-bold tracking-tight">
+            {step === "company" && "Registra tu empresa"}
+            {step === "admin" && "Crea tu cuenta de admin"}
+            {step === "confirm" && "Verifica tu correo"}
+            {step === "success" && "¡Empresa creada!"}
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            {step === "company" && "Empieza por el nombre y el slug público."}
+            {step === "admin" &&
+              "Serás el administrador principal de la empresa."}
+            {step === "confirm" && (
+              <>
+                Enviamos un código a{" "}
+                <strong className="text-foreground">{email}</strong>
+              </>
+            )}
+            {step === "success" && "Todo listo. Inicia sesión para continuar."}
+          </p>
+        </div>
+
+        {error && (
+          <div className="flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>{error}</span>
           </div>
-          <div>
-            <CardTitle className="text-2xl">
-              {step === "company" && "Registra tu Empresa"}
-              {step === "admin" && "Cuenta de Administrador"}
-              {step === "confirm" && "Verificar Correo"}
-              {step === "success" && "Empresa Registrada"}
-            </CardTitle>
-            <CardDescription className="mt-2">
-              {step === "company" &&
-                "Configura tu espacio de trabajo para tu equipo"}
-              {step === "admin" &&
-                "Crea la cuenta del administrador principal"}
-              {step === "confirm" && (
-                <>
-                  Ingresa el codigo de 6 digitos enviado a{" "}
-                  <span className="font-medium text-foreground">{email}</span>
-                </>
-              )}
-              {step === "success" &&
-                "Tu empresa y cuenta han sido verificadas exitosamente"}
-            </CardDescription>
-          </div>
+        )}
 
-          {/* Step indicator */}
-          {step !== "success" && (
-            <div className="flex items-center justify-center gap-2">
-              {["company", "admin", "confirm"].map((s, i) => (
-                <div
-                  key={s}
-                  className={`h-2 rounded-full transition-all ${
-                    s === step
-                      ? "w-8 bg-primary"
-                      : i < ["company", "admin", "confirm"].indexOf(step)
-                      ? "w-8 bg-primary/50"
-                      : "w-2 bg-muted-foreground/30"
-                  }`}
-                />
-              ))}
-            </div>
-          )}
-        </CardHeader>
-
-        <CardContent>
-          {/* ── STEP: Company Info ── */}
-          {step === "company" && (
-            <form onSubmit={handleNextToAdmin} className="space-y-4">
-              {error && (
-                <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
-                  {error}
-                </div>
-              )}
-
-              <div className="space-y-2">
-                <Label htmlFor="companyName">Nombre de la empresa</Label>
+        {/* ── STEP: Company ── */}
+        {step === "company" && (
+          <form onSubmit={handleNextToAdmin} className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="companyName">Nombre de la empresa</Label>
+              <div className="relative">
+                <Building2 className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   id="companyName"
                   type="text"
-                  placeholder="Mi Empresa S.A.C."
+                  placeholder="Mi Empresa SAC"
                   value={companyName}
                   onChange={(e) => handleCompanyNameChange(e.target.value)}
                   required
-                  autoComplete="organization"
-                  className="h-10"
+                  disabled={isLoading}
+                  className="h-11 pl-10"
                 />
               </div>
+            </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="companySlug">Identificador unico (slug)</Label>
+            <div className="space-y-1.5">
+              <Label htmlFor="companySlug">Identificador público (slug)</Label>
+              <div className="relative">
+                <AtSign className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   id="companySlug"
                   type="text"
@@ -288,66 +290,86 @@ function RegisterCompanyContent() {
                     setCompanySlug(slugify(e.target.value));
                   }}
                   required
-                  className="h-10 font-mono text-sm"
+                  disabled={isLoading}
+                  className="h-11 pl-10 font-mono text-sm"
                 />
-                <p className="text-xs text-muted-foreground">
-                  Solo letras minusculas, numeros y guiones. Ej: mi-empresa
-                </p>
               </div>
+              <p className="text-xs text-muted-foreground">
+                Solo letras, números y guiones. Se usa en la URL pública.
+              </p>
+            </div>
 
-              <Button type="submit" className="w-full h-11 text-base" size="lg">
-                Siguiente
-                <ArrowRight className="ml-2 h-5 w-5" />
-              </Button>
-            </form>
-          )}
+            <Button
+              type="submit"
+              disabled={isLoading}
+              className="h-12 w-full text-base font-medium"
+            >
+              Continuar
+              <ArrowRight className="ml-2 h-5 w-5" />
+            </Button>
 
-          {/* ── STEP: Admin Account ── */}
-          {step === "admin" && (
-            <form onSubmit={handleRegister} className="space-y-4">
-              {error && (
-                <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
-                  {error}
-                </div>
-              )}
+            <div className="text-center text-sm text-muted-foreground">
+              <Link
+                href="/login"
+                className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
+              >
+                <ArrowLeft className="h-3.5 w-3.5" /> Volver al login
+              </Link>
+            </div>
+          </form>
+        )}
 
-              <div className="rounded-lg bg-muted/50 p-3 text-sm">
-                <span className="font-medium">{companyName}</span>
-                <span className="text-muted-foreground ml-2">({companySlug})</span>
-              </div>
+        {/* ── STEP: Admin ── */}
+        {step === "admin" && (
+          <form onSubmit={handleRegister} className="space-y-4">
+            <div className="rounded-lg border bg-muted/30 p-3 text-xs">
+              <p className="text-muted-foreground">Estás creando</p>
+              <p className="font-semibold">{companyName}</p>
+              <p className="font-mono text-muted-foreground">
+                novasys.pe/{companySlug}
+              </p>
+            </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="fullName">Nombre completo</Label>
+            <div className="space-y-1.5">
+              <Label htmlFor="fullName">Nombre completo</Label>
+              <div className="relative">
+                <User className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   id="fullName"
                   type="text"
-                  placeholder="Juan Perez"
+                  placeholder="Juan Pérez"
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
                   required
                   disabled={isLoading}
                   autoComplete="name"
-                  className="h-10"
+                  className="h-11 pl-10"
                 />
               </div>
+            </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="reg-email">Correo electronico</Label>
+            <div className="space-y-1.5">
+              <Label htmlFor="email">Correo electrónico</Label>
+              <div className="relative">
+                <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
-                  id="reg-email"
+                  id="email"
                   type="email"
-                  placeholder="admin@miempresa.com"
+                  placeholder="admin@empresa.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
                   disabled={isLoading}
                   autoComplete="email"
-                  className="h-10"
+                  className="h-11 pl-10"
                 />
               </div>
+            </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="phoneNumber">Telefono</Label>
+            <div className="space-y-1.5">
+              <Label htmlFor="phoneNumber">Teléfono</Label>
+              <div className="relative">
+                <Phone className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   id="phoneNumber"
                   type="tel"
@@ -357,191 +379,167 @@ function RegisterCompanyContent() {
                   required
                   disabled={isLoading}
                   autoComplete="tel"
-                  className="h-10"
+                  className="h-11 pl-10"
                 />
               </div>
+            </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="reg-password">Contrasena</Label>
-                <div className="relative">
-                  <Input
-                    id="reg-password"
-                    type={showPassword ? "text" : "password"}
-                    placeholder="Min. 8 chars, mayuscula, numero, simbolo"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                    disabled={isLoading}
-                    autoComplete="new-password"
-                    className="h-10 pr-10"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-                    tabIndex={-1}
-                  >
-                    {showPassword ? (
-                      <EyeOff className="h-4 w-4" />
-                    ) : (
-                      <Eye className="h-4 w-4" />
-                    )}
-                  </button>
-                </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="password">Contraseña</Label>
+              <div className="relative">
+                <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  id="password"
+                  type={showPassword ? "text" : "password"}
+                  placeholder="Mín. 8 chars, mayúscula, número, símbolo"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  disabled={isLoading}
+                  autoComplete="new-password"
+                  className="h-11 pl-10 pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                  tabIndex={-1}
+                >
+                  {showPassword ? (
+                    <EyeOff className="h-4 w-4" />
+                  ) : (
+                    <Eye className="h-4 w-4" />
+                  )}
+                </button>
               </div>
+            </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="confirmPassword">Confirmar contrasena</Label>
+            <div className="space-y-1.5">
+              <Label htmlFor="confirmPassword">Confirmar contraseña</Label>
+              <div className="relative">
+                <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   id="confirmPassword"
                   type={showPassword ? "text" : "password"}
-                  placeholder="Repite tu contrasena"
+                  placeholder="Repite tu contraseña"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   required
                   disabled={isLoading}
                   autoComplete="new-password"
-                  className="h-10"
+                  className="h-11 pl-10"
                 />
               </div>
+            </div>
 
-              <div className="flex gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setStep("company")}
-                  disabled={isLoading}
-                  className="h-11"
-                >
-                  <ArrowLeft className="h-4 w-4" />
-                </Button>
-                <Button
-                  type="submit"
-                  disabled={isLoading}
-                  className="flex-1 h-11 text-base"
-                  size="lg"
-                >
-                  {isLoading ? (
-                    <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                  ) : (
-                    <Building2 className="mr-2 h-5 w-5" />
-                  )}
-                  Registrar Empresa
-                </Button>
-              </div>
-            </form>
-          )}
-
-          {/* ── STEP: Confirm ── */}
-          {step === "confirm" && (
-            <form onSubmit={handleConfirm} className="space-y-4">
-              {error && (
-                <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
-                  {error}
-                </div>
-              )}
-
-              <div className="flex justify-center">
-                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
-                  <Mail className="h-8 w-8 text-primary" />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="code">Codigo de verificacion</Label>
-                <Input
-                  id="code"
-                  type="text"
-                  placeholder="123456"
-                  value={code}
-                  onChange={(e) =>
-                    setCode(e.target.value.replace(/\D/g, "").slice(0, 6))
-                  }
-                  required
-                  disabled={isLoading}
-                  autoComplete="one-time-code"
-                  className="h-12 text-center text-2xl tracking-[0.5em] font-mono"
-                  maxLength={6}
-                />
-              </div>
-
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setStep("company")}
+                disabled={isLoading}
+                className="h-12"
+              >
+                <ArrowLeft className="mr-1 h-4 w-4" /> Atrás
+              </Button>
               <Button
                 type="submit"
-                disabled={isLoading || code.length !== 6}
-                className="w-full h-11 text-base"
-                size="lg"
+                disabled={isLoading}
+                className="h-12 flex-1 text-base font-medium"
               >
                 {isLoading ? (
-                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                  <>
+                    <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                    Creando empresa…
+                  </>
                 ) : (
-                  <CheckCircle2 className="mr-2 h-5 w-5" />
+                  <>
+                    <Sparkles className="mr-2 h-5 w-5" /> Crear empresa
+                  </>
                 )}
-                Verificar Cuenta
-              </Button>
-
-              <div className="text-center">
-                <button
-                  type="button"
-                  onClick={handleResendCode}
-                  disabled={resendCooldown > 0}
-                  className="text-sm text-primary hover:underline disabled:text-muted-foreground disabled:no-underline"
-                >
-                  {resendCooldown > 0
-                    ? `Reenviar codigo en ${resendCooldown}s`
-                    : "Reenviar codigo"}
-                </button>
-              </div>
-            </form>
-          )}
-
-          {/* ── STEP: Success ── */}
-          {step === "success" && (
-            <div className="space-y-4 text-center">
-              <div className="flex justify-center">
-                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/30">
-                  <CheckCircle2 className="h-8 w-8 text-green-600 dark:text-green-400" />
-                </div>
-              </div>
-
-              <div className="rounded-lg bg-muted/50 p-3 text-sm">
-                <p className="font-medium">{companyName}</p>
-                <p className="text-muted-foreground">ha sido registrada exitosamente</p>
-              </div>
-
-              <p className="text-sm text-muted-foreground">
-                Inicia sesion para acceder al panel de administracion de tu empresa.
-              </p>
-
-              <Button
-                onClick={() => router.push("/login")}
-                className="w-full h-11 text-base"
-                size="lg"
-              >
-                <LogIn className="mr-2 h-5 w-5" />
-                Iniciar Sesion
               </Button>
             </div>
-          )}
+          </form>
+        )}
 
-          {/* ── Footer link ── */}
-          {step !== "success" && (
-            <div className="mt-6 text-center text-sm text-muted-foreground">
-              <Link
-                href="/login"
-                className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
-              >
-                <ArrowLeft className="h-3.5 w-3.5" />
-                Volver a iniciar sesion
-              </Link>
+        {/* ── STEP: Confirm ── */}
+        {step === "confirm" && (
+          <form onSubmit={handleConfirm} className="space-y-5">
+            <div className="flex justify-center">
+              <div className="flex h-20 w-20 items-center justify-center rounded-full bg-primary/10">
+                <Mail className="h-10 w-10 text-primary" />
+              </div>
             </div>
-          )}
-        </CardContent>
-      </Card>
 
-      <p className="mt-8 text-xs text-muted-foreground">
-        &copy; {new Date().getFullYear()} Novasys. Todos los derechos reservados.
-      </p>
-    </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="code">Código de verificación</Label>
+              <Input
+                id="code"
+                type="text"
+                inputMode="numeric"
+                placeholder="123456"
+                value={code}
+                onChange={(e) =>
+                  setCode(e.target.value.replace(/\D/g, "").slice(0, 6))
+                }
+                required
+                disabled={isLoading}
+                autoComplete="one-time-code"
+                className="h-14 text-center text-3xl tracking-[0.5em] font-mono"
+                maxLength={6}
+              />
+            </div>
+
+            <Button
+              type="submit"
+              disabled={isLoading || code.length !== 6}
+              className="h-12 w-full text-base font-medium"
+            >
+              {isLoading ? (
+                <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+              ) : (
+                <CheckCircle2 className="mr-2 h-5 w-5" />
+              )}
+              Confirmar y continuar
+            </Button>
+
+            <div className="text-center">
+              <button
+                type="button"
+                onClick={handleResendCode}
+                disabled={resendCooldown > 0}
+                className="text-sm text-primary hover:underline disabled:text-muted-foreground disabled:no-underline"
+              >
+                {resendCooldown > 0
+                  ? `Reenviar código en ${resendCooldown}s`
+                  : "Reenviar código"}
+              </button>
+            </div>
+          </form>
+        )}
+
+        {/* ── STEP: Success fallback ── */}
+        {step === "success" && (
+          <div className="space-y-5 text-center">
+            <div className="flex justify-center">
+              <div className="flex h-20 w-20 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-950/40">
+                <CheckCircle2 className="h-10 w-10 text-emerald-600 dark:text-emerald-400" />
+              </div>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Tu empresa y cuenta de admin fueron creadas. Inicia sesión para
+              continuar con el onboarding.
+            </p>
+            <Button
+              onClick={() => router.push("/login")}
+              className="h-12 w-full text-base font-medium"
+            >
+              <LogIn className="mr-2 h-5 w-5" /> Ir al login
+            </Button>
+          </div>
+        )}
+      </div>
+    </AuthLayout>
   );
 }
 

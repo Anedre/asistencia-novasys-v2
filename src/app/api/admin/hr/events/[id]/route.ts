@@ -7,14 +7,24 @@ import { getAllActiveEmployees } from "@/lib/db/employees";
 import { createChannel, getChannelsByMember, updateChannelLastMessage } from "@/lib/db/chat-channels";
 import { createMessage } from "@/lib/db/chat-messages";
 import { putNotification } from "@/lib/db/notifications";
+import { withAudit } from "@/lib/services/audit.service";
 
 export const DELETE = withErrorHandler(async (
   req: Request,
   context: unknown
 ) => {
-  await requireAdmin();
+  const admin = await requireAdmin();
   const { id } = await (context as { params: Promise<{ id: string }> }).params;
-  await archiveEvent(id);
+  await withAudit(
+    {
+      actor: admin,
+      entityType: "HR_EVENT",
+      entityKey: { NotificationID: id },
+      action: "DELETE",
+      reason: "Archivado de evento RRHH",
+    },
+    async () => archiveEvent(id)
+  );
   return NextResponse.json({ ok: true });
 });
 

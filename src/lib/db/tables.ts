@@ -20,6 +20,7 @@ export const TABLES = {
   CHAT_CHANNELS: process.env.TABLE_CHAT_CHANNELS || `${prefix}ChatChannels`,
   CHAT_MESSAGES: process.env.TABLE_CHAT_MESSAGES || `${prefix}ChatMessages`,
   POSTS: process.env.TABLE_POSTS || `${prefix}Posts`,
+  AUDIT_LOG: process.env.TABLE_AUDIT_LOG || `${prefix}AuditLog`,
 } as const;
 
 /** GSI names */
@@ -62,4 +63,9 @@ export const INDEXES = {
   // Posts
   POSTS_BY_TENANT: "Tenant-CreatedAt-index",
   POSTS_BY_AUTHOR: "Author-index",
+  // AuditLog
+  AUDIT_BY_TENANT: "Tenant-CreatedAt-index",
+  AUDIT_BY_ENTITY: "Entity-CreatedAt-index",
+  AUDIT_BY_ACTOR: "Actor-CreatedAt-index",
+  AUDIT_BY_GROUP: "Group-index",
 } as const;

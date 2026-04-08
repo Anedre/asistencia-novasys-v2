@@ -183,6 +183,161 @@ export const AI_TOOLS: Tool[] = [
       },
     },
   },
+
+  /* ─────── Read-only tools (any user) ─────── */
+  {
+    toolSpec: {
+      name: "list_holidays",
+      description:
+        "Lista los feriados configurados en el tenant. Útil para responder '¿cuándo es el próximo feriado?' o '¿qué feriados tenemos este mes?'. Devuelve fecha y nombre de cada feriado ordenados cronológicamente.",
+      inputSchema: {
+        json: {
+          type: "object",
+          properties: {},
+        },
+      },
+    },
+  },
+  {
+    toolSpec: {
+      name: "list_team_stats",
+      description:
+        "Devuelve estadísticas agregadas del equipo para un rango de fechas: horas trabajadas, horas planeadas, ausencias, regularizaciones, y el ranking top 5 de empleados por horas. Útil para preguntas como 'resumen de los últimos 30 días' o 'cómo fue el mes pasado'.",
+      inputSchema: {
+        json: {
+          type: "object",
+          properties: {
+            from: {
+              type: "string",
+              description: "Fecha inicio YYYY-MM-DD. Por defecto hace 30 días.",
+            },
+            to: {
+              type: "string",
+              description: "Fecha fin YYYY-MM-DD. Por defecto hoy.",
+            },
+          },
+        },
+      },
+    },
+  },
+
+  /* ─────── Admin-only tools (require role=ADMIN) ─────── */
+  {
+    toolSpec: {
+      name: "list_recent_audit",
+      description:
+        "[ADMIN] Lista las últimas acciones de admin registradas en el historial (audit log). Devuelve quién hizo qué y cuándo. Útil para preguntas como '¿qué se modificó hoy?'.",
+      inputSchema: {
+        json: {
+          type: "object",
+          properties: {
+            limit: {
+              type: "number",
+              description: "Número de entradas a devolver. Por defecto 10.",
+            },
+          },
+        },
+      },
+    },
+  },
+  {
+    toolSpec: {
+      name: "check_pending_requests",
+      description:
+        "[ADMIN] Lista las solicitudes del tenant que están en estado PENDING (por revisar). Útil para que un admin pregunte '¿tengo solicitudes pendientes?' o 'cuántas aprobaciones tengo pendientes'.",
+      inputSchema: {
+        json: {
+          type: "object",
+          properties: {},
+        },
+      },
+    },
+  },
+  {
+    toolSpec: {
+      name: "create_invitation",
+      description:
+        "[ADMIN] Crea una invitación para un nuevo empleado y envía el email automáticamente. Requiere confirmación explícita del usuario (confirm=true). Antes de ejecutar, muestra un resumen y pide confirmar.",
+      inputSchema: {
+        json: {
+          type: "object",
+          properties: {
+            email: { type: "string", description: "Email del invitado" },
+            fullName: { type: "string", description: "Nombre completo" },
+            area: { type: "string", description: "Área" },
+            position: { type: "string", description: "Cargo" },
+            role: {
+              type: "string",
+              enum: ["EMPLOYEE", "ADMIN"],
+              description: "Rol. Por defecto EMPLOYEE.",
+            },
+            confirm: {
+              type: "boolean",
+              description:
+                "Debe ser true para ejecutar. Si es false o falta, devuelve preview sin enviar.",
+            },
+          },
+          required: ["email"],
+        },
+      },
+    },
+  },
+  {
+    toolSpec: {
+      name: "update_tenant_setting",
+      description:
+        "[ADMIN] Modifica un setting puntual del tenant. Settings válidos: approvalRequired (bool), timezone (string), defaultScheduleType (FULL_TIME|PART_TIME). Requiere confirm=true para ejecutar.",
+      inputSchema: {
+        json: {
+          type: "object",
+          properties: {
+            key: {
+              type: "string",
+              enum: [
+                "approvalRequired",
+                "timezone",
+                "defaultScheduleType",
+              ],
+              description: "Nombre del setting a modificar.",
+            },
+            value: {
+              description:
+                "Nuevo valor (booleano para approvalRequired, string para timezone/scheduleType).",
+            },
+            confirm: {
+              type: "boolean",
+              description:
+                "Debe ser true para ejecutar. Si falta, devuelve preview.",
+            },
+          },
+          required: ["key", "value"],
+        },
+      },
+    },
+  },
+  {
+    toolSpec: {
+      name: "revert_audit_entry",
+      description:
+        "[ADMIN] Revierte una acción del audit log por su ID. Usa primero list_recent_audit para obtener el ID. Requiere confirm=true. Si otra acción posterior modificó el registro, el revert es bloqueado con mensaje claro.",
+      inputSchema: {
+        json: {
+          type: "object",
+          properties: {
+            auditId: {
+              type: "string",
+              description: "AuditID a revertir (obtenido de list_recent_audit).",
+            },
+            confirm: {
+              type: "boolean",
+              description: "Debe ser true para ejecutar.",
+            },
+          },
+          required: ["auditId"],
+        },
+      },
+    },
+  },
 ];
 
 export type ToolName =
@@ -191,4 +346,11 @@ export type ToolName =
   | "check_attendance_today"
   | "check_attendance_week"
   | "check_my_requests"
-  | "record_attendance";
+  | "record_attendance"
+  | "list_holidays"
+  | "list_team_stats"
+  | "list_recent_audit"
+  | "check_pending_requests"
+  | "create_invitation"
+  | "update_tenant_setting"
+  | "revert_audit_entry";

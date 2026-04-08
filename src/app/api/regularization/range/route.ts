@@ -9,20 +9,23 @@ export const POST = withErrorHandler(async (req: Request) => {
   const body = await req.json();
   const parsed = regularizeRangeSchema.parse(body);
 
-  const result = await regularizeRange({
-    employeeId: parsed.employeeId,
-    dateFrom: parsed.dateFrom,
-    dateTo: parsed.dateTo,
-    startTime: parsed.startTime,
-    endTime: parsed.endTime,
-    breakMinutes: parsed.breakMinutes,
-    reasonCode: parsed.reasonCode,
-    reasonNote: parsed.reasonNote,
-    weekdaysOnly: parsed.weekdaysOnly,
-    pastDatesOnly: parsed.pastDatesOnly,
-    overwrite: parsed.overwrite,
-    tenantId: user.tenantId,
-  });
+  const result = await regularizeRange(
+    {
+      employeeId: parsed.employeeId,
+      dateFrom: parsed.dateFrom,
+      dateTo: parsed.dateTo,
+      startTime: parsed.startTime,
+      endTime: parsed.endTime,
+      breakMinutes: parsed.breakMinutes,
+      reasonCode: parsed.reasonCode,
+      reasonNote: parsed.reasonNote,
+      weekdaysOnly: parsed.weekdaysOnly,
+      pastDatesOnly: parsed.pastDatesOnly,
+      overwrite: parsed.overwrite,
+      tenantId: user.tenantId,
+    },
+    user
+  );
 
   return NextResponse.json({ ok: true, ...result });
 });

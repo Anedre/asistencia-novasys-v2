@@ -7,6 +7,7 @@ import { getAllActiveEmployees } from "@/lib/db/employees";
 import { createChannel, getChannelsByMember, updateChannelLastMessage } from "@/lib/db/chat-channels";
 import { createMessage } from "@/lib/db/chat-messages";
 import { putNotification } from "@/lib/db/notifications";
+import { withAudit } from "@/lib/services/audit.service";
 
 export const GET = withErrorHandler(async (req: Request) => {
   const user = await requireAdmin();
@@ -25,7 +26,28 @@ export const POST = withErrorHandler(async (req: Request) => {
       parsed.error.issues.map((i) => i.message).join(", ")
     );
   }
+  // createHREvent returns the ID of the row it just inserted — we need the
+  // ID to build the entityKey, so capture it first then audit after the fact.
   const notificationId = await createHREvent(parsed.data, user.employeeId, user.tenantId);
+
+  // Audit as a CREATE. The before snapshot will be null (nothing existed),
+  // the after snapshot will be the freshly-inserted row, and reverting this
+  // entry will delete it (but NOT recall any broadcast messages already sent).
+  try {
+    await withAudit(
+      {
+        actor: user,
+        entityType: "HR_EVENT",
+        entityKey: { NotificationID: notificationId },
+        action: "CREATE",
+        reason: `Evento RRHH: ${parsed.data.title}`,
+        skipBeforeRead: true,
+      },
+      async () => undefined
+    );
+  } catch (err) {
+    console.error("[audit] Failed to audit HR event create", err);
+  }
 
   // Broadcast ANNOUNCEMENT and HOLIDAY types as messages to all employees
   if (parsed.data.type === "ANNOUNCEMENT" || parsed.data.type === "HOLIDAY") {

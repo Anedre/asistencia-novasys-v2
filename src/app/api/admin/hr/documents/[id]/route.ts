@@ -3,6 +3,7 @@ import { requireAdmin } from "@/lib/auth-helpers";
 import { withErrorHandler } from "@/lib/utils/errors";
 import { deleteHRDocument } from "@/lib/db/hr-documents";
 import { S3Client, DeleteObjectCommand } from "@aws-sdk/client-s3";
+import { withAudit } from "@/lib/services/audit.service";
 
 const s3 = new S3Client({
   region:
@@ -38,7 +39,16 @@ export const DELETE = withErrorHandler(
       // S3 deletion is best-effort
     }
 
-    await deleteHRDocument(`HRDOC#${id}`);
+    await withAudit(
+      {
+        actor: user,
+        entityType: "HR_DOCUMENT",
+        entityKey: { NotificationID: `HRDOC#${id}` },
+        action: "DELETE",
+        reason: "Eliminación de documento RRHH",
+      },
+      async () => deleteHRDocument(`HRDOC#${id}`)
+    );
 
     return NextResponse.json({ ok: true });
   }

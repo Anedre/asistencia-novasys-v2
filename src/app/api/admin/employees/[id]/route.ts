@@ -5,6 +5,7 @@ import { getDailySummaryRange } from "@/lib/db/daily-summary";
 import { withErrorHandler } from "@/lib/utils/errors";
 import { NotFoundError } from "@/lib/utils/errors";
 import { updateEmployeeRoleSchema } from "@/lib/utils/validation";
+import { withAudit } from "@/lib/services/audit.service";
 
 export const GET = withErrorHandler(async (req: Request, context: unknown) => {
   const user = await requireAdmin();
@@ -62,7 +63,7 @@ export const GET = withErrorHandler(async (req: Request, context: unknown) => {
 
 /** PATCH: Update employee role or profile fields (admin only) */
 export const PATCH = withErrorHandler(async (req: Request, context: unknown) => {
-  const _user = await requireAdmin();
+  const admin = await requireAdmin();
   const { id } = await (context as { params: Promise<{ id: string }> }).params;
   const body = await req.json();
 
@@ -74,7 +75,16 @@ export const PATCH = withErrorHandler(async (req: Request, context: unknown) => 
   // If updating role
   if (body.role !== undefined) {
     const parsed = updateEmployeeRoleSchema.parse(body);
-    await updateEmployeeRole(id, parsed.role);
+    await withAudit(
+      {
+        actor: admin,
+        entityType: "EMPLOYEE",
+        entityKey: { EmployeeID: id },
+        action: "UPDATE",
+        reason: `Cambio de rol a ${parsed.role}`,
+      },
+      async () => updateEmployeeRole(id, parsed.role)
+    );
     return NextResponse.json({ ok: true, message: `Rol actualizado a ${parsed.role}` });
   }
 
@@ -87,7 +97,16 @@ export const PATCH = withErrorHandler(async (req: Request, context: unknown) => 
   }
 
   if (Object.keys(updates).length > 0) {
-    await updateEmployeeProfile(id, updates);
+    await withAudit(
+      {
+        actor: admin,
+        entityType: "EMPLOYEE",
+        entityKey: { EmployeeID: id },
+        action: "UPDATE",
+        reason: `Perfil actualizado: ${Object.keys(updates).join(", ")}`,
+      },
+      async () => updateEmployeeProfile(id, updates)
+    );
     return NextResponse.json({ ok: true, message: "Empleado actualizado" });
   }
 
@@ -112,6 +131,15 @@ export const DELETE = withErrorHandler(async (_req: Request, context: unknown) =
     );
   }
 
-  await deactivateEmployee(id);
+  await withAudit(
+    {
+      actor: admin,
+      entityType: "EMPLOYEE",
+      entityKey: { EmployeeID: id },
+      action: "DELETE",
+      reason: "Desactivación de empleado",
+    },
+    async () => deactivateEmployee(id)
+  );
   return NextResponse.json({ ok: true, message: "Empleado desactivado" });
 });

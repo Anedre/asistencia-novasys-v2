@@ -12,6 +12,8 @@ import {
 import { LIMA_OFFSET } from "@/lib/constants/timezone";
 import { ValidationError } from "@/lib/utils/errors";
 import { getHolidaySet } from "@/lib/utils/holidays";
+import { withAudit, buildGroupId } from "./audit.service";
+import type { SessionUser } from "@/lib/auth-helpers";
 
 interface RegularizeSingleParams {
   employeeId: string;
@@ -148,7 +150,10 @@ function buildWorkdayItem(
   };
 }
 
-export async function regularizeSingle(params: RegularizeSingleParams) {
+export async function regularizeSingle(
+  params: RegularizeSingleParams,
+  actor: SessionUser
+) {
   const {
     employeeId,
     workDate,
@@ -158,8 +163,8 @@ export async function regularizeSingle(params: RegularizeSingleParams) {
     reasonCode,
     reasonNote = "",
     overwrite = false,
-    tenantId,
   } = params;
+  const tenantId = params.tenantId ?? actor.tenantId;
 
   const code = reasonCode.toUpperCase();
   if (!REASON_LABELS[code]) {
@@ -167,6 +172,18 @@ export async function regularizeSingle(params: RegularizeSingleParams) {
   }
   if (code === "OTRO" && !reasonNote) {
     throw new ValidationError("El motivo es obligatorio cuando la razón es OTRO");
+  }
+
+  // Block holidays: feriados are read-only by policy, they must never be
+  // replaced by a manual regularization (single or bulk).
+  if (tenantId) {
+    const holidaySet = await getHolidaySet(tenantId);
+    const holidayName = holidaySet.get(workDate);
+    if (holidayName) {
+      throw new ValidationError(
+        `No puedes regularizar un día feriado (${workDate} · ${holidayName}). Los feriados permanecen fijos.`
+      );
+    }
   }
 
   const regId = buildRegId();
@@ -182,7 +199,20 @@ export async function regularizeSingle(params: RegularizeSingleParams) {
 
   if (tenantId) item.TenantID = tenantId;
 
-  const result = await upsertDailySummary(item, overwrite);
+  // Wrap the upsert with audit so we capture before/after snapshots and can revert.
+  const audited = await withAudit(
+    {
+      actor,
+      entityType: "DAILY_SUMMARY",
+      entityKey: {
+        EmployeeID: employeeId,
+        WorkDate: `DATE#${workDate}`,
+      },
+      action: "UPDATE",
+      reason: reasonNote || `Regularización ${code}`,
+    },
+    async () => upsertDailySummary(item, overwrite)
+  );
 
   return {
     id: regId,
@@ -190,11 +220,15 @@ export async function regularizeSingle(params: RegularizeSingleParams) {
     workDate,
     reasonCode: code,
     reasonLabel: REASON_LABELS[code],
-    result,
+    result: audited.result,
+    auditId: audited.auditId,
   };
 }
 
-export async function regularizeRange(params: RegularizeRangeParams) {
+export async function regularizeRange(
+  params: RegularizeRangeParams,
+  actor: SessionUser
+) {
   const {
     employeeId,
     dateFrom,
@@ -207,8 +241,8 @@ export async function regularizeRange(params: RegularizeRangeParams) {
     weekdaysOnly = true,
     pastDatesOnly = true,
     overwrite = false,
-    tenantId,
   } = params;
+  const tenantId = params.tenantId ?? actor.tenantId;
 
   const code = reasonCode.toUpperCase();
   if (!REASON_LABELS[code]) {
@@ -229,6 +263,9 @@ export async function regularizeRange(params: RegularizeRangeParams) {
   }
 
   const regId = buildRegId();
+  // Group ID: shared by every audit row produced by this bulk call so the UI
+  // can show them as a single entry and revert them as a unit.
+  const groupId = buildGroupId();
   let created = 0;
   let overwritten = 0;
   let skipped = 0;
@@ -279,7 +316,24 @@ export async function regularizeRange(params: RegularizeRangeParams) {
 
     if (tenantId) item.TenantID = tenantId;
 
-    const result = await upsertDailySummary(item, overwrite);
+    // Each date goes through withAudit so it gets its own before/after snapshot
+    // and can be individually reverted. All rows share the same groupId so the
+    // UI can treat them as one bulk operation.
+    const audited = await withAudit(
+      {
+        actor,
+        entityType: "DAILY_SUMMARY",
+        entityKey: {
+          EmployeeID: employeeId,
+          WorkDate: `DATE#${ds}`,
+        },
+        action: "BULK_REGULARIZE",
+        groupId,
+        reason: reasonNote || `Regularización en bloque ${code}`,
+      },
+      async () => upsertDailySummary(item, overwrite)
+    );
+    const result = audited.result;
     if (result === "CREATED") {
       created++;
       processedDates.push(ds);
@@ -293,8 +347,38 @@ export async function regularizeRange(params: RegularizeRangeParams) {
     current.setDate(current.getDate() + 1);
   }
 
+  // Write a summary audit row so the UI can render this bulk operation as a
+  // single collapsible entry. It carries the totals but no before/after of its
+  // own — it only points at the group.
+  try {
+    await withAudit(
+      {
+        actor,
+        entityType: "DAILY_SUMMARY",
+        entityKey: {
+          EmployeeID: employeeId,
+          WorkDate: `RANGE#${dateFrom}#${dateTo}`,
+        },
+        action: "BULK_REGULARIZE",
+        groupId,
+        groupSize: created + overwritten,
+        isGroupSummary: true,
+        reason:
+          `${created + overwritten} día(s) · ` +
+          `${ignoredHolidays} feriado(s) respetado(s) · ` +
+          `${ignoredWeekends} fin(es) de semana · ` +
+          `${skipped} ya existente(s)`,
+        skipBeforeRead: true,
+      },
+      async () => undefined
+    );
+  } catch (err) {
+    console.error("[audit] Failed to write group summary row", err);
+  }
+
   return {
     id: regId,
+    groupId,
     employeeId,
     dateFrom,
     dateTo,

@@ -9,16 +9,19 @@ export const POST = withErrorHandler(async (req: Request) => {
   const body = await req.json();
   const parsed = regularizeSingleSchema.parse(body);
 
-  const result = await regularizeSingle({
-    employeeId: parsed.employeeId,
-    workDate: parsed.workDate,
-    startTime: parsed.startTime,
-    endTime: parsed.endTime,
-    breakMinutes: parsed.breakMinutes,
-    reasonCode: parsed.reasonCode,
-    reasonNote: parsed.reasonNote,
-    tenantId: user.tenantId,
-  });
+  const result = await regularizeSingle(
+    {
+      employeeId: parsed.employeeId,
+      workDate: parsed.workDate,
+      startTime: parsed.startTime,
+      endTime: parsed.endTime,
+      breakMinutes: parsed.breakMinutes,
+      reasonCode: parsed.reasonCode,
+      reasonNote: parsed.reasonNote,
+      tenantId: user.tenantId,
+    },
+    user
+  );
 
   return NextResponse.json({ ok: true, ...result });
 });

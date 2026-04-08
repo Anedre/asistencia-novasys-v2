@@ -69,17 +69,20 @@ export const POST = withErrorHandler(async (req: Request) => {
   }
 
   // Apply immediately (no approval needed)
-  const result = await regularizeSingle({
-    employeeId: user.employeeId,
-    workDate,
-    startTime,
-    endTime,
-    breakMinutes,
-    reasonCode,
-    reasonNote,
-    overwrite: true,
-    tenantId,
-  });
+  const result = await regularizeSingle(
+    {
+      employeeId: user.employeeId,
+      workDate,
+      startTime,
+      endTime,
+      breakMinutes,
+      reasonCode,
+      reasonNote,
+      overwrite: true,
+      tenantId,
+    },
+    user
+  );
 
   return NextResponse.json({
     ok: true,

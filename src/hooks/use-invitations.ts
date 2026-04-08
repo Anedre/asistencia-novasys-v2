@@ -11,6 +11,8 @@ interface CreateInviteResponse {
   ok: boolean;
   invitation: Invitation;
   inviteLink: string;
+  emailSent?: boolean;
+  emailError?: string;
 }
 
 export function useInvitations() {

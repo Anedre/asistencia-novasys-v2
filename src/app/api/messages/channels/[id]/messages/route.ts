@@ -3,6 +3,7 @@ import { requireSession } from "@/lib/auth-helpers";
 import { withErrorHandler } from "@/lib/utils/errors";
 import { getChannelById, updateChannelLastMessage } from "@/lib/db/chat-channels";
 import { getMessagesByChannel, createMessage } from "@/lib/db/chat-messages";
+import { putNotification } from "@/lib/db/notifications";
 import type { ChatMessage } from "@/lib/types/channel";
 
 export const GET = withErrorHandler(
@@ -85,6 +86,28 @@ export const POST = withErrorHandler(
 
     await createMessage(message);
     await updateChannelLastMessage(id, content.trim(), user.name);
+
+    // Fan out a notification to every other channel member. Best-effort: if
+    // any individual put fails we don't break the message send.
+    const preview = content.trim().slice(0, 140);
+    const recipients = channel.Members.filter((m) => m !== user.employeeId);
+    await Promise.allSettled(
+      recipients.map((recipientId) =>
+        putNotification({
+          recipientId,
+          createdAt: now,
+          notificationId: `NOTIF#${Date.now()}#${crypto.randomUUID().slice(0, 8)}`,
+          type: "NEW_MESSAGE",
+          title: user.name,
+          message: preview,
+          referenceId: id,
+          referenceType: "CHANNEL",
+          read: false,
+          soundType: "message",
+          ttl: Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60,
+        })
+      )
+    );
 
     return NextResponse.json({ ok: true, message });
   }

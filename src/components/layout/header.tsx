@@ -13,9 +13,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Bell, LogOut, Menu, User } from "lucide-react";
+import { LogOut, Menu, User } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
+import { NotificationDropdown } from "@/components/notifications/NotificationDropdown";
 
 interface HeaderProps {
   onMenuClick?: () => void;
@@ -53,13 +54,7 @@ export function Header({ onMenuClick }: HeaderProps) {
       {/* Right side */}
       <div className="flex items-center gap-2">
         {/* Notifications */}
-        <Link
-          href={user?.role === "ADMIN" ? "/admin/approvals" : "/requests"}
-          className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
-        >
-          <Bell className="h-4 w-4" />
-          <span className="sr-only">Notificaciones</span>
-        </Link>
+        <NotificationDropdown />
 
         {/* Theme Toggle */}
         <ThemeToggle />

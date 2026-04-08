@@ -9,3 +9,4 @@ export * from "./event";
 export * from "./chat";
 export * from "./channel";
 export * from "./post";
+export * from "./audit";

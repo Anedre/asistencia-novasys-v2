@@ -1,0 +1,8 @@
+{
+  "name": "novasys-daily-notifications",
+  "version": "1.0.0",
+  "description": "Daily cron Lambda that creates birthday, anniversary, and pending-request notifications.",
+  "main": "index.js",
+  "type": "commonjs",
+  "dependencies": {}
+}

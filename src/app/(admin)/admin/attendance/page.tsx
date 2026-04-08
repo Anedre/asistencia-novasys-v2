@@ -287,8 +287,8 @@ function AttendanceRow({ s, isToday }: { s: AttendanceSummary; isToday: boolean 
       <TableCell>
         {s.anomalies.length > 0 ? (
           <div className="flex flex-wrap gap-1">
-            {s.anomalies.map((a) => (
-              <Badge key={a} variant="destructive" className="text-[10px] px-1.5">{a}</Badge>
+            {s.anomalies.map((a, i) => (
+              <Badge key={`${a}-${i}`} variant="destructive" className="text-[10px] px-1.5">{a}</Badge>
             ))}
           </div>
         ) : (

@@ -20,7 +20,14 @@ import {
   TabsContent,
 } from "@/components/ui/tabs";
 import { ALL_REASON_OPTIONS } from "@/lib/constants/reason-codes";
-import { Loader2, CheckCircle, XCircle, Search, Users } from "lucide-react";
+import { Loader2, CheckCircle, XCircle, Search, Users, Trash2, AlertTriangle } from "lucide-react";
+
+type EmployeeItem = {
+  employeeId: string;
+  fullName: string;
+  email: string;
+  area: string;
+};
 
 interface FormMessage {
   type: "success" | "error";
@@ -278,6 +285,7 @@ export default function RegularizePage() {
             <TabsList>
               <TabsTrigger value="single">Dia Individual</TabsTrigger>
               <TabsTrigger value="range">Rango de Fechas</TabsTrigger>
+              <TabsTrigger value="clean">Limpiar día</TabsTrigger>
             </TabsList>
 
             {/* Single Day Tab */}
@@ -564,9 +572,194 @@ export default function RegularizePage() {
                 )}
               </form>
             </TabsContent>
+
+            {/* Clean day Tab — uses the dedicated editor */}
+            <TabsContent value="clean" className="mt-4">
+              <CleanDayTab employees={employees} />
+            </TabsContent>
           </Tabs>
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+// ─── CleanDayTab ─────────────────────────────────────────────────────────────
+// Minimal inline UI for wiping a single DailySummary row. Delegates to the
+// audited DELETE endpoint so every cleanup is reversible from /admin/audit.
+
+function CleanDayTab({ employees }: { employees: EmployeeItem[] }) {
+  const [empSearch, setEmpSearch] = useState("");
+  const [employeeId, setEmployeeId] = useState("");
+  const [employeeName, setEmployeeName] = useState("");
+  const [workDate, setWorkDate] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [msg, setMsg] = useState<FormMessage | null>(null);
+
+  const filtered = useMemo(() => {
+    if (!empSearch.trim()) return employees.slice(0, 20);
+    const q = empSearch.toLowerCase();
+    return employees
+      .filter(
+        (e) =>
+          e.fullName.toLowerCase().includes(q) ||
+          e.email.toLowerCase().includes(q) ||
+          e.area.toLowerCase().includes(q)
+      )
+      .slice(0, 20);
+  }, [employees, empSearch]);
+
+  async function handleClean() {
+    if (!employeeId || !workDate) return;
+    if (
+      !confirm(
+        `¿Eliminar el registro de ${employeeName} del ${workDate}?\n\nEl día volverá a estar sin registro. Esta acción queda auditada y puede revertirse desde Historial.`
+      )
+    )
+      return;
+
+    setLoading(true);
+    setMsg(null);
+    try {
+      const url = `/api/admin/daily-summary/${encodeURIComponent(
+        employeeId
+      )}/${encodeURIComponent(workDate)}`;
+      const res = await fetch(url, { method: "DELETE" });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || `Error ${res.status}`);
+      setMsg({
+        type: "success",
+        text: body.deleted
+          ? "Registro eliminado. Puedes deshacer este cambio en Historial."
+          : "No había registro para ese día.",
+      });
+    } catch (err) {
+      setMsg({
+        type: "error",
+        text: err instanceof Error ? err.message : "Error al eliminar",
+      });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-200">
+        <div className="flex items-start gap-2">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <div>
+            Esta acción elimina por completo el registro del día. Se usa cuando
+            hay un registro erróneo que no debería existir. Todo borrado queda
+            auditado y puedes revertirlo desde{" "}
+            <a
+              href="/admin/audit"
+              className="underline underline-offset-2 font-medium"
+            >
+              Historial
+            </a>
+            . Si sólo necesitas corregir campos puntuales, ve al detalle del
+            empleado en <span className="font-medium">Empleados</span> y usa la
+            pestaña <span className="font-medium">Asistencia</span>.
+          </div>
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <Label>Empleado</Label>
+        {employeeId ? (
+          <div className="flex items-center gap-2">
+            <div className="flex-1 rounded-md border bg-muted/30 px-3 py-2">
+              <p className="text-sm font-medium">{employeeName}</p>
+              <p className="text-xs text-muted-foreground">{employeeId}</p>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setEmployeeId("");
+                setEmployeeName("");
+              }}
+            >
+              Cambiar
+            </Button>
+          </div>
+        ) : (
+          <>
+            <div className="relative">
+              <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Buscar empleado…"
+                value={empSearch}
+                onChange={(e) => setEmpSearch(e.target.value)}
+                className="pl-9"
+              />
+            </div>
+            <div className="max-h-48 overflow-y-auto rounded-md border divide-y">
+              {filtered.length === 0 && (
+                <p className="px-3 py-3 text-sm text-muted-foreground">
+                  Sin resultados.
+                </p>
+              )}
+              {filtered.map((e) => (
+                <button
+                  key={e.employeeId}
+                  type="button"
+                  className="w-full px-3 py-2 text-left text-sm hover:bg-muted/60"
+                  onClick={() => {
+                    setEmployeeId(e.employeeId);
+                    setEmployeeName(e.fullName);
+                  }}
+                >
+                  <p className="font-medium">{e.fullName}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {e.email} · {e.area}
+                  </p>
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+
+      <div className="space-y-1.5">
+        <Label htmlFor="cleanDate">Fecha a limpiar</Label>
+        <Input
+          id="cleanDate"
+          type="date"
+          value={workDate}
+          onChange={(e) => setWorkDate(e.target.value)}
+        />
+      </div>
+
+      <Button
+        type="button"
+        variant="destructive"
+        onClick={handleClean}
+        disabled={!employeeId || !workDate || loading}
+      >
+        {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+        <Trash2 className="mr-2 h-4 w-4" />
+        Eliminar registro del día
+      </Button>
+
+      {msg && (
+        <div
+          className={`flex items-start gap-2 rounded-md p-3 text-sm ${
+            msg.type === "success"
+              ? "bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-300"
+              : "bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300"
+          }`}
+        >
+          {msg.type === "success" ? (
+            <CheckCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          ) : (
+            <XCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          )}
+          <span>{msg.text}</span>
+        </div>
+      )}
     </div>
   );
 }

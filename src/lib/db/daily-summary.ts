@@ -10,6 +10,7 @@ import {
   PutCommand,
   UpdateCommand,
   QueryCommand,
+  DeleteCommand,
 } from "@aws-sdk/lib-dynamodb";
 import type { DailySummary } from "@/lib/types";
 
@@ -366,6 +367,19 @@ export async function putDailySummary(item: Record<string, unknown>): Promise<vo
     new PutCommand({
       TableName: TABLES.DAILY_SUMMARY,
       Item: item,
+    })
+  );
+}
+
+/** Delete a daily summary — used by the admin attendance cleanup tool. */
+export async function deleteDailySummary(
+  employeeId: string,
+  workDate: string
+): Promise<void> {
+  await docClient.send(
+    new DeleteCommand({
+      TableName: TABLES.DAILY_SUMMARY,
+      Key: key(employeeId, workDate),
     })
   );
 }

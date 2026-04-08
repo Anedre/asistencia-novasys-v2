@@ -5,9 +5,25 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, Mail, KeyRound, ArrowLeft, CheckCircle } from "lucide-react";
+import {
+  Loader2,
+  Mail,
+  KeyRound,
+  ArrowLeft,
+  CheckCircle,
+  Lock,
+  AlertTriangle,
+} from "lucide-react";
+import { AuthLayout } from "@/components/auth/AuthLayout";
+import { StepProgress } from "@/components/auth/StepProgress";
 
 type Step = "email" | "code" | "done";
+
+const STEPS = [
+  { id: "email", label: "Correo" },
+  { id: "code", label: "Código" },
+  { id: "done", label: "Listo" },
+];
 
 export default function ForgotPasswordPage() {
   const [step, setStep] = useState<Step>("email");
@@ -18,11 +34,11 @@ export default function ForgotPasswordPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const handleRequestCode = async (e: React.FormEvent) => {
+  async function handleRequestCode(e: React.FormEvent) {
     e.preventDefault();
     setError("");
     if (!email.trim()) {
-      setError("Ingresa tu correo electronico");
+      setError("Ingresa tu correo electrónico");
       return;
     }
     setLoading(true);
@@ -33,28 +49,28 @@ export default function ForgotPasswordPage() {
         body: JSON.stringify({ email: email.trim() }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Error al enviar el codigo");
+      if (!res.ok) throw new Error(data.error || "Error al enviar el código");
       setStep("code");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error inesperado");
     } finally {
       setLoading(false);
     }
-  };
+  }
 
-  const handleResetPassword = async (e: React.FormEvent) => {
+  async function handleResetPassword(e: React.FormEvent) {
     e.preventDefault();
     setError("");
     if (!code.trim()) {
-      setError("Ingresa el codigo de verificacion");
+      setError("Ingresa el código de verificación");
       return;
     }
     if (newPassword.length < 8) {
-      setError("La contrasena debe tener al menos 8 caracteres");
+      setError("La contraseña debe tener al menos 8 caracteres");
       return;
     }
     if (newPassword !== confirmPassword) {
-      setError("Las contrasenas no coinciden");
+      setError("Las contraseñas no coinciden");
       return;
     }
     setLoading(true);
@@ -62,147 +78,199 @@ export default function ForgotPasswordPage() {
       const res = await fetch("/api/auth/forgot-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim(), code: code.trim(), newPassword }),
+        body: JSON.stringify({
+          email: email.trim(),
+          code: code.trim(),
+          newPassword,
+        }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Error al cambiar la contrasena");
+      if (!res.ok)
+        throw new Error(data.error || "Error al cambiar la contraseña");
       setStep("done");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error inesperado");
     } finally {
       setLoading(false);
     }
-  };
+  }
+
+  const currentStepIndex = STEPS.findIndex((s) => s.id === step);
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-muted/30 p-4">
-      <div className="w-full max-w-md space-y-6 rounded-2xl border bg-background p-8 shadow-lg">
-        {/* Header */}
-        <div className="text-center">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10">
-            {step === "done" ? (
-              <CheckCircle className="h-7 w-7 text-primary" />
-            ) : step === "code" ? (
-              <KeyRound className="h-7 w-7 text-primary" />
-            ) : (
-              <Mail className="h-7 w-7 text-primary" />
-            )}
-          </div>
-          <h1 className="mt-4 text-xl font-bold">
-            {step === "done"
-              ? "Contrasena actualizada"
-              : step === "code"
-                ? "Ingresa el codigo"
-                : "Recuperar contrasena"}
+    <AuthLayout>
+      <div className="space-y-8">
+        <StepProgress steps={STEPS} currentIndex={currentStepIndex} />
+
+        <div className="space-y-2">
+          <h1 className="text-3xl font-bold tracking-tight">
+            {step === "email" && "Recuperar contraseña"}
+            {step === "code" && "Cambia tu contraseña"}
+            {step === "done" && "¡Contraseña actualizada!"}
           </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {step === "done"
-              ? "Tu contrasena ha sido cambiada exitosamente"
-              : step === "code"
-                ? `Enviamos un codigo de verificacion a ${email}`
-                : "Te enviaremos un codigo de verificacion a tu correo"}
+          <p className="text-sm text-muted-foreground">
+            {step === "email" &&
+              "Te enviaremos un código de verificación a tu correo."}
+            {step === "code" && (
+              <>
+                Enviamos un código a{" "}
+                <strong className="text-foreground">{email}</strong>
+              </>
+            )}
+            {step === "done" && "Ya puedes iniciar sesión con tu nueva contraseña."}
           </p>
         </div>
 
-        {/* Step 1: Email */}
+        {error && (
+          <div className="flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
+
+        {/* ── STEP: Email ── */}
         {step === "email" && (
           <form onSubmit={handleRequestCode} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="email">Correo electronico</Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="tu@correo.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                autoFocus
-              />
+            <div className="space-y-1.5">
+              <Label htmlFor="email">Correo electrónico</Label>
+              <div className="relative">
+                <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  id="email"
+                  type="email"
+                  placeholder="tu@correo.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  autoFocus
+                  className="h-12 pl-10"
+                />
+              </div>
             </div>
-            {error && <p className="text-sm text-destructive">{error}</p>}
-            <Button type="submit" className="w-full" disabled={loading}>
+
+            <Button
+              type="submit"
+              className="h-12 w-full text-base font-medium"
+              disabled={loading}
+            >
               {loading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <Loader2 className="mr-2 h-5 w-5 animate-spin" />
               ) : (
-                "Enviar codigo"
+                <Mail className="mr-2 h-5 w-5" />
               )}
+              Enviar código
             </Button>
           </form>
         )}
 
-        {/* Step 2: Code + New Password */}
+        {/* ── STEP: Code + new password ── */}
         {step === "code" && (
           <form onSubmit={handleResetPassword} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="code">Codigo de verificacion</Label>
+            <div className="flex justify-center">
+              <div className="flex h-20 w-20 items-center justify-center rounded-full bg-primary/10">
+                <KeyRound className="h-10 w-10 text-primary" />
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="code">Código de verificación</Label>
               <Input
                 id="code"
                 type="text"
+                inputMode="numeric"
                 placeholder="123456"
                 value={code}
-                onChange={(e) => setCode(e.target.value)}
+                onChange={(e) =>
+                  setCode(e.target.value.replace(/\D/g, "").slice(0, 6))
+                }
                 autoFocus
                 maxLength={6}
-                className="text-center text-lg tracking-widest"
+                className="h-14 text-center text-3xl tracking-[0.5em] font-mono"
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="newPassword">Nueva contrasena</Label>
-              <Input
-                id="newPassword"
-                type="password"
-                placeholder="Minimo 8 caracteres"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-              />
+
+            <div className="space-y-1.5">
+              <Label htmlFor="newPassword">Nueva contraseña</Label>
+              <div className="relative">
+                <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  id="newPassword"
+                  type="password"
+                  placeholder="Mínimo 8 caracteres"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  className="h-12 pl-10"
+                />
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="confirmPassword">Confirmar contrasena</Label>
-              <Input
-                id="confirmPassword"
-                type="password"
-                placeholder="Repite tu nueva contrasena"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-              />
+
+            <div className="space-y-1.5">
+              <Label htmlFor="confirmPassword">Confirmar contraseña</Label>
+              <div className="relative">
+                <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  id="confirmPassword"
+                  type="password"
+                  placeholder="Repite tu nueva contraseña"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  className="h-12 pl-10"
+                />
+              </div>
             </div>
-            {error && <p className="text-sm text-destructive">{error}</p>}
-            <Button type="submit" className="w-full" disabled={loading}>
+
+            <Button
+              type="submit"
+              className="h-12 w-full text-base font-medium"
+              disabled={loading}
+            >
               {loading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <Loader2 className="mr-2 h-5 w-5 animate-spin" />
               ) : (
-                "Cambiar contrasena"
+                <CheckCircle className="mr-2 h-5 w-5" />
               )}
+              Cambiar contraseña
             </Button>
+
             <button
               type="button"
-              onClick={() => { setStep("email"); setError(""); }}
+              onClick={() => {
+                setStep("email");
+                setError("");
+              }}
               className="w-full text-sm text-muted-foreground hover:text-foreground"
             >
-              Reenviar codigo
+              Reenviar código
             </button>
           </form>
         )}
 
-        {/* Step 3: Done */}
+        {/* ── STEP: Done ── */}
         {step === "done" && (
-          <Link href="/login">
-            <Button className="w-full">Ir a iniciar sesion</Button>
-          </Link>
+          <div className="space-y-5 text-center">
+            <div className="flex justify-center">
+              <div className="flex h-20 w-20 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-950/40">
+                <CheckCircle className="h-10 w-10 text-emerald-600 dark:text-emerald-400" />
+              </div>
+            </div>
+            <Link href="/login">
+              <Button className="h-12 w-full text-base font-medium">
+                Ir al login
+              </Button>
+            </Link>
+          </div>
         )}
 
-        {/* Back to login */}
         {step !== "done" && (
-          <div className="text-center">
+          <div className="text-center text-sm text-muted-foreground">
             <Link
               href="/login"
-              className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+              className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
             >
-              <ArrowLeft className="h-3.5 w-3.5" />
-              Volver al inicio de sesion
+              <ArrowLeft className="h-3.5 w-3.5" /> Volver al login
             </Link>
           </div>
         )}
       </div>
-    </div>
+    </AuthLayout>
   );
 }

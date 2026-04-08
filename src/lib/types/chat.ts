@@ -24,6 +24,17 @@ export type UIBlock =
   | RequestCreatedBlock
   | RequestListBlock
   | AttendanceRecordedBlock
+  | HolidaysBlock
+  | TeamStatsBlock
+  | AuditListBlock
+  | PendingRequestsBlock
+  | InvitationPreviewBlock
+  | InvitationCreatedBlock
+  | SettingPreviewBlock
+  | SettingUpdatedBlock
+  | RevertPreviewBlock
+  | RevertDoneBlock
+  | InfoBlock
   | ErrorBlock;
 
 export interface AttendanceTodayBlock {
@@ -93,5 +104,114 @@ export interface AttendanceRecordedBlock {
 
 export interface ErrorBlock {
   type: "error";
+  message: string;
+}
+
+// ── New blocks for the agentic bot ──────────────────────────────────
+
+export interface HolidaysBlock {
+  type: "holidays";
+  totalConfigured: number;
+  holidays: {
+    date: string;
+    name: string;
+    daysUntil: number;
+    monthShort: string;
+    day: string;
+  }[];
+}
+
+export interface TeamStatsBlock {
+  type: "team_stats";
+  from: string;
+  to: string;
+  totals: {
+    totalEmployees: number;
+    totalWorkedHours: number;
+    totalPlannedHours: number;
+    totalAbsences: number;
+    totalRegularizations: number;
+    totalDays: number;
+  };
+  topEmployees: {
+    name: string;
+    hours: number;
+    absences: number;
+  }[];
+  statusDistribution: { status: string; count: number }[];
+}
+
+export interface AuditListBlock {
+  type: "audit_list";
+  total: number;
+  items: {
+    auditId: string;
+    action: string;
+    entityType: string;
+    entityLabel: string;
+    actor: string;
+    createdAt: string;
+    reverted: boolean;
+  }[];
+}
+
+export interface PendingRequestsBlock {
+  type: "pending_requests";
+  total: number;
+  byType: { type: string; count: number }[];
+  sample: {
+    id: string;
+    employee: string;
+    type: string;
+    from: string | null;
+    to: string | null;
+    reason: string;
+    createdAt: string;
+  }[];
+}
+
+export interface InvitationPreviewBlock {
+  type: "invitation_preview";
+  email: string;
+  fullName?: string;
+  area?: string;
+  position?: string;
+  role: string;
+}
+
+export interface InvitationCreatedBlock {
+  type: "invitation_created";
+  email: string;
+  inviteLink: string;
+  emailSent: boolean;
+}
+
+export interface SettingPreviewBlock {
+  type: "setting_preview";
+  key: string;
+  newValue: unknown;
+}
+
+export interface SettingUpdatedBlock {
+  type: "setting_updated";
+  key: string;
+  newValue: unknown;
+}
+
+export interface RevertPreviewBlock {
+  type: "revert_preview";
+  auditId: string;
+}
+
+export interface RevertDoneBlock {
+  type: "revert_done";
+  auditId: string;
+  revertAuditId: string;
+}
+
+/** Generic info fallback — shows a neutral card with title + message. */
+export interface InfoBlock {
+  type: "info";
+  title: string;
   message: string;
 }

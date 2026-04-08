@@ -2,24 +2,39 @@
 
 import { useState } from "react";
 import { useSession } from "next-auth/react";
+import { usePathname } from "next/navigation";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
 import { MobileNav } from "@/components/layout/mobile-nav";
 import { Loader2 } from "lucide-react";
-import { redirect } from "next/navigation";
 import { Toaster } from "sonner";
 import { ChatWidget } from "@/components/chat/chat-widget";
 import { MessagingWidget } from "@/components/messaging/messaging-widget";
 import { useHeartbeat } from "@/hooks/use-presence";
+
+/**
+ * Routes that render their own inner sub-navigation. On these routes the
+ * global admin sidebar collapses to icon-only mode so the two sidebars don't
+ * compete for horizontal space.
+ */
+const NESTED_SIDEBAR_PREFIXES = ["/admin/settings"];
+
+function hasNestedSidebar(pathname: string | null): boolean {
+  if (!pathname) return false;
+  return NESTED_SIDEBAR_PREFIXES.some((prefix) => pathname.startsWith(prefix));
+}
 
 export default function AdminLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const { data: session, status } = useSession();
+  const { status } = useSession();
+  const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
   useHeartbeat();
+
+  const sidebarCollapsed = hasNestedSidebar(pathname);
 
   if (status === "loading") {
     return (
@@ -32,7 +47,12 @@ export default function AdminLayout({
   return (
     <div className="flex h-screen overflow-hidden">
       {/* Desktop sidebar */}
-      <Sidebar role="ADMIN" isAdmin={true} className="hidden md:flex" />
+      <Sidebar
+        role="ADMIN"
+        isAdmin={true}
+        collapsed={sidebarCollapsed}
+        className="hidden md:flex"
+      />
 
       {/* Mobile nav */}
       <MobileNav

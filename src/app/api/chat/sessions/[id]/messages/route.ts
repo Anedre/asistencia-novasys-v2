@@ -46,12 +46,14 @@ export const POST = withErrorHandler(
     };
     const updatedMessages = [...session.Messages, userMessage];
 
-    // Call Bedrock with tool use support
+    // Call Bedrock with tool use support. We pass the user's role so the
+    // system prompt is tailored and admin-only tools are gated.
     const { content: assistantContent, blocks } =
       await sendMessageWithTools(updatedMessages, {
         employeeId: user.employeeId,
         employeeName: user.name,
         tenantId: user.tenantId,
+        role: user.role,
       });
 
     const assistantMessage: AIChatMessage = {

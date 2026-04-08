@@ -19,8 +19,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { UserPlus, Loader2, Copy, Check, Link2 } from "lucide-react";
+import { UserPlus, Loader2, Copy, Check, Mail, AlertTriangle } from "lucide-react";
 import { useCreateInvitation } from "@/hooks/use-invitations";
+
+interface InviteResult {
+  inviteLink: string;
+  emailSent: boolean;
+  emailError?: string;
+}
 
 export function InviteEmployeeDialog() {
   const [open, setOpen] = useState(false);
@@ -29,15 +35,17 @@ export function InviteEmployeeDialog() {
   const [area, setArea] = useState("");
   const [position, setPosition] = useState("");
   const [role, setRole] = useState<"EMPLOYEE" | "ADMIN">("EMPLOYEE");
-  const [inviteLink, setInviteLink] = useState<string | null>(null);
+  const [result, setResult] = useState<InviteResult | null>(null);
   const [copied, setCopied] = useState(false);
 
   const createInvite = useCreateInvitation();
 
+  const inviteLink = result?.inviteLink ?? null;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    const result = await createInvite.mutateAsync({
+    const data = await createInvite.mutateAsync({
       email: email.trim(),
       fullName: fullName.trim() || undefined,
       area: area.trim() || undefined,
@@ -45,7 +53,11 @@ export function InviteEmployeeDialog() {
       role,
     });
 
-    setInviteLink(result.inviteLink);
+    setResult({
+      inviteLink: data.inviteLink,
+      emailSent: data.emailSent ?? false,
+      emailError: data.emailError,
+    });
   };
 
   const handleCopy = async () => {
@@ -64,7 +76,7 @@ export function InviteEmployeeDialog() {
       setArea("");
       setPosition("");
       setRole("EMPLOYEE");
-      setInviteLink(null);
+      setResult(null);
       setCopied(false);
       createInvite.reset();
     }, 200);
@@ -174,18 +186,52 @@ export function InviteEmployeeDialog() {
           </form>
         ) : (
           <div className="space-y-4">
-            <div className="rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 p-4 text-center">
-              <Check className="h-8 w-8 text-green-600 mx-auto mb-2" />
-              <p className="text-sm font-medium text-green-800 dark:text-green-300">
-                Invitacion creada exitosamente
-              </p>
-            </div>
+            {result?.emailSent ? (
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-800 dark:bg-emerald-900/20">
+                <div className="flex items-start gap-3">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white">
+                    <Mail className="h-4 w-4" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-emerald-800 dark:text-emerald-200">
+                      Email enviado a {email}
+                    </p>
+                    <p className="mt-0.5 text-xs text-emerald-700 dark:text-emerald-300/80">
+                      Recibirá las instrucciones para crear su cuenta. Si no le
+                      llega, comparte el link manualmente.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-900/20">
+                <div className="flex items-start gap-3">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-amber-500 text-white">
+                    <AlertTriangle className="h-4 w-4" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-amber-800 dark:text-amber-200">
+                      No se pudo enviar el email automático
+                    </p>
+                    <p className="mt-0.5 text-xs text-amber-700 dark:text-amber-300/80">
+                      La invitación está creada y el link es válido. Compártelo
+                      manualmente con {email}.
+                      {result?.emailError && (
+                        <span className="mt-1 block font-mono text-[10px] opacity-75">
+                          {result.emailError}
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div className="space-y-2">
-              <Label>Link de invitacion</Label>
+              <Label>Link de invitación</Label>
               <div className="flex items-center gap-2">
                 <Input
-                  value={inviteLink}
+                  value={inviteLink ?? ""}
                   readOnly
                   className="font-mono text-xs bg-muted"
                 />
@@ -203,7 +249,7 @@ export function InviteEmployeeDialog() {
                 </Button>
               </div>
               <p className="text-xs text-muted-foreground">
-                Comparte este link con {email}. Expira en 7 dias.
+                Expira en 7 días.
               </p>
             </div>
 

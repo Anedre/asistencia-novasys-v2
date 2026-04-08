@@ -17,7 +17,27 @@ export type NotificationType =
   | "NEW_REQUEST"
   | "HR_EVENT"
   | "ANNOUNCEMENT"
-  | "SYSTEM";
+  | "SYSTEM"
+  // New in v2
+  | "NEW_MESSAGE"
+  | "NEW_POST"
+  | "BIRTHDAY_TODAY"
+  | "BIRTHDAY_UPCOMING"
+  | "WORK_ANNIVERSARY"
+  | "PENDING_REMINDER";
+
+/**
+ * Audio cue the frontend should play when a notification of this type
+ * arrives. Kept on the notification row itself so the dispatcher (backend
+ * or Lambda) can pick the right sound without the client having to guess.
+ */
+export type NotificationSound =
+  | "message"
+  | "approval"
+  | "reject"
+  | "post"
+  | "celebrate"
+  | "system";
 
 export interface UserNotification {
   recipientId: string;
@@ -30,6 +50,8 @@ export interface UserNotification {
   referenceType?: string;
   read: boolean;
   ttl?: number;
+  /** Optional audio cue. If missing the client derives a default from `type`. */
+  soundType?: NotificationSound;
 }
 
 export interface SystemSetting {

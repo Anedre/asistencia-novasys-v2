@@ -12,6 +12,8 @@ import {
 } from "@/lib/db/requests";
 import { putNotification } from "@/lib/db/notifications";
 import { regularizeSingle, regularizeRange } from "./regularization.service";
+import { withAudit } from "./audit.service";
+import type { SessionUser } from "@/lib/auth-helpers";
 import { ValidationError, NotFoundError, ConflictError } from "@/lib/utils/errors";
 import type {
   ApprovalRequest,
@@ -88,8 +90,38 @@ export async function approveRequest(
     throw new ConflictError("Solo se pueden aprobar solicitudes pendientes");
   }
 
-  // Update status
-  await updateRequestStatus(requestId, "APPROVED", reviewerId, reviewerName, reviewerNote);
+  // Build a minimal actor from the reviewer's identity so regularization
+  // audit entries are attributed to the approving admin, not to SYSTEM.
+  const actor: SessionUser = {
+    id: reviewerId,
+    email: "",
+    name: reviewerName,
+    role: "ADMIN",
+    employeeId: reviewerId,
+    area: "",
+    tenantId: tenantId ?? "TENANT#novasys",
+    tenantSlug: "",
+  };
+
+  // Audit the status change: withAudit captures `before` (PENDING) and `after`
+  // (APPROVED) snapshots, so revert can restore PENDING state.
+  await withAudit(
+    {
+      actor,
+      entityType: "APPROVAL_REQUEST",
+      entityKey: { RequestID: requestId },
+      action: "APPROVE",
+      reason: reviewerNote,
+    },
+    async () =>
+      updateRequestStatus(
+        requestId,
+        "APPROVED",
+        reviewerId,
+        reviewerName,
+        reviewerNote
+      )
+  );
 
   // Auto-apply regularization to DailySummary
   try {
@@ -97,45 +129,54 @@ export async function approveRequest(
       request.requestType === "REGULARIZATION_SINGLE" &&
       request.effectiveDate
     ) {
-      await regularizeSingle({
-        employeeId: request.employeeId,
-        workDate: request.effectiveDate,
-        startTime: request.startTime,
-        endTime: request.endTime,
-        breakMinutes: request.breakMinutes,
-        reasonCode: request.reasonCode,
-        reasonNote: request.reasonNote,
-        overwrite: true,
-      });
+      await regularizeSingle(
+        {
+          employeeId: request.employeeId,
+          workDate: request.effectiveDate,
+          startTime: request.startTime,
+          endTime: request.endTime,
+          breakMinutes: request.breakMinutes,
+          reasonCode: request.reasonCode,
+          reasonNote: request.reasonNote,
+          overwrite: true,
+        },
+        actor
+      );
     } else if (
       request.requestType === "REGULARIZATION_RANGE" &&
       request.dateFrom &&
       request.dateTo
     ) {
-      await regularizeRange({
-        employeeId: request.employeeId,
-        dateFrom: request.dateFrom,
-        dateTo: request.dateTo,
-        startTime: request.startTime,
-        endTime: request.endTime,
-        breakMinutes: request.breakMinutes,
-        reasonCode: request.reasonCode,
-        reasonNote: request.reasonNote,
-        overwrite: true,
-      });
+      await regularizeRange(
+        {
+          employeeId: request.employeeId,
+          dateFrom: request.dateFrom,
+          dateTo: request.dateTo,
+          startTime: request.startTime,
+          endTime: request.endTime,
+          breakMinutes: request.breakMinutes,
+          reasonCode: request.reasonCode,
+          reasonNote: request.reasonNote,
+          overwrite: true,
+        },
+        actor
+      );
     } else if (
       (request.requestType === "PERMISSION" || request.requestType === "VACATION") &&
       request.dateFrom &&
       request.dateTo
     ) {
-      await regularizeRange({
-        employeeId: request.employeeId,
-        dateFrom: request.dateFrom,
-        dateTo: request.dateTo,
-        reasonCode: request.reasonCode,
-        reasonNote: request.reasonNote,
-        overwrite: true,
-      });
+      await regularizeRange(
+        {
+          employeeId: request.employeeId,
+          dateFrom: request.dateFrom,
+          dateTo: request.dateTo,
+          reasonCode: request.reasonCode,
+          reasonNote: request.reasonNote,
+          overwrite: true,
+        },
+        actor
+      );
     }
   } catch (err) {
     console.error("Error auto-applying regularization after approval:", err);
@@ -153,6 +194,7 @@ export async function approveRequest(
     referenceId: requestId,
     referenceType: "REQUEST",
     read: false,
+    soundType: "approval",
     ttl: Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60, // 30 days
   };
   await putNotification(notification);
@@ -173,7 +215,34 @@ export async function rejectRequest(
     throw new ConflictError("Solo se pueden rechazar solicitudes pendientes");
   }
 
-  await updateRequestStatus(requestId, "REJECTED", reviewerId, reviewerName, reviewerNote);
+  const rejectActor: SessionUser = {
+    id: reviewerId,
+    email: "",
+    name: reviewerName,
+    role: "ADMIN",
+    employeeId: reviewerId,
+    area: "",
+    tenantId: tenantId ?? "TENANT#novasys",
+    tenantSlug: "",
+  };
+
+  await withAudit(
+    {
+      actor: rejectActor,
+      entityType: "APPROVAL_REQUEST",
+      entityKey: { RequestID: requestId },
+      action: "REJECT",
+      reason: reviewerNote,
+    },
+    async () =>
+      updateRequestStatus(
+        requestId,
+        "REJECTED",
+        reviewerId,
+        reviewerName,
+        reviewerNote
+      )
+  );
 
   // Notify employee
   const notification: UserNotification = {
@@ -186,6 +255,7 @@ export async function rejectRequest(
     referenceId: requestId,
     referenceType: "REQUEST",
     read: false,
+    soundType: "reject",
     ttl: Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60,
   };
   await putNotification(notification);

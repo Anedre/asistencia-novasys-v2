@@ -142,6 +142,10 @@ export async function updateTenantSettings(
     updates.push("settings.workPolicy = :wp");
     values[":wp"] = settings.workPolicy;
   }
+  if (settings.onboardingCompleted !== undefined) {
+    updates.push("settings.onboardingCompleted = :oc");
+    values[":oc"] = settings.onboardingCompleted;
+  }
 
   if (updates.length === 0) return;
 

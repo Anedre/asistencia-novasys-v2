@@ -22,6 +22,8 @@ export interface TenantSettings {
   holidays?: { date: string; name: string }[];
   notifications?: Record<string, boolean>;
   workPolicy?: WorkPolicy;
+  /** Marks whether the post-registration onboarding wizard has been completed. */
+  onboardingCompleted?: boolean;
 }
 
 export interface TenantBranding {

@@ -36,15 +36,7 @@ import {
   TabsTrigger,
   TabsContent,
 } from "@/components/ui/tabs";
-import {
-  Table,
-  TableHeader,
-  TableRow,
-  TableHead,
-  TableBody,
-  TableCell,
-} from "@/components/ui/table";
-import { StatusBadge } from "@/components/attendance/status-badge";
+import { AttendanceEditor } from "@/components/admin/AttendanceEditor";
 
 /* ── Helpers ── */
 
@@ -52,15 +44,6 @@ function formatMinutes(min: number): string {
   const h = Math.floor(min / 60);
   const m = min % 60;
   return `${h}h ${m.toString().padStart(2, "0")}m`;
-}
-
-function formatTime(local: string | null): string {
-  if (!local) return "-";
-  try {
-    return local.slice(11, 16);
-  } catch {
-    return local;
-  }
 }
 
 function workModeBadge(mode: string) {
@@ -197,7 +180,6 @@ export default function EmployeeDetailPage() {
   }
 
   const emp = data.employee;
-  const attendance = data.recentAttendance ?? [];
 
   return (
     <div className="space-y-6">
@@ -325,67 +307,12 @@ export default function EmployeeDetailPage() {
           </div>
         </TabsContent>
 
-        {/* ── Tab: Attendance ── */}
+        {/* ── Tab: Attendance (full editor) ── */}
         <TabsContent value="attendance" className="mt-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">
-                Asistencia Reciente (30 dias)
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {attendance.length === 0 ? (
-                <div className="py-12 text-center">
-                  <Calendar className="mx-auto h-10 w-10 text-muted-foreground/40" />
-                  <p className="mt-3 text-sm text-muted-foreground">
-                    Sin registros de asistencia en los ultimos 30 dias.
-                  </p>
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Fecha</TableHead>
-                        <TableHead>Entrada</TableHead>
-                        <TableHead>Salida</TableHead>
-                        <TableHead>Break</TableHead>
-                        <TableHead>Trabajado</TableHead>
-                        <TableHead>Estado</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {attendance.map(
-                        (a: {
-                          date: string;
-                          firstInLocal: string | null;
-                          lastOutLocal: string | null;
-                          breakMinutes: number;
-                          workedMinutes: number;
-                          status: string;
-                        }) => (
-                          <TableRow key={a.date}>
-                            <TableCell className="font-medium">
-                              {a.date}
-                            </TableCell>
-                            <TableCell>{formatTime(a.firstInLocal)}</TableCell>
-                            <TableCell>{formatTime(a.lastOutLocal)}</TableCell>
-                            <TableCell>{a.breakMinutes} min</TableCell>
-                            <TableCell>
-                              {formatMinutes(a.workedMinutes)}
-                            </TableCell>
-                            <TableCell>
-                              <StatusBadge status={a.status} />
-                            </TableCell>
-                          </TableRow>
-                        )
-                      )}
-                    </TableBody>
-                  </Table>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          <AttendanceEditor
+            employeeId={emp.employeeId}
+            employeeName={emp.fullName}
+          />
         </TabsContent>
 
         {/* ── Tab: Schedule ── */}
