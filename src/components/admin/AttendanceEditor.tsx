@@ -303,6 +303,17 @@ export function AttendanceEditor({ employeeId, employeeName }: Props) {
       });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error || `Error ${res.status}`);
+      // Refresh the open sheet with the recalculated summary so the
+      // trabajadas/planeadas/delta tiles reflect the new values without
+      // having to close and reopen the day.
+      if (body.summary) {
+        setDetail(body.summary as DetailSummary);
+        setFirstInHm(isoToHm(body.summary.firstInLocal));
+        setLastOutHm(isoToHm(body.summary.lastOutLocal));
+        setBreakMinutes(Number(body.summary.breakMinutes ?? 60));
+        setStatus(body.summary.status ?? "");
+        setReason("");
+      }
       setDetailMessage({
         type: "success",
         text: "Guardado. Puedes revertir el cambio desde Historial.",

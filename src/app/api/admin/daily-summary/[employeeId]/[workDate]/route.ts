@@ -15,9 +15,21 @@ import {
   getDailySummary,
   putDailySummary,
   deleteDailySummary,
+  computeDailyTotals,
 } from "@/lib/db/daily-summary";
 import { withErrorHandler, ValidationError } from "@/lib/utils/errors";
 import { withAudit } from "@/lib/services/audit.service";
+
+/**
+ * Convert a local ISO string (e.g. "2026-04-08T09:00:00-05:00") to a UTC ISO
+ * string. Returns undefined if the input isn't parseable.
+ */
+function localIsoToUtc(local: unknown): string | undefined {
+  if (typeof local !== "string" || !local) return undefined;
+  const t = Date.parse(local);
+  if (Number.isNaN(t)) return undefined;
+  return new Date(t).toISOString();
+}
 
 // Fields an admin may modify with PATCH. Anything not on this list is ignored.
 const EDITABLE_FIELDS = new Set([
@@ -70,9 +82,36 @@ export const PATCH = withErrorHandler(async (req: Request, context: unknown) => 
 
   // Merge the patch on top of the existing record, restricted to editable fields.
   const updated: Record<string, unknown> = { ...existing };
+  const adminSetStatus =
+    typeof body.status === "string" && body.status.length > 0;
   for (const [k, v] of Object.entries(body)) {
     if (EDITABLE_FIELDS.has(k)) updated[k] = v;
   }
+
+  // The client sends firstInLocal/lastOutLocal (ISO with offset). Derive the
+  // UTC counterparts so the totals recalc reads consistent values. If the
+  // client didn't touch a field, keep whatever was in `existing`.
+  if (typeof body.firstInLocal === "string") {
+    const utc = localIsoToUtc(body.firstInLocal);
+    if (utc) updated.firstInUtc = utc;
+  }
+  if (typeof body.lastOutLocal === "string") {
+    const utc = localIsoToUtc(body.lastOutLocal);
+    if (utc) updated.lastOutUtc = utc;
+  }
+
+  // Recalculate worked/planned/delta/anomalies from the merged item so the
+  // dashboard tiles (trabajadas, planeadas, delta) reflect the new times or
+  // break minutes. Only override status if the admin didn't set it explicitly.
+  const totals = await computeDailyTotals(updated, admin.tenantId);
+  updated.workedMinutes = totals.workedMinutes;
+  updated.plannedMinutes = totals.plannedMinutes;
+  updated.deltaMinutes = totals.deltaMinutes;
+  updated.anomalies = totals.anomalies;
+  if (!adminSetStatus) {
+    updated.status = totals.status;
+  }
+
   updated.updatedAt = new Date().toISOString();
   updated.source = "MANUAL_EDIT";
 

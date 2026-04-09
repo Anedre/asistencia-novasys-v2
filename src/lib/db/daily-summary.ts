@@ -273,18 +273,23 @@ export async function applyEnd(
   );
 }
 
-/**
- * Recalculate workedMinutes, plannedMinutes, deltaMinutes, status
- * for a given employee/date. Ported from recalc_day in Python.
- */
-export async function recalcDay(
-  employeeId: string,
-  workDate: string,
-  tenantId?: string
-): Promise<void> {
-  const current = await getDailySummary(employeeId, workDate);
-  if (!current) return;
+export interface DailyTotals {
+  workedMinutes: number;
+  plannedMinutes: number;
+  deltaMinutes: number;
+  anomalies: string[];
+  status: string;
+}
 
+/**
+ * Pure computation of worked/planned/delta/status for a daily summary item.
+ * No I/O other than the tenant config lookup. Used by recalcDay and by the
+ * admin manual-edit endpoint to keep both paths consistent.
+ */
+export async function computeDailyTotals(
+  item: Record<string, unknown>,
+  tenantId?: string
+): Promise<DailyTotals> {
   // Get tenant config for planned minutes and work policies
   let planned = 480;
   let strictSchedule = false;
@@ -297,9 +302,9 @@ export async function recalcDay(
     allowOvertime = policy.allowOvertime;
   }
 
-  const firstIn = current.firstInUtc;
-  const lastOut = current.lastOutUtc;
-  const breakMinutes = Number(current.breakMinutes ?? 0);
+  const firstIn = item.firstInUtc as string | undefined;
+  const lastOut = item.lastOutUtc as string | undefined;
+  const breakMinutes = Number(item.breakMinutes ?? 0);
   const anomalies: string[] = [];
 
   let worked = 0;
@@ -323,8 +328,9 @@ export async function recalcDay(
 
   const delta = allowOvertime ? worked - planned : Math.min(0, worked - planned);
 
+  const currentStatus = item.status as string | undefined;
   let finalStatus: string;
-  if (current.status === "OPEN" && !lastOut) {
+  if (currentStatus === "OPEN" && !lastOut) {
     finalStatus = "OPEN";
   } else if (worked >= planned && lastOut) {
     finalStatus = "OK";
@@ -333,6 +339,32 @@ export async function recalcDay(
   } else {
     finalStatus = "OPEN";
   }
+
+  return {
+    workedMinutes: worked,
+    plannedMinutes: planned,
+    deltaMinutes: delta,
+    anomalies,
+    status: finalStatus,
+  };
+}
+
+/**
+ * Recalculate workedMinutes, plannedMinutes, deltaMinutes, status
+ * for a given employee/date. Ported from recalc_day in Python.
+ */
+export async function recalcDay(
+  employeeId: string,
+  workDate: string,
+  tenantId?: string
+): Promise<void> {
+  const current = await getDailySummary(employeeId, workDate);
+  if (!current) return;
+
+  const totals = await computeDailyTotals(
+    current as unknown as Record<string, unknown>,
+    tenantId
+  );
 
   await docClient.send(
     new UpdateCommand({
@@ -349,11 +381,11 @@ export async function recalcDay(
       `,
       ExpressionAttributeNames: { "#st": "status", "#src": "source" },
       ExpressionAttributeValues: {
-        ":worked": worked,
-        ":planned": planned,
-        ":delta": delta,
-        ":anomalies": anomalies,
-        ":status": finalStatus,
+        ":worked": totals.workedMinutes,
+        ":planned": totals.plannedMinutes,
+        ":delta": totals.deltaMinutes,
+        ":anomalies": totals.anomalies,
+        ":status": totals.status,
         ":src": "REALTIME",
         ":utc": new Date().toISOString(),
       },
