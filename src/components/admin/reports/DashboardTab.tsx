@@ -166,7 +166,7 @@ export function DashboardTab() {
 
           <div className="space-y-1.5">
             <Label className="text-xs">Área</Label>
-            <Select value={area} onValueChange={setArea}>
+            <Select value={area} onValueChange={(v) => setArea(v ?? "all")}>
               <SelectTrigger className="h-9 w-48">
                 <SelectValue />
               </SelectTrigger>

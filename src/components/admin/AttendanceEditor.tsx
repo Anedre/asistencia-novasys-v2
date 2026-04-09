@@ -644,7 +644,7 @@ export function AttendanceEditor({ employeeId, employeeName }: Props) {
                       </Label>
                       <Select
                         value={status || undefined}
-                        onValueChange={(v) => setStatus(v)}
+                        onValueChange={(v) => setStatus(v ?? "")}
                       >
                         <SelectTrigger id="status">
                           <SelectValue placeholder="Selecciona…" />

@@ -96,7 +96,7 @@ export function MonthlyTrendChart({ data }: { data: MonthlyTrendPoint[] }) {
                     borderRadius: 8,
                     fontSize: 12,
                   }}
-                  formatter={(value: number, name: string) => [
+                  formatter={(value, name) => [
                     `${value}h`,
                     name === "workedHours" ? "Trabajadas" : "Planeadas",
                   ]}
@@ -177,9 +177,9 @@ export function EmployeeRankingChart({
                     borderRadius: 8,
                     fontSize: 12,
                   }}
-                  formatter={(value: number, name: string) => [
+                  formatter={(value, name) => [
                     `${value}h`,
-                    name === "workedHours" ? "Trabajadas" : name,
+                    name === "workedHours" ? "Trabajadas" : String(name),
                   ]}
                   labelFormatter={(label, payload) =>
                     payload?.[0]?.payload?.employeeName ?? label
@@ -251,9 +251,9 @@ export function StatusDistributionChart({
                     borderRadius: 8,
                     fontSize: 12,
                   }}
-                  formatter={(value: number, name: string) => [
+                  formatter={(value, name) => [
                     `${value} días`,
-                    name,
+                    String(name),
                   ]}
                 />
                 <Legend

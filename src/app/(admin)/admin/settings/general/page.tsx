@@ -123,7 +123,12 @@ export default function GeneralSettingsPage() {
               <Globe className="mr-1 inline h-3 w-3" />
               Esta zona se usa para las marcaciones, reportes y feriados.
             </Label>
-            <Select value={timezone} onValueChange={setTimezone}>
+            <Select
+              value={timezone}
+              onValueChange={(v) => {
+                if (v) setTimezone(v);
+              }}
+            >
               <SelectTrigger className="h-10">
                 <SelectValue />
               </SelectTrigger>
