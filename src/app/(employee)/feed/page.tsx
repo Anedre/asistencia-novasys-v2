@@ -568,7 +568,7 @@ export default function FeedPage() {
                   <p className="text-sm truncate">{b.employeeName.split(" ")[0]}</p>
                 </div>
                 <span className="text-[11px] text-muted-foreground shrink-0">
-                  {new Date(b.eventDate).toLocaleDateString("es-PE", { day: "numeric", month: "short" })}
+                  {new Date(b.eventDate + "T12:00:00").toLocaleDateString("es-PE", { day: "numeric", month: "short" })}
                 </span>
               </div>
             ))}

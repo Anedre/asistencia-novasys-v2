@@ -120,12 +120,18 @@ function hhmmToMinutes(hhmm: string): number {
   return negative ? -total : total;
 }
 
-function formatShortDate(iso: string | null | undefined): string {
-  if (!iso) return "";
+function formatShortDate(dateStr: string | null | undefined): string {
+  if (!dateStr) return "";
   try {
-    return new Date(iso).toLocaleDateString("es-PE", { day: "2-digit", month: "short" });
+    // Date-only strings ("2026-04-21") parse as UTC midnight and shift to
+    // the previous day in Lima (UTC-5). Force noon local to avoid off-by-one.
+    const d =
+      dateStr.length === 10
+        ? new Date(dateStr + "T12:00:00")
+        : new Date(dateStr);
+    return d.toLocaleDateString("es-PE", { day: "2-digit", month: "short" });
   } catch {
-    return iso;
+    return dateStr;
   }
 }
 

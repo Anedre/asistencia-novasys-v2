@@ -35,9 +35,16 @@ function RequestCardSkeleton() {
   );
 }
 
-function formatDate(iso: string | undefined) {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleDateString("es-PE", {
+function formatDate(dateStr: string | undefined) {
+  if (!dateStr) return "—";
+  // Date-only strings ("2026-04-21") are parsed as UTC midnight by the Date
+  // constructor, which shifts to the previous day in Lima (UTC-5). Force noon
+  // local to avoid the off-by-one. Full ISO timestamps keep their own offset.
+  const d =
+    dateStr.length === 10
+      ? new Date(dateStr + "T12:00:00")
+      : new Date(dateStr);
+  return d.toLocaleDateString("es-PE", {
     day: "2-digit",
     month: "short",
     year: "numeric",
