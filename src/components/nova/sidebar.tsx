@@ -49,7 +49,7 @@ const adminPrimary: NavItem[] = [
 
 const adminSecondary: NavItem[] = [
   { key: "hr", href: "/admin/hr", label: "RRHH", icon: "heart", tone: "Rose", matchPrefix: "/admin/hr" },
-  { key: "settings", href: "/admin/settings", label: "Configuración", icon: "settings", tone: "Slate", matchPrefix: "/admin/settings" },
+  { key: "settings", href: "/admin/settings/general", label: "Configuración", icon: "settings", tone: "Slate", matchPrefix: "/admin/settings" },
 ];
 
 // Icon names + tones come from the new Handoff (employee.jsx NAV_PI / NAV_TONE).
@@ -277,10 +277,10 @@ export function NovaSidebar({ role }: SidebarProps) {
                 <div className="pop-head-sub">Workspace</div>
               </div>
             </div>
-            <Link className="pop-item" href="/admin/settings">
+            <Link className="pop-item" href="/admin/settings/general">
               <IconSvg d={Icons.settings} size={16} /> Configuración de empresa
             </Link>
-            <Link className="pop-item" href="/admin/settings">
+            <Link className="pop-item" href="/admin/settings/billing">
               <IconSvg d={Icons.card} size={16} /> Plan y facturación
             </Link>
             <div className="pop-sep" />

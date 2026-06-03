@@ -52,7 +52,7 @@ const ADMIN_ROUTES: RouteResult[] = [
   { type: "route", label: "Reportes admin",      hint: "Dashboard y exportación PDF",    href: "/admin/reports",     icon: Icons.pulse },
   { type: "route", label: "Auditoría",           hint: "Historial reversible de cambios",href: "/admin/audit",       icon: Icons.history },
   { type: "route", label: "RRHH (admin)",        hint: "Eventos, cumpleaños, aniversarios", href: "/admin/hr",       icon: Icons.heart },
-  { type: "route", label: "Configuración",       hint: "Empresa, sedes, integraciones",  href: "/admin/settings",    icon: Icons.settings },
+  { type: "route", label: "Configuración",       hint: "Empresa, sedes, integraciones",  href: "/admin/settings/general", icon: Icons.settings },
   { type: "route", label: "Invitar empleado",    hint: "Enviar invitación por correo",   href: "/admin/employees",   icon: Icons.plus },
 ];
 

@@ -161,7 +161,7 @@ export function NovaTopbar({ activeView, showViewToggle = true }: TopbarProps) {
               <Link className="pop-item" href="/dashboard">
                 <IconSvg d={Icons.user} size={16} /> Ver como empleado
               </Link>
-              <Link className="pop-item" href="/admin/settings">
+              <Link className="pop-item" href="/admin/settings/general">
                 <IconSvg d={Icons.settings} size={16} /> Configuración
               </Link>
             </>
