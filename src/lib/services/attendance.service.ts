@@ -13,6 +13,7 @@ import {
   getDailySummaryRange,
 } from "@/lib/db/daily-summary";
 import { putAttendanceEvent, getEventsByEmployeeAndDate } from "@/lib/db/attendance";
+import { getEmployeeById } from "@/lib/db/employees";
 import { isoUtc, isoLima, clockLima, workDateLima, buildLocalIso } from "@/lib/utils/time";
 import { ALLOWED_EVENT_TYPES } from "@/lib/constants/event-types";
 import { ConflictError, ValidationError } from "@/lib/utils/errors";
@@ -117,8 +118,16 @@ export async function recordEvent(params: RecordEventParams) {
 
   await putAttendanceEvent(event);
 
-  // 3) Recalculate day totals
-  await recalcDay(employeeId, workDate, tenantId);
+  // 3) Recalculate day totals — read employee schedule for late-arrival
+  //    detection. Falls back to tenant default schedule if unavailable.
+  let employeeStartTime: string | undefined;
+  try {
+    const employee = await getEmployeeById(employeeId);
+    employeeStartTime = employee?.Schedule?.startTime;
+  } catch {
+    // best-effort: a missing schedule just means we use tenant default
+  }
+  await recalcDay(employeeId, workDate, tenantId, employeeStartTime);
 
   return {
     employeeId,
@@ -166,12 +175,14 @@ export async function getTodayStatus(employeeId: string, tenantId?: string): Pro
       firstInLocal: null,
       lastOutLocal: null,
       breakStartLocal: null,
+      breakEndLocal: null,
       breakMinutes: 0,
       workedMinutes: 0,
       workedHHMM: "00:00",
       plannedMinutes: planned,
       deltaMinutes: isHol ? 0 : -planned,
       deltaHHMM: isHol ? "00:00" : fmtDelta(-planned),
+      lateMinutes: 0,
       hasOpenBreak: false,
       hasOpenShift: false,
       anomalies: [],
@@ -184,6 +195,7 @@ export async function getTodayStatus(employeeId: string, tenantId?: string): Pro
   const workedMinutes = Number(item.workedMinutes ?? 0);
   const plannedMinutes = isHol ? 0 : Number(item.plannedMinutes ?? defaultPlanned);
   const deltaMinutes = isHol ? workedMinutes : Number(item.deltaMinutes ?? workedMinutes - plannedMinutes);
+  const lateMinutes = Number(item.lateMinutes ?? 0);
 
   return {
     employeeId,
@@ -192,12 +204,14 @@ export async function getTodayStatus(employeeId: string, tenantId?: string): Pro
     firstInLocal: extractTime(item.firstInLocal),
     lastOutLocal: extractTime(item.lastOutLocal),
     breakStartLocal: extractTime(item.breakStartLocal),
+    breakEndLocal: extractTime(item.lastBreakEndLocal),
     breakMinutes,
     workedMinutes,
     workedHHMM: fmtMin(workedMinutes),
     plannedMinutes,
     deltaMinutes,
     deltaHHMM: fmtDelta(deltaMinutes),
+    lateMinutes,
     hasOpenBreak: !!item.breakStartUtc,
     hasOpenShift: !!item.firstInUtc && !item.lastOutUtc,
     anomalies: item.anomalies ?? [],
@@ -355,6 +369,7 @@ export async function getAttendanceHistory(
     breakMinutes: number;
     workedMinutes: number;
     workedHHMM: string;
+    lateMinutes: number;
     status: string;
     reasonCode: string;
     reasonLabel: string;
@@ -382,6 +397,7 @@ export async function getAttendanceHistory(
           breakMinutes: Number(item.breakMinutes ?? 0),
           workedMinutes: Number(item.workedMinutes ?? 0),
           workedHHMM: fmtMin(Number(item.workedMinutes ?? 0)),
+          lateMinutes: Number(item.lateMinutes ?? 0),
           status: isHol ? "HOLIDAY" : item.status,
           reasonCode: item.regularizationReasonCode ?? "",
           reasonLabel: isHol ? holName ?? "Feriado" : (item.regularizationReasonLabel ?? ""),
@@ -398,6 +414,7 @@ export async function getAttendanceHistory(
           breakMinutes: 0,
           workedMinutes: 0,
           workedHHMM: "00:00",
+          lateMinutes: 0,
           status: "HOLIDAY",
           reasonCode: "",
           reasonLabel: holName ?? "Feriado",
@@ -414,6 +431,7 @@ export async function getAttendanceHistory(
           breakMinutes: 0,
           workedMinutes: 0,
           workedHHMM: "00:00",
+          lateMinutes: 0,
           status: "MISSING",
           reasonCode: "",
           reasonLabel: "",

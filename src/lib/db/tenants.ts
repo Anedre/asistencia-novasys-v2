@@ -57,6 +57,38 @@ export async function createTenant(tenant: Tenant): Promise<void> {
   );
 }
 
+/** Delete a tenant — used only as part of register-company rollback when
+ *  a downstream step (Cognito sign-up or employee create) fails. */
+export async function deleteTenant(tenantId: string): Promise<void> {
+  const { DeleteCommand } = await import("@aws-sdk/lib-dynamodb");
+  await docClient.send(
+    new DeleteCommand({
+      TableName: TABLES.TENANTS,
+      Key: { TenantID: tenantId },
+    }),
+  );
+}
+
+/**
+ * Returns the URL unchanged if it lives on the configured S3 bucket, throws
+ * otherwise. Used to gate tenant branding image fields — admins shouldn't
+ * be able to set their logo / background to an arbitrary external host
+ * (phishing, tracking pixels on the login page).
+ */
+function assertTrustedImageUrl(url: string, field: string): string {
+  const trustedHost =
+    (process.env.REPORT_BUCKET || "novasys-v2-reports") + ".s3.amazonaws.com";
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:" || parsed.hostname !== trustedHost) {
+      throw new Error(`${field}: URL no permitida (debe ser ${trustedHost})`);
+    }
+  } catch {
+    throw new Error(`${field}: URL inválida`);
+  }
+  return url;
+}
+
 /** Update tenant branding (logo, colors, background) */
 export async function updateTenantBranding(
   tenantId: string,
@@ -66,13 +98,25 @@ export async function updateTenantBranding(
   const names: Record<string, string> = {};
   const values: Record<string, unknown> = { ":now": new Date().toISOString() };
 
-  if (branding.logoUrl !== undefined) {
+  if (branding.logoUrl !== undefined && branding.logoUrl !== null) {
     updates.push("branding.logoUrl = :logo");
-    values[":logo"] = branding.logoUrl;
+    values[":logo"] = assertTrustedImageUrl(branding.logoUrl, "logoUrl");
+  } else if (branding.logoUrl === null) {
+    updates.push("branding.logoUrl = :logo");
+    values[":logo"] = null;
   }
-  if (branding.backgroundImageUrl !== undefined) {
+  if (
+    branding.backgroundImageUrl !== undefined &&
+    branding.backgroundImageUrl !== null
+  ) {
     updates.push("branding.backgroundImageUrl = :bg");
-    values[":bg"] = branding.backgroundImageUrl;
+    values[":bg"] = assertTrustedImageUrl(
+      branding.backgroundImageUrl,
+      "backgroundImageUrl",
+    );
+  } else if (branding.backgroundImageUrl === null) {
+    updates.push("branding.backgroundImageUrl = :bg");
+    values[":bg"] = null;
   }
   if (branding.primaryColor !== undefined) {
     updates.push("branding.primaryColor = :pc");

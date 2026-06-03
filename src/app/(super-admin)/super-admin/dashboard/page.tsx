@@ -1,11 +1,10 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Building2, Users, Shield } from "lucide-react";
 import Link from "next/link";
+import { IconSvg, Icons } from "@/components/nova/icons";
+import { EmptyState } from "@/components/shared/empty-state";
 
 interface TenantWithCount {
   TenantID: string;
@@ -33,93 +32,145 @@ export default function SuperAdminDashboard() {
   const activeCount = tenants.filter((t) => t.status === "ACTIVE").length;
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-          <Shield className="h-6 w-6" />
-          Super Admin Dashboard
-        </h1>
-        <p className="text-muted-foreground">Gestion global de tenants y empresas</p>
+    <div className="nva-app" data-theme="light" data-density="comfortable">
+      <div className="page-header">
+        <div className="page-header-row">
+          <div>
+            <h1 className="page-title">Super Admin Dashboard</h1>
+            <p className="page-sub">Gestion global de tenants y empresas.</p>
+          </div>
+        </div>
       </div>
 
       {/* Stats */}
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Tenants</CardTitle>
-            <Building2 className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            {isLoading ? <Skeleton className="h-8 w-16" /> : (
-              <div className="text-2xl font-bold">{tenants.length}</div>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+          gap: 16,
+          marginBottom: 24,
+        }}
+      >
+        <div className="stat-card">
+          <div className="stat-head">
+            <div className="stat-icon">
+              <IconSvg d={Icons.building} size={16} />
+            </div>
+            <div className="stat-label">Total Tenants</div>
+          </div>
+          <div className="stat-row">
+            {isLoading ? (
+              <Skeleton className="h-8 w-16" />
+            ) : (
+              <div className="stat-value">{tenants.length}</div>
             )}
-            <p className="text-xs text-muted-foreground">{activeCount} activos</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Empleados</CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            {isLoading ? <Skeleton className="h-8 w-16" /> : (
-              <div className="text-2xl font-bold">{totalEmployees}</div>
+          </div>
+          <div className="stat-hint">{activeCount} activos</div>
+        </div>
+
+        <div className="stat-card">
+          <div className="stat-head">
+            <div className="stat-icon">
+              <IconSvg d={Icons.users} size={16} />
+            </div>
+            <div className="stat-label">Total Empleados</div>
+          </div>
+          <div className="stat-row">
+            {isLoading ? (
+              <Skeleton className="h-8 w-16" />
+            ) : (
+              <div className="stat-value">{totalEmployees}</div>
             )}
-            <p className="text-xs text-muted-foreground">En todas las empresas</p>
-          </CardContent>
-        </Card>
+          </div>
+          <div className="stat-hint">En todas las empresas</div>
+        </div>
       </div>
 
       {/* Tenant List */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Building2 className="h-5 w-5" />
-            Empresas Registradas
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {isLoading ? (
-            <div className="space-y-3">
-              {[1, 2, 3].map((i) => <Skeleton key={i} className="h-16 w-full" />)}
-            </div>
-          ) : tenants.length === 0 ? (
-            <p className="text-center text-muted-foreground py-8">No hay tenants registrados</p>
-          ) : (
-            <div className="space-y-3">
-              {tenants.map((tenant) => (
-                <Link
-                  key={tenant.TenantID}
-                  href={`/super-admin/tenants/${encodeURIComponent(tenant.TenantID)}`}
-                  className="flex items-center justify-between rounded-lg border p-4 hover:bg-muted/50 transition-colors"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary font-bold">
-                      {tenant.name.charAt(0).toUpperCase()}
-                    </div>
-                    <div>
-                      <p className="font-medium">{tenant.name}</p>
-                      <p className="text-sm text-muted-foreground">{tenant.slug}</p>
-                    </div>
+      <div className="panel">
+        <div
+          className="panel-title"
+          style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}
+        >
+          <IconSvg d={Icons.building} size={18} />
+          Empresas Registradas
+        </div>
+        {isLoading ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {[1, 2, 3].map((i) => (
+              <Skeleton key={i} className="h-16 w-full" />
+            ))}
+          </div>
+        ) : tenants.length === 0 ? (
+          <EmptyState
+            icon={Icons.building}
+            title="Aún no hay empresas registradas"
+            description="Las empresas que se registren apareceran aqui automaticamente"
+          />
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {tenants.map((tenant) => (
+              <Link
+                key={tenant.TenantID}
+                href={`/super-admin/tenants/${encodeURIComponent(tenant.TenantID)}`}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  padding: 16,
+                  border: "1px solid var(--border)",
+                  borderRadius: "var(--r-lg)",
+                  background: "var(--bg-elevated)",
+                  transition: "background 0.12s",
+                  textDecoration: "none",
+                  color: "inherit",
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = "var(--bg-subtle)")}
+                onMouseLeave={(e) => (e.currentTarget.style.background = "var(--bg-elevated)")}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <div className="avatar accent" style={{ width: 40, height: 40, fontSize: 16 }}>
+                    <span className="avatar-text">{tenant.name.charAt(0).toUpperCase()}</span>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <div className="text-right text-sm">
-                      <p>{tenant.employeeCount} empleados</p>
-                      <p className="text-muted-foreground">max {tenant.maxEmployees}</p>
-                    </div>
-                    <Badge variant={tenant.plan === "ENTERPRISE" ? "default" : "outline"}>
-                      {tenant.plan}
-                    </Badge>
-                    <Badge variant={tenant.status === "ACTIVE" ? "default" : "destructive"}>
-                      {tenant.status === "ACTIVE" ? "Activo" : "Suspendido"}
-                    </Badge>
+                  <div>
+                    <p style={{ margin: 0, fontWeight: 600, color: "var(--text-primary)" }}>
+                      {tenant.name}
+                    </p>
+                    <p
+                      style={{
+                        margin: 0,
+                        fontSize: 13,
+                        color: "var(--text-muted)",
+                        fontFamily: "var(--font-mono)",
+                      }}
+                    >
+                      {tenant.slug}
+                    </p>
                   </div>
-                </Link>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <div style={{ textAlign: "right", fontSize: 13 }}>
+                    <p style={{ margin: 0, color: "var(--text-primary)" }}>
+                      {tenant.employeeCount} empleados
+                    </p>
+                    <p style={{ margin: 0, color: "var(--text-muted)" }}>max {tenant.maxEmployees}</p>
+                  </div>
+                  <span
+                    className={`type-tag ${tenant.plan === "ENTERPRISE" ? "accent" : "muted"}`}
+                  >
+                    {tenant.plan}
+                  </span>
+                  <span
+                    className={`type-tag ${tenant.status === "ACTIVE" ? "success" : "danger"}`}
+                  >
+                    {tenant.status === "ACTIVE" ? "Activo" : "Suspendido"}
+                  </span>
+                </div>
+              </Link>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

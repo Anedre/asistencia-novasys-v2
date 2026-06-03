@@ -1,0 +1,11 @@
+{
+  "name": "novasys-shift-closer",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Nightly Lambda that auto-closes attendance shifts left open at end of day.",
+  "main": "index.js",
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.700.0",
+    "@aws-sdk/lib-dynamodb": "^3.700.0"
+  }
+}

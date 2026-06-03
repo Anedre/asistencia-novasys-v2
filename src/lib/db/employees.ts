@@ -1,6 +1,6 @@
 import { docClient } from "./client";
 import { TABLES, INDEXES } from "./tables";
-import { GetCommand, PutCommand, QueryCommand, ScanCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
+import { BatchGetCommand, GetCommand, PutCommand, QueryCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 import type { Employee } from "@/lib/types";
 
 export async function getEmployeeById(employeeId: string): Promise<Employee | null> {
@@ -40,36 +40,26 @@ export async function getEmployeeByCognitoSub(sub: string): Promise<Employee | n
 }
 
 export async function getAllActiveEmployees(tenantId?: string): Promise<Employee[]> {
-  // If tenantId provided, use Tenant-index GSI (efficient query)
-  if (tenantId) {
-    const items: Employee[] = [];
-    let lastKey: Record<string, unknown> | undefined;
-    do {
-      const result = await docClient.send(
-        new QueryCommand({
-          TableName: TABLES.EMPLOYEES,
-          IndexName: INDEXES.EMPLOYEES_BY_TENANT,
-          KeyConditionExpression: "TenantID = :tid",
-          FilterExpression: "EmploymentStatus = :active",
-          ExpressionAttributeValues: { ":tid": tenantId, ":active": "ACTIVE" },
-          ...(lastKey && { ExclusiveStartKey: lastKey }),
-        })
-      );
-      items.push(...((result.Items as Employee[]) ?? []));
-      lastKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
-    } while (lastKey);
-    return items;
+  // Refuse the call without a tenant — falling through to a full table Scan
+  // would return ALL employees across ALL tenants, which is the kind of
+  // cross-tenant leak we want to make impossible. Callers must always pass
+  // `user.tenantId` (the migration is long past).
+  if (!tenantId) {
+    throw new Error(
+      "getAllActiveEmployees requires a tenantId — refusing to Scan the table",
+    );
   }
 
-  // Fallback: scan (backwards compat during migration)
   const items: Employee[] = [];
   let lastKey: Record<string, unknown> | undefined;
   do {
     const result = await docClient.send(
-      new ScanCommand({
+      new QueryCommand({
         TableName: TABLES.EMPLOYEES,
+        IndexName: INDEXES.EMPLOYEES_BY_TENANT,
+        KeyConditionExpression: "TenantID = :tid",
         FilterExpression: "EmploymentStatus = :active",
-        ExpressionAttributeValues: { ":active": "ACTIVE" },
+        ExpressionAttributeValues: { ":tid": tenantId, ":active": "ACTIVE" },
         ...(lastKey && { ExclusiveStartKey: lastKey }),
       })
     );
@@ -233,41 +223,54 @@ export async function deactivateEmployee(employeeId: string): Promise<void> {
   );
 }
 
-export async function getAllEmployees(tenantId?: string): Promise<Employee[]> {
-  // If tenantId provided, use Tenant-index GSI
-  if (tenantId) {
-    const items: Employee[] = [];
-    let lastKey: Record<string, unknown> | undefined;
-    do {
-      const result = await docClient.send(
-        new QueryCommand({
-          TableName: TABLES.EMPLOYEES,
-          IndexName: INDEXES.EMPLOYEES_BY_TENANT,
-          KeyConditionExpression: "TenantID = :tid",
-          ExpressionAttributeValues: { ":tid": tenantId },
-          ...(lastKey && { ExclusiveStartKey: lastKey }),
-        })
-      );
-      items.push(...((result.Items as Employee[]) ?? []));
-      lastKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
-    } while (lastKey);
-    return items;
+/** Hard-delete an employee row. Used only as part of register-company
+ *  rollback. For normal admin de-activations use `deactivateEmployee` so the
+ *  history (attendance, requests) stays intact. */
+export async function deleteEmployee(employeeId: string): Promise<void> {
+  const { DeleteCommand } = await import("@aws-sdk/lib-dynamodb");
+  await docClient.send(
+    new DeleteCommand({
+      TableName: TABLES.EMPLOYEES,
+      Key: { EmployeeID: employeeId },
+    }),
+  );
+}
+
+export async function getAllEmployees(
+  tenantId?: string,
+  opts?: { limit?: number; cursor?: Record<string, unknown> },
+): Promise<{ items: Employee[]; nextCursor?: Record<string, unknown> }> {
+  if (!tenantId) {
+    throw new Error(
+      "getAllEmployees requires a tenantId — refusing to Scan the table",
+    );
   }
 
-  // Fallback: scan (backwards compat during migration)
+  // When the caller provides a limit we return a single page (the value is
+  // applied per request, so the total returned may be smaller). When no
+  // limit is provided we keep the historical behaviour and walk every page,
+  // but cap the absolute total at MAX_EMPLOYEES to avoid pulling unbounded
+  // multi-MB JSON for huge tenants.
+  const MAX_EMPLOYEES_DEFAULT = 1000;
   const items: Employee[] = [];
-  let lastKey: Record<string, unknown> | undefined;
+  let lastKey: Record<string, unknown> | undefined = opts?.cursor;
   do {
     const result = await docClient.send(
-      new ScanCommand({
+      new QueryCommand({
         TableName: TABLES.EMPLOYEES,
+        IndexName: INDEXES.EMPLOYEES_BY_TENANT,
+        KeyConditionExpression: "TenantID = :tid",
+        ExpressionAttributeValues: { ":tid": tenantId },
+        ...(opts?.limit && { Limit: opts.limit }),
         ...(lastKey && { ExclusiveStartKey: lastKey }),
       })
     );
     items.push(...((result.Items as Employee[]) ?? []));
     lastKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
+    if (opts?.limit) break;
+    if (items.length >= MAX_EMPLOYEES_DEFAULT) break;
   } while (lastKey);
-  return items;
+  return { items, nextCursor: lastKey };
 }
 
 // ── Presence ──────────────────────────────────────────────────────
@@ -317,17 +320,42 @@ export async function getPresenceForEmployees(
   employeeIds: string[]
 ): Promise<Record<string, { status: string; lastActivity: string; typingIn?: string }>> {
   const result: Record<string, { status: string; lastActivity: string; typingIn?: string }> = {};
+  if (employeeIds.length === 0) return result;
   const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
   const twoMinAgo = new Date(Date.now() - 2 * 60 * 1000).toISOString();
 
-  for (const id of employeeIds) {
-    const emp = await getEmployeeById(id);
-    if (!emp) continue;
-    const lastAct = emp.LastActivityAt ?? "";
-    let status: string = "offline";
-    if (lastAct > twoMinAgo) status = "online";
-    else if (lastAct > fiveMinAgo) status = "idle";
-    result[id] = { status, lastActivity: lastAct, typingIn: emp.TypingInChannel };
+  // Batch up to 100 keys per BatchGetItem call (DynamoDB limit). The presence
+  // endpoint is polled every 10s for every chat user, so the previous
+  // sequential N+1 loop was making N round-trips per poll.
+  const unique = Array.from(new Set(employeeIds));
+  for (let i = 0; i < unique.length; i += 100) {
+    const chunk = unique.slice(i, i + 100);
+    const res = await docClient.send(
+      new BatchGetCommand({
+        RequestItems: {
+          [TABLES.EMPLOYEES]: {
+            Keys: chunk.map((EmployeeID) => ({ EmployeeID })),
+            ProjectionExpression: "EmployeeID, LastActivityAt, TypingInChannel",
+          },
+        },
+      }),
+    );
+    const items = (res.Responses?.[TABLES.EMPLOYEES] ?? []) as Array<{
+      EmployeeID: string;
+      LastActivityAt?: string;
+      TypingInChannel?: string;
+    }>;
+    for (const emp of items) {
+      const lastAct = emp.LastActivityAt ?? "";
+      let status: string = "offline";
+      if (lastAct > twoMinAgo) status = "online";
+      else if (lastAct > fiveMinAgo) status = "idle";
+      result[emp.EmployeeID] = {
+        status,
+        lastActivity: lastAct,
+        typingIn: emp.TypingInChannel,
+      };
+    }
   }
   return result;
 }

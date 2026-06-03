@@ -2,20 +2,11 @@
 
 import { use } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Building2, ArrowLeft, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
+import { IconSvg, Icons } from "@/components/nova/icons";
+import { EmptyState } from "@/components/shared/empty-state";
 
 interface TenantDetail {
   TenantID: string;
@@ -80,131 +71,223 @@ export default function TenantDetailPage({ params }: { params: Promise<{ id: str
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-4">
-        <Link href="/super-admin/dashboard">
-          <Button variant="ghost" size="icon">
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-        </Link>
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-            <Building2 className="h-6 w-6" />
-            {isLoading ? <Skeleton className="h-8 w-48" /> : tenant?.name}
-          </h1>
-          <p className="text-muted-foreground">{tenantId}</p>
+    <div className="nva-app" data-theme="light" data-density="comfortable">
+      <div className="page-header">
+        <div className="page-header-row">
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <Link href="/super-admin/dashboard" className="btn ghost btn-sm" aria-label="Volver">
+              <IconSvg d={Icons.arrowLeft} size={16} />
+            </Link>
+            <div>
+              <h1
+                className="page-title"
+                style={{ display: "flex", alignItems: "center", gap: 8 }}
+              >
+                <IconSvg d={Icons.building} size={22} />
+                {isLoading ? <Skeleton className="h-8 w-48" /> : tenant?.name}
+              </h1>
+              <p className="page-sub" style={{ fontFamily: "var(--font-mono)" }}>
+                {tenantId}
+              </p>
+            </div>
+          </div>
         </div>
       </div>
 
       {isLoading ? (
-        <div className="space-y-4">
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
           <Skeleton className="h-48 w-full" />
         </div>
       ) : tenant ? (
-        <div className="grid gap-6 md:grid-cols-2">
-          <Card>
-            <CardHeader>
-              <CardTitle>Informacion General</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div>
-                  <p className="text-muted-foreground">Slug</p>
-                  <p className="font-medium font-mono">{tenant.slug}</p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground">Empleados</p>
-                  <p className="font-medium">{employeeCount} / {tenant.maxEmployees}</p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground">Creado</p>
-                  <p className="font-medium">{new Date(tenant.createdAt).toLocaleDateString("es-PE")}</p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground">Actualizado</p>
-                  <p className="font-medium">{new Date(tenant.updatedAt).toLocaleDateString("es-PE")}</p>
-                </div>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+            gap: 24,
+          }}
+        >
+          <div className="panel">
+            <div className="panel-title" style={{ marginBottom: 16 }}>
+              Informacion General
+            </div>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: 16,
+                fontSize: 13,
+              }}
+            >
+              <div>
+                <p style={{ margin: 0, color: "var(--text-muted)" }}>Slug</p>
+                <p
+                  style={{
+                    margin: "4px 0 0",
+                    fontWeight: 600,
+                    fontFamily: "var(--font-mono)",
+                    color: "var(--text-primary)",
+                  }}
+                >
+                  {tenant.slug}
+                </p>
               </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Gestion</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Plan</label>
-                <Select value={plan} onValueChange={(v) => v && setPlan(v)}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="FREE">Free</SelectItem>
-                    <SelectItem value="PRO">Pro</SelectItem>
-                    <SelectItem value="ENTERPRISE">Enterprise</SelectItem>
-                  </SelectContent>
-                </Select>
+              <div>
+                <p style={{ margin: 0, color: "var(--text-muted)" }}>Empleados</p>
+                <p style={{ margin: "4px 0 0", fontWeight: 600, color: "var(--text-primary)" }}>
+                  {employeeCount} / {tenant.maxEmployees}
+                </p>
               </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Estado</label>
-                <Select value={status} onValueChange={(v) => v && setStatus(v)}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="ACTIVE">Activo</SelectItem>
-                    <SelectItem value="SUSPENDED">Suspendido</SelectItem>
-                  </SelectContent>
-                </Select>
+              <div>
+                <p style={{ margin: 0, color: "var(--text-muted)" }}>Creado</p>
+                <p style={{ margin: "4px 0 0", fontWeight: 600, color: "var(--text-primary)" }}>
+                  {new Date(tenant.createdAt).toLocaleDateString("es-PE")}
+                </p>
               </div>
+              <div>
+                <p style={{ margin: 0, color: "var(--text-muted)" }}>Actualizado</p>
+                <p style={{ margin: "4px 0 0", fontWeight: 600, color: "var(--text-primary)" }}>
+                  {new Date(tenant.updatedAt).toLocaleDateString("es-PE")}
+                </p>
+              </div>
+            </div>
+          </div>
 
-              <Button
-                onClick={handleSave}
-                disabled={updateMutation.isPending}
-                className="w-full"
+          <div className="panel">
+            <div className="panel-title" style={{ marginBottom: 16 }}>
+              Gestion
+            </div>
+            <div className="form-group">
+              <label className="form-label" htmlFor="tenant-plan">
+                Plan
+              </label>
+              <select
+                id="tenant-plan"
+                className="form-select"
+                value={plan}
+                onChange={(e) => e.target.value && setPlan(e.target.value)}
               >
-                {updateMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Guardar Cambios
-              </Button>
+                <option value="FREE">Free</option>
+                <option value="PRO">Pro</option>
+                <option value="ENTERPRISE">Enterprise</option>
+              </select>
+            </div>
 
-              {updateMutation.isSuccess && (
-                <p className="text-sm text-green-600 text-center">Cambios guardados</p>
+            <div className="form-group">
+              <label className="form-label" htmlFor="tenant-status">
+                Estado
+              </label>
+              <select
+                id="tenant-status"
+                className="form-select"
+                value={status}
+                onChange={(e) => e.target.value && setStatus(e.target.value)}
+              >
+                <option value="ACTIVE">Activo</option>
+                <option value="SUSPENDED">Suspendido</option>
+              </select>
+            </div>
+
+            <button
+              type="button"
+              className="btn primary"
+              onClick={handleSave}
+              disabled={updateMutation.isPending}
+              style={{ width: "100%", justifyContent: "center" }}
+            >
+              {updateMutation.isPending && (
+                <span
+                  style={{
+                    display: "inline-block",
+                    width: 14,
+                    height: 14,
+                    border: "2px solid currentColor",
+                    borderTopColor: "transparent",
+                    borderRadius: "50%",
+                    animation: "spin 0.6s linear infinite",
+                    marginRight: 6,
+                  }}
+                  aria-hidden
+                />
               )}
-            </CardContent>
-          </Card>
+              Guardar Cambios
+            </button>
 
-          <Card className="md:col-span-2">
-            <CardHeader>
-              <CardTitle>Branding</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center gap-4">
-                {tenant.branding?.primaryColor && (
-                  <div className="flex items-center gap-2">
-                    <div className="h-6 w-6 rounded border" style={{ backgroundColor: tenant.branding.primaryColor }} />
-                    <span className="text-sm font-mono">{tenant.branding.primaryColor}</span>
-                  </div>
-                )}
-                {tenant.branding?.secondaryColor && (
-                  <div className="flex items-center gap-2">
-                    <div className="h-6 w-6 rounded border" style={{ backgroundColor: tenant.branding.secondaryColor }} />
-                    <span className="text-sm font-mono">{tenant.branding.secondaryColor}</span>
-                  </div>
-                )}
-                {tenant.branding?.accentColor && (
-                  <div className="flex items-center gap-2">
-                    <div className="h-6 w-6 rounded border" style={{ backgroundColor: tenant.branding.accentColor }} />
-                    <span className="text-sm font-mono">{tenant.branding.accentColor}</span>
-                  </div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
+            {updateMutation.isSuccess && (
+              <p
+                style={{
+                  marginTop: 12,
+                  fontSize: 13,
+                  color: "var(--success)",
+                  textAlign: "center",
+                }}
+              >
+                Cambios guardados
+              </p>
+            )}
+          </div>
+
+          <div className="panel" style={{ gridColumn: "1 / -1" }}>
+            <div className="panel-title" style={{ marginBottom: 16 }}>
+              Branding
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+              {tenant.branding?.primaryColor && (
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <div
+                    style={{
+                      width: 24,
+                      height: 24,
+                      borderRadius: 6,
+                      border: "1px solid var(--border)",
+                      backgroundColor: tenant.branding.primaryColor,
+                    }}
+                  />
+                  <span style={{ fontSize: 13, fontFamily: "var(--font-mono)" }}>
+                    {tenant.branding.primaryColor}
+                  </span>
+                </div>
+              )}
+              {tenant.branding?.secondaryColor && (
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <div
+                    style={{
+                      width: 24,
+                      height: 24,
+                      borderRadius: 6,
+                      border: "1px solid var(--border)",
+                      backgroundColor: tenant.branding.secondaryColor,
+                    }}
+                  />
+                  <span style={{ fontSize: 13, fontFamily: "var(--font-mono)" }}>
+                    {tenant.branding.secondaryColor}
+                  </span>
+                </div>
+              )}
+              {tenant.branding?.accentColor && (
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <div
+                    style={{
+                      width: 24,
+                      height: 24,
+                      borderRadius: 6,
+                      border: "1px solid var(--border)",
+                      backgroundColor: tenant.branding.accentColor,
+                    }}
+                  />
+                  <span style={{ fontSize: 13, fontFamily: "var(--font-mono)" }}>
+                    {tenant.branding.accentColor}
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       ) : (
-        <p className="text-center text-muted-foreground py-8">Tenant no encontrado</p>
+        <EmptyState
+          icon={Icons.building}
+          title="Tenant no encontrado"
+          description="El identificador no corresponde a ninguna empresa registrada"
+        />
       )}
     </div>
   );

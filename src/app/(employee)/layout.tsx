@@ -1,23 +1,18 @@
 "use client";
 
-import { useState } from "react";
 import { useSession } from "next-auth/react";
-import { Sidebar } from "@/components/layout/sidebar";
-import { Header } from "@/components/layout/header";
-import { MobileNav } from "@/components/layout/mobile-nav";
-import { Loader2 } from "lucide-react";
 import { Toaster } from "sonner";
+import { Loader2 } from "lucide-react";
+import { NovaSidebar } from "@/components/nova/sidebar";
+import { NovaTopbar } from "@/components/nova/topbar";
+import { PageTransition } from "@/components/nova/page-transition";
+import { ThemeBridge } from "@/components/nova/theme-bridge";
 import { ChatWidget } from "@/components/chat/chat-widget";
 import { MessagingWidget } from "@/components/messaging/messaging-widget";
 import { useHeartbeat } from "@/hooks/use-presence";
 
-export default function EmployeeLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  const { data: session, status } = useSession();
-  const [mobileOpen, setMobileOpen] = useState(false);
+export default function EmployeeLayout({ children }: { children: React.ReactNode }) {
+  const { status, data: session } = useSession();
   useHeartbeat();
 
   if (status === "loading") {
@@ -28,30 +23,20 @@ export default function EmployeeLayout({
     );
   }
 
-  const userRole = (session?.user?.role as "ADMIN" | "EMPLOYEE") || "EMPLOYEE";
-  const isAdmin = userRole === "ADMIN";
+  const isAdmin =
+    session?.user?.role === "ADMIN" || session?.user?.role === "SUPER_ADMIN";
 
   return (
-    <div className="flex h-screen overflow-hidden">
-      {/* Desktop sidebar */}
-      <Sidebar role="EMPLOYEE" isAdmin={isAdmin} className="hidden md:flex" />
-
-      {/* Mobile nav */}
-      <MobileNav
-        role="EMPLOYEE"
-        isAdmin={isAdmin}
-        open={mobileOpen}
-        onOpenChange={setMobileOpen}
-      />
-
-      {/* Main content */}
-      <div className="flex flex-1 flex-col overflow-hidden">
-        <Header onMenuClick={() => setMobileOpen(true)} />
-        <main className="flex-1 overflow-y-auto p-4 md:p-6">
-          {children}
+    <div className="nva-app" data-theme="light" data-density="comfortable" suppressHydrationWarning>
+      <ThemeBridge />
+      <div className="shell">
+        <NovaSidebar role="EMPLOYEE" />
+        <main className="main">
+          <NovaTopbar activeView="employee" showViewToggle={isAdmin} />
+          <PageTransition>{children}</PageTransition>
         </main>
       </div>
-      <Toaster position="top-right" richColors />
+      <Toaster position="top-right" richColors closeButton />
       <MessagingWidget />
       <ChatWidget />
     </div>

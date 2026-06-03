@@ -10,6 +10,7 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -181,6 +182,7 @@ interface Props {
 }
 
 export function AttendanceEditor({ employeeId, employeeName }: Props) {
+  const queryClient = useQueryClient();
   const [month, setMonth] = useState(todayMonth());
   const [view, setView] = useState<ViewMode>("calendar");
 
@@ -319,6 +321,12 @@ export function AttendanceEditor({ employeeId, employeeName }: Props) {
         text: "Guardado. Puedes revertir el cambio desde Historial.",
       });
       await loadRange();
+      // Invalidate other consumers so the dashboard, employees list, week
+      // summary and audit log all reflect the change immediately.
+      queryClient.invalidateQueries({ queryKey: ["admin", "employee", employeeId] });
+      queryClient.invalidateQueries({ queryKey: ["admin", "attendance"] });
+      queryClient.invalidateQueries({ queryKey: ["admin", "dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["attendance"] });
     } catch (err) {
       setDetailMessage({
         type: "error",
@@ -343,6 +351,10 @@ export function AttendanceEditor({ employeeId, employeeName }: Props) {
       setConfirmDelete(false);
       closeDetail();
       await loadRange();
+      queryClient.invalidateQueries({ queryKey: ["admin", "employee", employeeId] });
+      queryClient.invalidateQueries({ queryKey: ["admin", "attendance"] });
+      queryClient.invalidateQueries({ queryKey: ["admin", "dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["attendance"] });
     } catch (err) {
       setDetailMessage({
         type: "error",

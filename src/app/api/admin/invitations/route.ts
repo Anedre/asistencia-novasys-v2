@@ -32,6 +32,15 @@ export const POST = withErrorHandler(async (request: Request) => {
     );
   }
 
+  // Basic RFC-5322-ish email check — keeps obvious garbage from being persisted.
+  const trimmedEmail = String(email).toLowerCase().trim();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+    return NextResponse.json(
+      { error: "Formato de correo inválido" },
+      { status: 400 }
+    );
+  }
+
   const now = new Date();
   const expiresAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000); // 7 days
   const token = crypto.randomUUID();
@@ -39,7 +48,7 @@ export const POST = withErrorHandler(async (request: Request) => {
   const invitation: Invitation = {
     InviteID: `INV#${crypto.randomUUID()}`,
     TenantID: user.tenantId,
-    Email: email.toLowerCase().trim(),
+    Email: trimmedEmail,
     FullName: fullName?.trim() || undefined,
     InvitedBy: user.employeeId,
     InvitedByName: user.name,
@@ -64,7 +73,8 @@ export const POST = withErrorHandler(async (request: Request) => {
     async () => createInvitation(invitation)
   );
 
-  const baseUrl = process.env.NEXTAUTH_URL || "http://localhost:3000";
+  const { getAppBaseUrl } = await import("@/lib/utils/app-url");
+  const baseUrl = getAppBaseUrl();
   const inviteLink = `${baseUrl}/register?invite=${token}`;
 
   // Best-effort email send. If SES fails the invitation row is still valid

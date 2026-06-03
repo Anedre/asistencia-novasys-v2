@@ -18,6 +18,7 @@ import { getTenantById, updateTenantSettings } from "@/lib/db/tenants";
 import { sendInvitationEmail } from "@/lib/email/send-invitation";
 import { withAudit } from "@/lib/services/audit.service";
 import { REASON_LABELS } from "@/lib/constants/reason-codes";
+import { workDateLima } from "@/lib/utils/time";
 import type { ToolName } from "./tools";
 import type { UIBlock } from "@/lib/types/chat";
 import type { SessionUser } from "@/lib/auth-helpers";
@@ -313,7 +314,7 @@ function daysBetween(a: string, b: string): number {
 async function handleListHolidays(ctx: ToolContext): Promise<ToolExecResult> {
   const tenantId = ctx.tenantId ?? "TENANT#novasys";
   const set = await getHolidaySet(tenantId);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = workDateLima();
   const entries = Array.from(set.entries())
     .map(([date, name]) => ({ date, name }))
     .sort((a, b) => a.date.localeCompare(b.date))
@@ -351,13 +352,13 @@ async function handleListTeamStats(
   ctx: ToolContext
 ): Promise<ToolExecResult> {
   const tenantId = ctx.tenantId ?? "TENANT#novasys";
-  const today = new Date();
-  const defaultFrom = new Date(today);
-  defaultFrom.setDate(defaultFrom.getDate() - 30);
-  const toYmd = (d: Date) => d.toISOString().slice(0, 10);
-
-  const from = (input.from as string) || toYmd(defaultFrom);
-  const to = (input.to as string) || toYmd(today);
+  // Anchor the default 30-day window on Lima local "today" so the range is
+  // stable around midnight Lima.
+  const to = (input.to as string) || workDateLima();
+  const defaultFromMs =
+    new Date(to + "T00:00:00-05:00").getTime() - 30 * 86400000;
+  const from =
+    (input.from as string) || workDateLima(new Date(defaultFromMs));
 
   const stats = await getReportsStats(tenantId, from, to);
   const top5 = stats.employeeRanking.slice(0, 5).map((e) => ({
@@ -536,7 +537,8 @@ async function handleCreateInvitation(
     async () => createInvitation(invitation)
   );
 
-  const baseUrl = process.env.NEXTAUTH_URL || "http://localhost:3000";
+  const { getAppBaseUrl } = await import("@/lib/utils/app-url");
+  const baseUrl = getAppBaseUrl();
   const inviteLink = `${baseUrl}/register?invite=${token}`;
   const emailResult = await sendInvitationEmail({
     invitation,

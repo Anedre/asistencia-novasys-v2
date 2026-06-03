@@ -2,6 +2,23 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
+/**
+ * Default cadence for admin dashboards / detail views.
+ *
+ * `refetchInterval: 30s` keeps "active employees, presence, hourly chart,
+ * pending requests, recent activity" feeling near-realtime without paying
+ * a request every render. Mutations (approve, regularize, manual mark)
+ * also invalidate these keys so they refresh immediately on actions.
+ *
+ * `refetchOnWindowFocus` makes the page snap to fresh data when an admin
+ * comes back from another tab/app — the most common "I missed something"
+ * moment.
+ */
+const ADMIN_REALTIME = {
+  refetchInterval: 30_000,
+  refetchOnWindowFocus: true,
+} as const;
+
 export function useAdminEmployees(activeOnly = true) {
   return useQuery({
     queryKey: ["admin", "employees", activeOnly],
@@ -29,6 +46,7 @@ export function useAdminEmployees(activeOnly = true) {
         }>;
       }>;
     },
+    ...ADMIN_REALTIME,
   });
 }
 
@@ -40,7 +58,7 @@ export function useAdminDashboard() {
       if (!res.ok) throw new Error("Error fetching dashboard");
       return res.json();
     },
-    refetchInterval: 60000,
+    ...ADMIN_REALTIME,
   });
 }
 
@@ -55,7 +73,7 @@ export function useAdminAttendance(date?: string) {
       if (!res.ok) throw new Error("Error fetching attendance");
       return res.json();
     },
-    refetchInterval: 60000,
+    ...ADMIN_REALTIME,
   });
 }
 
@@ -68,6 +86,7 @@ export function useEmployeeDetail(id: string) {
       return res.json();
     },
     enabled: !!id,
+    ...ADMIN_REALTIME,
   });
 }
 

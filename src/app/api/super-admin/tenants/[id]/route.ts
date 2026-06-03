@@ -19,7 +19,7 @@ export const GET = withErrorHandler(
       return NextResponse.json({ error: "Tenant no encontrado" }, { status: 404 });
     }
 
-    const employees = await getAllEmployees(tenantId);
+    const { items: employees } = await getAllEmployees(tenantId);
 
     return NextResponse.json({ tenant, employeeCount: employees.length });
   }

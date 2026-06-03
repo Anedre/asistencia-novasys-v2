@@ -149,7 +149,11 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     const message = getCognitoErrorMessage(error);
-    console.error("[register]", error);
+    console.error(
+      "[register]",
+      (error as { name?: string })?.name,
+      (error as { message?: string })?.message,
+    );
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }

@@ -2,9 +2,9 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
 
-const PUBLIC_PATHS = ["/login", "/register", "/register-company", "/error", "/api/auth"];
+const PUBLIC_PATHS = ["/login", "/register", "/register-company", "/forgot-password", "/error", "/api/auth"];
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // ── DEV PREVIEW MODE: skip auth ──

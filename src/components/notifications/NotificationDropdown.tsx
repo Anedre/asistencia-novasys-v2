@@ -21,7 +21,6 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import {
   useNotifications,
@@ -179,7 +178,7 @@ export function NotificationDropdown() {
             No tienes notificaciones
           </div>
         ) : (
-          <ScrollArea className="max-h-96">
+          <div className="max-h-96 overflow-y-auto overscroll-contain">
             <div className={cn("divide-y")}>
               {notifications.map((n) => (
                 <NotificationItem
@@ -188,7 +187,7 @@ export function NotificationDropdown() {
                 />
               ))}
             </div>
-          </ScrollArea>
+          </div>
         )}
       </PopoverContent>
     </Popover>

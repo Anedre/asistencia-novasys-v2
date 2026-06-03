@@ -9,6 +9,7 @@ export type RequestStatus = "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED";
 export interface ApprovalRequest {
   RequestID: string; // "REQ#{timestamp}#{uuid}"
   SK: "METADATA";
+  TenantID?: string;
   employeeId: string;
   employeeName: string;
   requestType: RequestType;

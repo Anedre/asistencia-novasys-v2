@@ -1,0 +1,14 @@
+{
+  "Rules": [
+    {
+      "ID": "CleanupOldReports",
+      "Status": "Enabled",
+      "Filter": {
+        "Prefix": "reports/"
+      },
+      "Expiration": {
+        "Days": 30
+      }
+    }
+  ]
+}

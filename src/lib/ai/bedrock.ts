@@ -21,7 +21,7 @@ const client = new BedrockRuntimeClient({
   }),
 });
 
-const MODEL_ID = "anthropic.claude-3-haiku-20240307-v1:0";
+const MODEL_ID = process.env.BEDROCK_MODEL_ID || "us.anthropic.claude-haiku-4-5-20251001-v1:0";
 
 function buildSystemPrompt(role: "ADMIN" | "SUPER_ADMIN" | "EMPLOYEE"): string {
   const today = new Date().toLocaleDateString("es-PE", {

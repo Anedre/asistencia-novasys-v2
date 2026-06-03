@@ -1,934 +1,466 @@
 "use client";
 
-import { useState, useMemo, useCallback, useRef, useEffect } from "react";
+import { useMemo, useState } from "react";
+import Link from "next/link";
+import { useSession } from "next-auth/react";
+import { toast } from "sonner";
 import { useAttendanceHistory } from "@/hooks/use-attendance";
-import { useHREvents } from "@/hooks/use-hr";
 import { useTenantConfig } from "@/hooks/use-tenant";
 import { useTenantTimezone, todayInTz } from "@/hooks/use-timezone";
-import { StatusBadge } from "@/components/attendance/status-badge";
-import { RegularizeDialog } from "@/components/attendance/regularize-dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { cn } from "@/lib/utils";
-import {
-  PenLineIcon, CalendarDays, List, ChevronLeft, ChevronRight, Clock,
-  LogIn, LogOut, Coffee, TrendingUp, TrendingDown, AlertCircle, X,
-  Sparkles, Cherry, Mountain, Flower2, Briefcase,
-  Cake, Trophy, Megaphone, Flag,
-} from "lucide-react";
-import type { BirthdayEntry, AnniversaryEntry, HREvent } from "@/lib/types";
+import { IconSvg, Icons } from "@/components/nova/icons";
+import { PageHeader } from "@/components/nova/page-header";
 
-/* ── Helpers ──────────────────────────────────────────────────────── */
+/* ============================================================
+   Helpers
+   ============================================================ */
 
-function getMonthRange(y: number, m: number) {
-  const mm = String(m + 1).padStart(2, "0");
-  const last = new Date(y, m + 1, 0).getDate();
-  return { from: `${y}-${mm}-01`, to: `${y}-${mm}-${String(last).padStart(2, "0")}` };
+const MONTHS = [
+  "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+  "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
+];
+const DAY_HEADERS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
+
+function getMonthRange(year: number, month: number) {
+  const mm = String(month + 1).padStart(2, "0");
+  const last = new Date(year, month + 1, 0).getDate();
+  return { from: `${year}-${mm}-01`, to: `${year}-${mm}-${String(last).padStart(2, "0")}` };
 }
-function fmtMin(min: number) {
-  const h = Math.floor(Math.abs(min) / 60), m = Math.abs(min) % 60;
-  return `${min < 0 ? "-" : ""}${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
-}
-function shortT(t: string | null) { return !t ? "--:--" : t.length > 5 ? t.substring(0, 5) : t; }
 
-const REG_OK = new Set(["MISSING", "NO_RECORD", "ABSENT", "SHORT", "INCOMPLETE"]);
-const MONTHS = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
-const DH = ["LUN","MAR","MIE","JUE","VIE","SAB","DOM"];
+function fmtHours(min: number): string {
+  if (min <= 0) return "0h";
+  const h = min / 60;
+  return `${h.toFixed(1)}h`;
+}
+
+type DayStatus = "ok" | "short" | "leave" | "holiday" | "off" | "future" | "absent";
 
 interface HDay {
-  date: string; firstInLocal: string | null; lastOutLocal: string | null;
-  breakMinutes: number; workedMinutes: number; workedHHMM: string;
-  status: string; reasonCode?: string; reasonLabel?: string; anomalies?: string[];
-  isHoliday?: boolean; holidayName?: string;
+  date: string;
+  firstInLocal: string | null;
+  lastOutLocal: string | null;
+  breakMinutes: number;
+  workedMinutes: number;
+  status: string;
+  isHoliday?: boolean;
+  holidayName?: string;
 }
 
-/* ── Day Events (enrichment from HR data) ──────────────────────── */
-
-interface DayEvents {
-  birthdays: string[];
-  anniversaries: { name: string; years: number }[];
-  announcements: string[];
-  holidays: string[];
+function deriveStatus(d: HDay, dow: number, isFuture: boolean): DayStatus {
+  if (d.isHoliday) return "holiday";
+  if (isFuture) return "future";
+  if (dow === 0 || dow === 6) return "off"; // Sun (0) / Sat (6) — JS getDay convention
+  const s = d.status;
+  if (s === "ON_LEAVE" || s === "PERMIT") return "leave";
+  if (s === "ABSENT") return "absent";
+  if (s === "OK" || s === "CLOSED" || s === "REGULARIZED") return "ok";
+  if (s === "SHORT" || s === "INCOMPLETE") return "short";
+  if (d.workedMinutes > 0) {
+    return d.workedMinutes >= 480 ? "ok" : "short";
+  }
+  return "off";
 }
 
-function buildEventsMap(
-  birthdays: BirthdayEntry[],
-  anniversaries: AnniversaryEntry[],
-  announcements: HREvent[],
-  tenantHolidays?: { date: string; name: string }[],
-): Map<string, DayEvents> {
-  const map = new Map<string, DayEvents>();
-
-  function ensure(date: string): DayEvents {
-    if (!map.has(date)) map.set(date, { birthdays: [], anniversaries: [], announcements: [], holidays: [] });
-    return map.get(date)!;
-  }
-
-  // Tenant-configured holidays (these cover ALL dates, including future)
-  if (tenantHolidays) {
-    for (const h of tenantHolidays) {
-      const ev = ensure(h.date);
-      if (!ev.holidays.includes(h.name)) ev.holidays.push(h.name);
-    }
-  }
-
-  for (const b of birthdays) {
-    // eventDate is birth date (e.g. "1990-04-27") — remap to current year month-day
-    const md = b.eventDate.substring(5); // "04-27"
-    const currentYear = new Date().getFullYear();
-    const mappedDate = `${currentYear}-${md}`;
-    const ev = ensure(mappedDate);
-    ev.birthdays.push(b.employeeName);
-  }
-  for (const a of anniversaries) {
-    // eventDate is hire date (e.g. "2017-04-04") — remap to current year month-day
-    const md = a.eventDate.substring(5);
-    const currentYear = new Date().getFullYear();
-    const mappedDate = `${currentYear}-${md}`;
-    const ev = ensure(mappedDate);
-    ev.anniversaries.push({ name: a.employeeName, years: a.years });
-  }
-  for (const h of announcements) {
-    const ev = ensure(h.EventDate);
-    if (h.Type === "HOLIDAY") {
-      if (!ev.holidays.includes(h.Title)) ev.holidays.push(h.Title);
-    } else {
-      ev.announcements.push(h.Title);
-    }
-  }
-
-  return map;
-}
-
-/* ── Theme System ─────────────────────────────────────────────────── */
-
-type ThemeKey = "aurora" | "cerezo" | "obsidiana" | "lavanda" | "corporativo";
-
-interface StatusColors { bg: string; dot: string; text: string; bar: string }
-
-interface CalTheme {
-  key: ThemeKey;
-  name: string;
-  desc: string;
-  icon: typeof Sparkles;
-  preview: string;
-  headerGrad: string;
-  cellBase: string;
-  cellHasData: (c: StatusColors) => string;
-  cellEmpty: string;
-  cellWeekend: string;
-  cellSelected: string;
-  cellToday: string;
-  gap: string;
-  gridBg: string;
-  dayHeaderCls: string;
-  ok: StatusColors;
-  open: StatusColors;
-  short: StatusColors;
-  reg: StatusColors;
-  absent: StatusColors;
-  none: StatusColors;
-}
-
-const THEMES: Record<ThemeKey, CalTheme> = {
-  aurora: {
-    key: "aurora", name: "Aurora Boreal", desc: "Tarjetas redondeadas con bordes suaves",
-    icon: Sparkles, preview: "from-teal-400 to-cyan-400", headerGrad: "from-teal-500 to-cyan-500",
-    cellBase: "rounded-xl border p-2 min-h-[88px] flex flex-col text-left transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5",
-    cellHasData: (c) => `${c.bg} border-current/20`,
-    cellEmpty: "bg-background border-border/30",
-    cellWeekend: "bg-gray-50/50 border-border/20",
-    cellSelected: "ring-2 ring-primary shadow-xl -translate-y-1 z-10",
-    cellToday: "ring-2 ring-primary/40",
-    gap: "gap-1.5", gridBg: "rounded-2xl border bg-card p-4 shadow-sm",
-    dayHeaderCls: "text-xs font-bold uppercase tracking-wider",
-    ok:     { bg: "bg-teal-50",    dot: "bg-teal-500",    text: "text-teal-700",    bar: "bg-teal-500" },
-    open:   { bg: "bg-cyan-50",    dot: "bg-cyan-500",    text: "text-cyan-700",    bar: "bg-cyan-500" },
-    short:  { bg: "bg-amber-50",   dot: "bg-amber-500",   text: "text-amber-700",   bar: "bg-amber-500" },
-    reg:    { bg: "bg-indigo-50",  dot: "bg-indigo-500",  text: "text-indigo-700",  bar: "bg-indigo-500" },
-    absent: { bg: "bg-rose-50",    dot: "bg-rose-500",    text: "text-rose-700",    bar: "bg-rose-500" },
-    none:   { bg: "bg-slate-50/50",dot: "bg-slate-300",   text: "text-slate-400",   bar: "bg-slate-300" },
-  },
-  cerezo: {
-    key: "cerezo", name: "Flor de Cerezo", desc: "Circulos flotantes sin bordes",
-    icon: Cherry, preview: "from-pink-400 to-fuchsia-400", headerGrad: "from-pink-500 to-fuchsia-500",
-    cellBase: "rounded-full aspect-square flex flex-col items-center justify-center text-center transition-all duration-200 hover:shadow-xl hover:scale-105 border-0",
-    cellHasData: (c) => `${c.bg} shadow-md`,
-    cellEmpty: "bg-transparent",
-    cellWeekend: "bg-pink-50/30",
-    cellSelected: "ring-2 ring-pink-500 shadow-2xl scale-110 z-10",
-    cellToday: "ring-2 ring-pink-400/50",
-    gap: "gap-2", gridBg: "rounded-3xl bg-gradient-to-br from-pink-50/50 to-fuchsia-50/30 p-5",
-    dayHeaderCls: "text-[10px] font-semibold uppercase text-pink-400 tracking-widest",
-    ok:     { bg: "bg-pink-100",    dot: "bg-pink-500",    text: "text-pink-700",    bar: "bg-pink-500" },
-    open:   { bg: "bg-fuchsia-100", dot: "bg-fuchsia-500", text: "text-fuchsia-700", bar: "bg-fuchsia-500" },
-    short:  { bg: "bg-amber-100",   dot: "bg-amber-500",   text: "text-amber-700",   bar: "bg-amber-500" },
-    reg:    { bg: "bg-violet-100",  dot: "bg-violet-500",  text: "text-violet-700",  bar: "bg-violet-500" },
-    absent: { bg: "bg-red-100",     dot: "bg-red-400",     text: "text-red-600",     bar: "bg-red-400" },
-    none:   { bg: "bg-pink-50/50",  dot: "bg-gray-300",    text: "text-gray-400",    bar: "bg-gray-300" },
-  },
-  obsidiana: {
-    key: "obsidiana", name: "Obsidiana", desc: "Celdas cuadradas con barra lateral",
-    icon: Mountain, preview: "from-zinc-600 to-zinc-800", headerGrad: "from-zinc-700 to-zinc-900",
-    cellBase: "rounded-none border-l-4 border-y border-r border-y-border/20 border-r-border/20 p-2 min-h-[88px] flex flex-col text-left transition-all duration-150 hover:bg-muted/50",
-    cellHasData: (c) => `bg-background ${c.bg.replace("bg-", "border-l-")}`,
-    cellEmpty: "bg-background border-l-transparent",
-    cellWeekend: "bg-zinc-50/50 border-l-zinc-200",
-    cellSelected: "!bg-zinc-100 ring-1 ring-zinc-400 z-10",
-    cellToday: "!border-l-primary border-l-4",
-    gap: "gap-0", gridBg: "rounded-lg border border-zinc-200 bg-card overflow-hidden",
-    dayHeaderCls: "text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500 bg-zinc-100 py-2",
-    ok:     { bg: "bg-emerald-500", dot: "bg-emerald-500", text: "text-emerald-700", bar: "bg-emerald-500" },
-    open:   { bg: "bg-blue-500",    dot: "bg-blue-500",    text: "text-blue-700",    bar: "bg-blue-500" },
-    short:  { bg: "bg-orange-500",  dot: "bg-orange-500",  text: "text-orange-700",  bar: "bg-orange-500" },
-    reg:    { bg: "bg-purple-500",  dot: "bg-purple-500",  text: "text-purple-700",  bar: "bg-purple-500" },
-    absent: { bg: "bg-red-500",     dot: "bg-red-500",     text: "text-red-700",     bar: "bg-red-500" },
-    none:   { bg: "bg-zinc-200",    dot: "bg-zinc-300",    text: "text-zinc-400",    bar: "bg-zinc-300" },
-  },
-  lavanda: {
-    key: "lavanda", name: "Jardin Lavanda", desc: "Pastillas suaves con sombras flotantes",
-    icon: Flower2, preview: "from-violet-400 to-purple-400", headerGrad: "from-violet-400 to-purple-500",
-    cellBase: "rounded-2xl p-2 min-h-[88px] flex flex-col text-left transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5 border-0",
-    cellHasData: (c) => `${c.bg} shadow-sm`,
-    cellEmpty: "bg-transparent",
-    cellWeekend: "bg-violet-50/20",
-    cellSelected: "ring-2 ring-violet-500 shadow-xl -translate-y-1 z-10",
-    cellToday: "ring-2 ring-violet-400/40 shadow-md",
-    gap: "gap-2", gridBg: "rounded-3xl bg-gradient-to-b from-violet-50/40 to-purple-50/20 p-5",
-    dayHeaderCls: "text-[10px] font-bold uppercase text-violet-400 tracking-widest",
-    ok:     { bg: "bg-lime-50",    dot: "bg-lime-500",    text: "text-lime-700",    bar: "bg-lime-500" },
-    open:   { bg: "bg-sky-50",     dot: "bg-sky-500",     text: "text-sky-700",     bar: "bg-sky-500" },
-    short:  { bg: "bg-yellow-50",  dot: "bg-yellow-500",  text: "text-yellow-700",  bar: "bg-yellow-500" },
-    reg:    { bg: "bg-purple-100", dot: "bg-purple-500",  text: "text-purple-700",  bar: "bg-purple-500" },
-    absent: { bg: "bg-orange-50",  dot: "bg-orange-500",  text: "text-orange-700",  bar: "bg-orange-500" },
-    none:   { bg: "bg-violet-50/40",dot:"bg-gray-300",    text: "text-gray-400",    bar: "bg-gray-300" },
-  },
-  corporativo: {
-    key: "corporativo", name: "Corporativo", desc: "Limpio y profesional, estilo Office",
-    icon: Briefcase, preview: "from-blue-600 to-slate-700", headerGrad: "from-blue-700 to-slate-800",
-    cellBase: "rounded-md border border-slate-200 p-2 min-h-[88px] flex flex-col text-left transition-all duration-100 hover:bg-blue-50/50",
-    cellHasData: (_c) => "bg-white border-slate-200",
-    cellEmpty: "bg-white border-slate-100",
-    cellWeekend: "bg-slate-50 border-slate-100",
-    cellSelected: "!bg-blue-50 ring-1 ring-blue-500 z-10 border-blue-300",
-    cellToday: "border-blue-400 border-2",
-    gap: "gap-px", gridBg: "rounded-lg border border-slate-200 bg-slate-100 p-px overflow-hidden",
-    dayHeaderCls: "text-[10px] font-semibold uppercase tracking-wider text-slate-500 bg-slate-50 border-b border-slate-200 py-2",
-    ok:     { bg: "bg-white", dot: "bg-blue-600",    text: "text-slate-700",  bar: "bg-blue-600" },
-    open:   { bg: "bg-white", dot: "bg-blue-400",    text: "text-blue-700",   bar: "bg-blue-400" },
-    short:  { bg: "bg-white", dot: "bg-amber-500",   text: "text-amber-700",  bar: "bg-amber-500" },
-    reg:    { bg: "bg-white", dot: "bg-slate-500",   text: "text-slate-600",  bar: "bg-slate-500" },
-    absent: { bg: "bg-white", dot: "bg-red-500",     text: "text-red-600",    bar: "bg-red-500" },
-    none:   { bg: "bg-white", dot: "bg-slate-200",   text: "text-slate-300",  bar: "bg-slate-200" },
-  },
+const STATUS_DOT_COLOR: Record<DayStatus, string> = {
+  ok: "var(--success)",
+  short: "var(--warn)",
+  leave: "var(--accent)",
+  holiday: "var(--danger)",
+  absent: "var(--danger)",
+  off: "transparent",
+  future: "transparent",
 };
 
-function getS(t: CalTheme, s: string | undefined): StatusColors {
-  switch (s) {
-    case "OK": case "CLOSED": return t.ok;
-    case "OPEN": return t.open;
-    case "SHORT": case "INCOMPLETE": return t.short;
-    case "REGULARIZED": return t.reg;
-    case "ABSENCE": case "ABSENT": return t.absent;
-    case "HOLIDAY": return t.reg;
-    default: return t.none;
-  }
+/* ============================================================
+   Calendar View
+   ============================================================ */
+
+interface CalendarCell {
+  d: number;
+  date: string;
+  status: DayStatus;
+  workedMinutes: number;
+  holidayName?: string;
 }
 
-/* ── Calendar Cell ────────────────────────────────────────────────── */
-
-function Cell({
-  day, dateStr, data, events, isToday, isSel, isWknd, onClick, t,
-}: {
-  day: number | null; dateStr: string | null; data?: HDay; events?: DayEvents;
-  isToday: boolean; isSel: boolean; isWknd: boolean;
-  onClick: () => void; t: CalTheme;
-}) {
-  if (!day) return <div className={t.key === "cerezo" ? "aspect-square" : "min-h-[88px]"} />;
-  const c = getS(t, data?.status);
-  const has = !!data;
-  const isCircle = t.key === "cerezo";
-  const isHol = data?.status === "HOLIDAY" || (events?.holidays?.length ?? 0) > 0;
-  const hasBday = (events?.birthdays?.length ?? 0) > 0;
-  const hasAnniv = (events?.anniversaries?.length ?? 0) > 0;
-  const hasAnnounce = (events?.announcements?.length ?? 0) > 0;
-  const hasEvents = hasBday || hasAnniv || hasAnnounce;
-  const holName = data?.holidayName ?? events?.holidays?.[0];
-
-  // Determine cell background
-  const cellBg = has && !isHol
-    ? t.cellHasData(c)
-    : isHol
-      ? "bg-indigo-50 border-indigo-200/60 dark:bg-indigo-950/30"
-      : isWknd
-        ? t.cellWeekend
-        : t.cellEmpty;
-
+function CalendarView({ cells, todayDate }: { cells: (CalendarCell | null)[]; todayDate: string }) {
   return (
-    <button
-      type="button" onClick={onClick}
-      className={cn(
-        t.cellBase,
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-        cellBg,
-        isSel && t.cellSelected,
-        isToday && !isSel && t.cellToday,
-      )}
-    >
-      {isCircle ? (
-        /* ── Circle theme (cerezo) ── */
-        <>
-          <span className={cn("text-base font-black leading-none", isToday && "text-primary", isHol ? "text-indigo-600" : has ? c.text : "text-foreground/40")}>
-            {day}
-          </span>
-          {has && !isHol && <span className={cn("size-1.5 rounded-full mt-0.5", c.dot)} />}
-          {isHol && <span className="size-1.5 rounded-full mt-0.5 bg-indigo-500" />}
-          {hasEvents && (
-            <div className="flex items-center gap-0.5 mt-0.5">
-              {hasBday && <span className="size-1.5 rounded-full bg-pink-500" />}
-              {hasAnniv && <span className="size-1.5 rounded-full bg-amber-500" />}
-            </div>
-          )}
-          {isToday && <span className="text-[6px] font-bold text-primary uppercase mt-0.5">hoy</span>}
-        </>
-      ) : (
-        /* ── Card themes ── */
-        <>
-          {/* Row 1: Day number + today badge */}
-          <div className="flex items-center justify-between w-full">
-            <span className={cn("text-sm font-bold", isToday && "text-primary", isHol ? "text-indigo-700" : has ? c.text : isWknd ? "text-foreground/25" : "text-foreground/50")}>
-              {day}
-            </span>
-            <div className="flex items-center gap-1">
-              {has && !isHol && <span className={cn("size-2.5 rounded-full", c.dot)} />}
-              {isToday && <span className="rounded bg-primary px-1 py-px text-[7px] font-bold text-primary-foreground uppercase">hoy</span>}
-            </div>
-          </div>
-
-          {/* Row 2: Main content area */}
-          <div className="mt-auto w-full space-y-0.5">
-            {/* Holiday tag (prominent) */}
-            {isHol && holName && (
-              <div className="flex items-center gap-1 rounded bg-indigo-100 dark:bg-indigo-900/40 px-1 py-0.5">
-                <Flag className="size-2.5 text-indigo-600 shrink-0" />
-                <span className="text-[8px] font-bold text-indigo-700 dark:text-indigo-300 truncate leading-tight uppercase">{holName}</span>
-              </div>
-            )}
-
-            {/* Birthday tags */}
-            {hasBday && events!.birthdays.map((name, i) => (
-              <div key={`b${i}`} className="flex items-center gap-1 rounded bg-pink-100 dark:bg-pink-900/40 px-1 py-0.5">
-                <Cake className="size-2.5 text-pink-600 shrink-0" />
-                <span className="text-[8px] font-bold text-pink-700 dark:text-pink-300 truncate leading-tight">{name.split(" ")[0]}</span>
-              </div>
-            ))}
-
-            {/* Anniversary tags */}
-            {hasAnniv && events!.anniversaries.map((a, i) => (
-              <div key={`a${i}`} className="flex items-center gap-1 rounded bg-amber-100 dark:bg-amber-900/40 px-1 py-0.5">
-                <Trophy className="size-2.5 text-amber-600 shrink-0" />
-                <span className="text-[8px] font-bold text-amber-700 dark:text-amber-300 truncate leading-tight">{a.name.split(" ")[0]} aniversario</span>
-              </div>
-            ))}
-
-            {/* Announcement dot */}
-            {hasAnnounce && (
-              <div className="flex items-center gap-1 rounded bg-blue-100 dark:bg-blue-900/40 px-1 py-0.5">
-                <Megaphone className="size-2.5 text-blue-600 shrink-0" />
-                <span className="text-[8px] font-bold text-blue-700 dark:text-blue-300 truncate leading-tight">{events!.announcements[0]}</span>
-              </div>
-            )}
-
-            {/* Attendance data (when no holiday) */}
-            {!isHol && has && data && (
-              <>
-                <div className="text-[11px] text-foreground/45 tabular-nums">{shortT(data.firstInLocal)} - {shortT(data.lastOutLocal)}</div>
-                <div className={cn("text-xs font-extrabold tabular-nums", c.text)}>{data.workedHHMM || fmtMin(data.workedMinutes)}</div>
-              </>
-            )}
-
-            {/* Weekend label */}
-            {!isHol && !has && isWknd && (
-              <span className="text-[9px] text-foreground/20 italic">No laborable</span>
-            )}
-
-            {/* Empty weekday */}
-            {!isHol && !has && !isWknd && !hasEvents && (
-              <span className="text-[11px] text-foreground/15">--:--</span>
-            )}
-          </div>
-        </>
-      )}
-    </button>
-  );
-}
-
-/* ── Calendar Grid ────────────────────────────────────────────────── */
-
-function CalGrid({
-  year, month, days, eventsMap, onSelect, sel, t, tz,
-}: {
-  year: number; month: number; days: HDay[]; eventsMap: Map<string, DayEvents>;
-  onSelect: (d: string) => void; sel: string | null; t: CalTheme; tz: string;
-}) {
-  const todayStr = todayInTz(tz);
-  const map = useMemo(() => { const m = new Map<string, HDay>(); for (const d of days) m.set(d.date, d); return m; }, [days]);
-  const cells = useMemo(() => {
-    const first = new Date(year, month, 1);
-    const total = new Date(year, month + 1, 0).getDate();
-    let s = first.getDay() - 1; if (s < 0) s = 6;
-    const r: Array<{ day: number | null; ds: string | null; wk: boolean }> = [];
-    for (let i = 0; i < s; i++) r.push({ day: null, ds: null, wk: false });
-    for (let d = 1; d <= total; d++) {
-      const mm = String(month + 1).padStart(2, "0"); const dd = String(d).padStart(2, "0");
-      const dow = new Date(year, month, d).getDay();
-      r.push({ day: d, ds: `${year}-${mm}-${dd}`, wk: dow === 0 || dow === 6 });
-    }
-    while (r.length % 7) r.push({ day: null, ds: null, wk: false });
-    return r;
-  }, [year, month]);
-
-  const legend = [
-    { l: "Completo", c: t.ok.dot },
-    { l: "En curso", c: t.open.dot },
-    { l: "Incompleto", c: t.short.dot },
-    { l: "Regularizado", c: t.reg.dot },
-    { l: "Ausencia", c: t.absent.dot },
-    { l: "Feriado", c: "bg-indigo-500" },
-    { l: "Cumpleaños", c: "bg-pink-500" },
-    { l: "Aniversario", c: "bg-amber-500" },
-    { l: "Comunicado", c: "bg-blue-500" },
-    { l: "Sin registro", c: t.none.dot },
-  ];
-
-  return (
-    <div className={t.gridBg}>
-      <div className={cn("grid grid-cols-7", t.gap, "mb-1")}>
-        {DH.map((n, i) => (
-          <div key={n} className={cn("py-2 text-center", t.dayHeaderCls, i >= 5 && "opacity-50")}>{n}</div>
-        ))}
-      </div>
-      <div className={cn("grid grid-cols-7", t.gap)}>
-        {cells.map((c, i) => (
-          <Cell key={c.ds || `b${i}`} day={c.day} dateStr={c.ds}
-            data={c.ds ? map.get(c.ds) : undefined}
-            events={c.ds ? eventsMap.get(c.ds) : undefined}
-            isToday={c.ds === todayStr} isSel={c.ds === sel} isWknd={c.wk}
-            onClick={() => c.ds && onSelect(c.ds)} t={t} />
-        ))}
-      </div>
-      <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 mt-4">
-        {legend.map(it => (
-          <div key={it.l} className="flex items-center gap-1.5">
-            <span className={cn("size-2.5 rounded-full", it.c)} />
-            <span className="text-[11px] text-foreground/50">{it.l}</span>
+    <div>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(7, 1fr)",
+          gap: 6,
+          marginBottom: 6,
+        }}
+      >
+        {DAY_HEADERS.map((d) => (
+          <div
+            key={d}
+            style={{
+              textAlign: "center",
+              fontSize: 10,
+              fontWeight: 600,
+              color: "var(--text-muted)",
+              letterSpacing: "0.05em",
+              textTransform: "uppercase",
+            }}
+          >
+            {d}
           </div>
         ))}
       </div>
-    </div>
-  );
-}
-
-/* ── Theme Selector ──────────────────────────────────────────────── */
-
-function ThemeSelector({ current, onChange }: { current: ThemeKey; onChange: (k: ThemeKey) => void }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="relative">
-      <button onClick={() => setOpen(!open)}
-        className="flex items-center gap-2 rounded-xl border bg-background px-3 py-2 shadow-sm hover:shadow-md transition-all">
-        <div className={cn("size-5 rounded-full bg-gradient-to-br", THEMES[current].preview)} />
-        <span className="text-sm font-semibold">{THEMES[current].name}</span>
-        <ChevronRight className={cn("size-3.5 text-foreground/40 transition-transform", open && "rotate-90")} />
-      </button>
-      {open && (
-        <>
-          <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-full mt-2 z-40 w-72 rounded-2xl border bg-background shadow-2xl p-3 space-y-2">
-            <p className="text-xs font-bold uppercase tracking-wider text-foreground/40 px-1">Elige un estilo</p>
-            {(Object.keys(THEMES) as ThemeKey[]).map(k => {
-              const th = THEMES[k]; const Icon = th.icon; const active = current === k;
-              return (
-                <button key={k} onClick={() => { onChange(k); setOpen(false); }}
-                  className={cn("flex items-center gap-3 w-full rounded-xl p-3 transition-all text-left",
-                    active ? "bg-gradient-to-r text-white shadow-lg " + th.preview : "hover:bg-muted border border-transparent hover:border-border")}>
-                  <div className={cn("flex size-10 items-center justify-center rounded-xl shrink-0",
-                    active ? "bg-white/20" : "bg-gradient-to-br " + th.preview)}>
-                    <Icon className="size-5 text-white" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className={cn("text-sm font-bold", !active && "text-foreground")}>{th.name}</p>
-                    <p className={cn("text-[11px] truncate", active ? "text-white/70" : "text-foreground/50")}>{th.desc}</p>
-                  </div>
-                  {active && <span className="ml-auto text-white text-lg">&#10003;</span>}
-                </button>
-              );
-            })}
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
-/* ── Detail Panel ─────────────────────────────────────────────────── */
-
-function DetailPanel({
-  day, events, onReg, onClose, t, vis, tz,
-}: { day: HDay; events?: DayEvents; onReg: (d: string) => void; onClose: () => void; t: CalTheme; vis: boolean; tz: string }) {
-  const today = todayInTz(tz);
-  const canR = REG_OK.has(day.status) && day.date < today;
-  const dayPlanned = (day as unknown as { plannedMinutes?: number }).plannedMinutes ?? 480;
-  const delta = day.workedMinutes - dayPlanned;
-  const pct = Math.min(Math.round((day.workedMinutes / (dayPlanned || 480)) * 100), 100);
-  const d = new Date(day.date + "T12:00:00");
-  const dn = d.toLocaleDateString("es-PE", { weekday: "long" });
-  const dm = d.getDate(), mn = d.toLocaleDateString("es-PE", { month: "long" });
-  const corp = t.key === "corporativo";
-  const isHol = day.status === "HOLIDAY";
-  const hasEvents = events && (events.birthdays.length > 0 || events.anniversaries.length > 0 || events.announcements.length > 0 || events.holidays.length > 0);
-
-  return (
-    <div className={cn(
-      "flex flex-col border bg-background shadow-2xl overflow-hidden transition-all duration-300 ease-out",
-      corp ? "rounded-lg" : "rounded-2xl",
-      vis ? "translate-x-0 opacity-100" : "translate-x-10 opacity-0",
-    )}>
-      {/* Header */}
-      <div className={cn(
-        "relative px-5 py-4",
-        corp ? "bg-slate-800 text-white" : cn("text-white bg-gradient-to-r", t.headerGrad),
-      )}>
-        <button onClick={onClose} className={cn(
-          "absolute top-3 right-3 rounded-full p-1.5 transition-colors",
-          corp ? "bg-slate-700 hover:bg-slate-600" : "bg-white/20 hover:bg-white/30",
-        )}>
-          <X className="size-4" />
-        </button>
-        <p className={cn("text-sm font-medium capitalize", corp ? "text-slate-300" : "opacity-80")}>{dn}</p>
-        <p className="text-3xl font-black tracking-tight">{dm} <span className="text-lg font-semibold capitalize">{mn}</span></p>
-        <div className="mt-2"><StatusBadge status={day.status} /></div>
-      </div>
-
-      {/* Content */}
-      <div className="p-5 space-y-4 flex-1 overflow-y-auto">
-        {/* Events section */}
-        {hasEvents && (
-          <div className="space-y-2">
-            {events!.holidays.length > 0 && events!.holidays.map((h, i) => (
-              <EventRow key={`h${i}`} icon={Flag} color="text-indigo-600" bg="bg-indigo-50" border="border-indigo-100" label="Feriado" value={h} />
-            ))}
-            {events!.birthdays.map((name, i) => (
-              <EventRow key={`b${i}`} icon={Cake} color="text-pink-600" bg="bg-pink-50" border="border-pink-100" label="Cumpleaños" value={name} />
-            ))}
-            {events!.anniversaries.map((a, i) => (
-              <EventRow key={`a${i}`} icon={Trophy} color="text-amber-600" bg="bg-amber-50" border="border-amber-100" label="Aniversario" value={`${a.name} - ${a.years} años`} />
-            ))}
-            {events!.announcements.map((title, i) => (
-              <EventRow key={`n${i}`} icon={Megaphone} color="text-blue-600" bg="bg-blue-50" border="border-blue-100" label="Comunicado" value={title} />
-            ))}
-          </div>
-        )}
-
-        {/* Holiday info from attendance data */}
-        {isHol && day.holidayName && !events?.holidays.length && (
-          <EventRow icon={Flag} color="text-indigo-600" bg="bg-indigo-50" border="border-indigo-100" label="Feriado" value={day.holidayName} />
-        )}
-
-        {/* Attendance data (only if not a holiday-only day) */}
-        {!isHol && (
-          corp ? (
-            <>
-              <div className="divide-y border rounded-lg overflow-hidden">
-                <CorpRow label="Entrada" value={shortT(day.firstInLocal)} icon={LogIn} />
-                <CorpRow label="Salida" value={shortT(day.lastOutLocal)} icon={LogOut} />
-                <CorpRow label="Break" value={`${day.breakMinutes} min`} icon={Coffee} />
-                <CorpRow label="Trabajado" value={day.workedHHMM || fmtMin(day.workedMinutes)} icon={Clock} bold />
-              </div>
-              <div>
-                <div className="flex items-center justify-between text-xs mb-1.5">
-                  <span className="text-slate-500 font-medium">Progreso</span>
-                  <span className="font-bold text-slate-700">{pct}%</span>
-                </div>
-                <div className="h-2 w-full rounded-full bg-slate-100 overflow-hidden">
-                  <div className="h-full rounded-full bg-blue-600 transition-all duration-500" style={{ width: `${pct}%` }} />
-                </div>
-              </div>
-              <div className="flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
-                {delta >= 0 ? <TrendingUp className="size-4 text-blue-600" /> : <TrendingDown className="size-4 text-slate-500" />}
-                <div>
-                  <p className="text-[10px] font-semibold text-slate-400 uppercase">Balance del dia</p>
-                  <p className={cn("text-base font-black", delta >= 0 ? "text-blue-700" : "text-slate-700")}>{delta >= 0 ? "+" : ""}{fmtMin(delta)}</p>
-                </div>
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="grid grid-cols-2 gap-3">
-                <ICard icon={LogIn} label="Entrada" value={shortT(day.firstInLocal)} color="text-emerald-600" bg="bg-emerald-50" b="border-emerald-100" />
-                <ICard icon={LogOut} label="Salida" value={shortT(day.lastOutLocal)} color="text-red-500" bg="bg-red-50" b="border-red-100" />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <ICard icon={Coffee} label="Break" value={`${day.breakMinutes} min`} color="text-amber-600" bg="bg-amber-50" b="border-amber-100" />
-                <ICard icon={Clock} label="Trabajado" value={day.workedHHMM || fmtMin(day.workedMinutes)} color="text-blue-600" bg="bg-blue-50" b="border-blue-100" />
-              </div>
-              <div>
-                <div className="flex items-center justify-between text-xs mb-1.5">
-                  <span className="text-foreground/50 font-medium">Progreso</span>
-                  <span className="font-bold">{pct}%</span>
-                </div>
-                <div className="h-3 w-full rounded-full bg-gray-100 overflow-hidden">
-                  <div className={cn("h-full rounded-full transition-all duration-500",
-                    pct >= 100 ? "bg-emerald-500" : pct >= 75 ? "bg-blue-500" : pct >= 50 ? "bg-amber-500" : "bg-red-400"
-                  )} style={{ width: `${pct}%` }} />
-                </div>
-              </div>
-              <div className={cn("flex items-center gap-3 rounded-xl p-3.5 border",
-                delta >= 0 ? "bg-emerald-50 border-emerald-100" : "bg-red-50 border-red-100")}>
-                {delta >= 0 ? <TrendingUp className="size-5 text-emerald-600" /> : <TrendingDown className="size-5 text-red-500" />}
-                <div>
-                  <p className="text-xs font-semibold text-foreground/50 uppercase">Balance</p>
-                  <p className={cn("text-base font-black", delta >= 0 ? "text-emerald-700" : "text-red-600")}>{delta >= 0 ? "+" : ""}{fmtMin(delta)}</p>
-                </div>
-              </div>
-            </>
-          )
-        )}
-
-        {(day.reasonLabel || day.reasonCode) && !isHol && (
-          <div className={cn("flex items-start gap-2.5 p-3 border",
-            corp ? "rounded-lg bg-slate-50 border-slate-200" : "rounded-xl bg-muted/50 border-border/50")}>
-            <AlertCircle className={cn("size-4 mt-0.5 shrink-0", corp ? "text-slate-400" : "text-foreground/40")} />
-            <div>
-              <p className={cn("text-xs font-bold uppercase", corp ? "text-slate-400" : "text-foreground/50")}>Motivo</p>
-              <p className="text-sm">{day.reasonLabel ?? day.reasonCode}</p>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 6 }}>
+        {cells.map((c, i) => {
+          if (!c) return <div key={i} style={{ aspectRatio: "1" }} />;
+          const isToday = c.date === todayDate;
+          return (
+            <div key={i} className={`cal-day status-${c.status} ${isToday ? "today" : ""}`}>
+              <div className="cal-day-num">{c.d}</div>
+              {(c.status === "ok" || c.status === "short") && (
+                <div className="cal-day-hours">{fmtHours(c.workedMinutes)}</div>
+              )}
+              {c.status === "leave" && <div className="cal-day-tag">Permiso</div>}
+              {c.status === "holiday" && (
+                <div className="cal-day-tag" title={c.holidayName}>Feriado</div>
+              )}
+              {c.status === "absent" && <div className="cal-day-tag">Ausente</div>}
+              {c.status === "off" && <div className="cal-day-tag muted">—</div>}
+              <span className="cal-day-dot" style={{ background: STATUS_DOT_COLOR[c.status] }} />
             </div>
-          </div>
-        )}
-      </div>
-
-      {/* Footer */}
-      <div className="border-t p-4 flex gap-2 mt-auto">
-        {canR && <Button size="sm" className="flex-1 gap-1.5" onClick={() => onReg(day.date)}><PenLineIcon className="size-4" /> Regularizar</Button>}
-        <Button variant="outline" size="sm" className={canR ? "" : "flex-1"} onClick={onClose}>Cerrar</Button>
+          );
+        })}
       </div>
     </div>
   );
 }
 
-/* ── Event row for detail panel ─── */
-function EventRow({ icon: Icon, color, bg, border, label, value }: {
-  icon: typeof Cake; color: string; bg: string; border: string; label: string; value: string;
-}) {
+/* ============================================================
+   List View
+   ============================================================ */
+
+function ListView({ days, monthName }: { days: CalendarCell[]; monthName: string }) {
+  const rows = days.filter((d) => d.status === "ok" || d.status === "short");
   return (
-    <div className={cn("flex items-center gap-2.5 rounded-xl p-3 border", bg, border)}>
-      <Icon className={cn("size-4 shrink-0", color)} />
-      <div className="min-w-0">
-        <p className={cn("text-[10px] font-bold uppercase", color)}>{label}</p>
-        <p className="text-sm font-medium truncate">{value}</p>
-      </div>
-    </div>
-  );
-}
-
-/* ── Empty Day Panel (no attendance data, but may have events) ── */
-function EmptyDayPanel({
-  dateStr, events, onReg, onClose, t, vis, tz,
-}: {
-  dateStr: string; events?: DayEvents; onReg: (d: string) => void; onClose: () => void; t: CalTheme; vis: boolean; tz: string;
-}) {
-  const today = todayInTz(tz);
-  const d = new Date(dateStr + "T12:00:00");
-  const dn = d.toLocaleDateString("es-PE", { weekday: "long" });
-  const dm = d.getDate(), mn = d.toLocaleDateString("es-PE", { month: "long" });
-  const corp = t.key === "corporativo";
-  const isHol = (events?.holidays?.length ?? 0) > 0;
-  const hasEvents = events && (events.birthdays.length > 0 || events.anniversaries.length > 0 || events.announcements.length > 0 || events.holidays.length > 0);
-  const canR = dateStr < today && !isHol;
-
-  return (
-    <div className={cn(
-      "flex flex-col border bg-background shadow-2xl overflow-hidden transition-all duration-300 ease-out",
-      corp ? "rounded-lg" : "rounded-2xl",
-      vis ? "translate-x-0 opacity-100" : "translate-x-10 opacity-0",
-    )}>
-      {/* Header */}
-      <div className={cn(
-        "relative px-5 py-4",
-        isHol
-          ? "bg-gradient-to-r from-indigo-500 to-violet-500 text-white"
-          : corp
-            ? "bg-slate-800 text-white"
-            : cn("text-white bg-gradient-to-r", t.headerGrad),
-      )}>
-        <button onClick={onClose} className={cn(
-          "absolute top-3 right-3 rounded-full p-1.5 transition-colors",
-          "bg-white/20 hover:bg-white/30",
-        )}>
-          <X className="size-4" />
-        </button>
-        <p className={cn("text-sm font-medium capitalize", "opacity-80")}>{dn}</p>
-        <p className="text-3xl font-black tracking-tight">{dm} <span className="text-lg font-semibold capitalize">{mn}</span></p>
-        <div className="mt-2">
-          {isHol ? (
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-white/20 px-2.5 py-1 text-xs font-bold">
-              <Flag className="size-3" /> Feriado
-            </span>
-          ) : (
-            <StatusBadge status="NO_RECORD" />
-          )}
-        </div>
-      </div>
-
-      {/* Content */}
-      <div className="p-5 space-y-3 flex-1">
-        {hasEvents ? (
-          <>
-            {events!.holidays.map((h, i) => (
-              <EventRow key={`h${i}`} icon={Flag} color="text-indigo-600" bg="bg-indigo-50" border="border-indigo-100" label="Feriado" value={h} />
-            ))}
-            {events!.birthdays.map((name, i) => (
-              <EventRow key={`b${i}`} icon={Cake} color="text-pink-600" bg="bg-pink-50" border="border-pink-100" label="Cumpleaños" value={name} />
-            ))}
-            {events!.anniversaries.map((a, i) => (
-              <EventRow key={`a${i}`} icon={Trophy} color="text-amber-600" bg="bg-amber-50" border="border-amber-100" label="Aniversario" value={`${a.name} - ${a.years} años`} />
-            ))}
-            {events!.announcements.map((title, i) => (
-              <EventRow key={`n${i}`} icon={Megaphone} color="text-blue-600" bg="bg-blue-50" border="border-blue-100" label="Comunicado" value={title} />
-            ))}
-          </>
+    <table className="table" style={{ border: "none" }}>
+      <thead>
+        <tr>
+          <th>Fecha</th>
+          <th>Entrada</th>
+          <th>Salida</th>
+          <th>Break</th>
+          <th>Trabajadas</th>
+          <th>Estado</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.length === 0 ? (
+          <tr>
+            <td colSpan={6} style={{ textAlign: "center", padding: "24px 0", color: "var(--text-muted)" }}>
+              Sin marcaciones registradas
+            </td>
+          </tr>
         ) : (
-          <div className="flex flex-col items-center justify-center py-8">
-            <CalendarDays className="size-10 text-foreground/15" />
-            <p className="mt-3 text-sm font-medium text-foreground/40">Sin registro</p>
-          </div>
+          rows.map((d, i) => (
+            <tr key={i}>
+              <td className="tcell-strong">
+                {String(d.d).padStart(2, "0")} {monthName.slice(0, 3)}
+              </td>
+              <td className="tcell-mono">{(d as HDayMeta).firstIn ?? "--:--"}</td>
+              <td className="tcell-mono">{(d as HDayMeta).lastOut ?? "--:--"}</td>
+              <td className="tcell-mono tcell-muted">
+                {(d as HDayMeta).breakMin > 0 ? `${(d as HDayMeta).breakMin}m` : "—"}
+              </td>
+              <td className="tcell-mono">{fmtHours(d.workedMinutes)}</td>
+              <td>
+                <span className={`type-tag ${d.status === "ok" ? "success" : "warn"}`}>
+                  {d.status === "ok" ? "OK" : "Corta"}
+                </span>
+              </td>
+            </tr>
+          ))
         )}
-      </div>
-
-      {/* Footer */}
-      <div className="border-t p-4 flex gap-2 mt-auto">
-        {canR && <Button size="sm" className="flex-1 gap-1.5" onClick={() => onReg(dateStr)}><PenLineIcon className="size-4" /> Regularizar</Button>}
-        <Button variant="outline" size="sm" className={canR ? "" : "flex-1"} onClick={onClose}>Cerrar</Button>
-      </div>
-    </div>
+      </tbody>
+    </table>
   );
 }
 
-/* Corporativo row */
-function CorpRow({ label, value, icon: Icon, bold }: { label: string; value: string; icon: typeof Clock; bold?: boolean }) {
-  return (
-    <div className="flex items-center gap-3 px-3.5 py-3 bg-white">
-      <Icon className="size-4 text-slate-400 shrink-0" />
-      <span className="text-xs font-medium text-slate-500 w-20">{label}</span>
-      <span className={cn("text-base tabular-nums ml-auto", bold ? "font-black text-slate-800" : "font-semibold text-slate-700")}>{value}</span>
-    </div>
-  );
+interface HDayMeta extends CalendarCell {
+  firstIn: string | null;
+  lastOut: string | null;
+  breakMin: number;
 }
 
-/* Colorful info card */
-function ICard({ icon: Icon, label, value, color, bg, b }: {
-  icon: typeof Clock; label: string; value: string; color: string; bg: string; b: string;
-}) {
-  return (
-    <div className={cn("rounded-xl p-3 border", bg, b)}>
-      <div className="flex items-center gap-1.5 mb-1"><Icon className={cn("size-3.5", color)} /><span className={cn("text-[11px] font-bold uppercase", color)}>{label}</span></div>
-      <p className="text-xl font-black tabular-nums">{value}</p>
-    </div>
-  );
-}
+/* ============================================================
+   Page
+   ============================================================ */
 
-/* ── Month Summary ────────────────────────────────────────────────── */
+export default function MyAttendancePage() {
+  const tz = useTenantTimezone();
+  const today = todayInTz(tz);
+  const todayDate = new Date(today + "T12:00:00");
+  const { data: session } = useSession();
 
-function MSummary({ days, eventsMap }: { days: HDay[]; eventsMap: Map<string, DayEvents> }) {
-  const w = days.reduce((a, d) => a + (d.workedMinutes ?? 0), 0);
-  const p = days.reduce((a, d) => {
-    const dw = new Date(d.date + "T12:00:00").getDay();
-    const isWknd = dw === 0 || dw === 6;
-    const isHol = d.status === "HOLIDAY";
-    if (isWknd || isHol) return a;
-    return a + ((d as unknown as { plannedMinutes?: number }).plannedMinutes ?? 480);
-  }, 0);
-  const dt = w - p;
-  const ok = days.filter(d => ["OK","CLOSED","REGULARIZED"].includes(d.status)).length;
-  const hol = days.filter(d => d.status === "HOLIDAY").length;
-  const ms = days.filter(d => ["MISSING","NO_RECORD"].includes(d.status)).length;
+  const [year, setYear] = useState(todayDate.getFullYear());
+  const [month, setMonth] = useState(todayDate.getMonth());
+  const [view, setView] = useState<"cal" | "list">("cal");
+  const [exporting, setExporting] = useState(false);
 
-  // Count unique events in the month
-  let bdayCount = 0, annivCount = 0;
-  for (const ev of eventsMap.values()) {
-    bdayCount += ev.birthdays.length;
-    annivCount += ev.anniversaries.length;
+  async function handleExportPdf() {
+    const employeeId = (session?.user as { employeeId?: string } | undefined)?.employeeId;
+    if (!employeeId) {
+      toast.error("No se pudo identificar tu empleado");
+      return;
+    }
+    setExporting(true);
+    try {
+      const monthStr = `${year}-${String(month + 1).padStart(2, "0")}`;
+      const res = await fetch("/api/reports/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ employeeId, month: monthStr }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error || "No se pudo generar el reporte");
+      }
+      const data = await res.json();
+      if (data.url) {
+        const win = window.open(data.url, "_blank");
+        if (!win) {
+          // Popup blocked — provide fallback link
+          toast.success(`Reporte listo. <a href="${data.url}" target="_blank">Descargar</a>`);
+        } else {
+          toast.success("Reporte generado");
+        }
+      } else {
+        toast.success("Reporte generado");
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Error al generar el reporte");
+    } finally {
+      setExporting(false);
+    }
   }
 
-  const stats = [
-    { l: "Trabajado", v: fmtMin(w), c: "text-blue-600" },
-    { l: "Balance", v: `${dt >= 0 ? "+" : ""}${fmtMin(dt)}`, c: dt >= 0 ? "text-emerald-600" : "text-red-500" },
-    { l: "Completos", v: `${ok}`, c: "text-emerald-600" },
-    { l: "Feriados", v: `${hol}`, c: hol > 0 ? "text-indigo-600" : "text-foreground/30" },
-    { l: "Sin registro", v: `${ms}`, c: ms > 0 ? "text-amber-600" : "text-foreground/30" },
-    { l: "Cumpleaños", v: `${bdayCount}`, c: bdayCount > 0 ? "text-pink-600" : "text-foreground/30" },
-  ];
-
-  return (
-    <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-      {stats.map(it => (
-        <div key={it.l} className="rounded-xl bg-muted/50 px-3 py-2 text-center border border-border/30">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-foreground/40">{it.l}</p>
-          <p className={cn("text-base font-black tabular-nums", it.c)}>{it.v}</p>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-/* ── Main Page ────────────────────────────────────────────────────── */
-
-export default function HistoryPage() {
-  const tz = useTenantTimezone();
-  const now = new Date();
-  const [cy, setCy] = useState(now.getFullYear());
-  const [cm, setCm] = useState(now.getMonth());
-  const [sel, setSel] = useState<string | null>(null);
-  const [pVis, setPVis] = useState(false);
-  const [tk, setTk] = useState<ThemeKey>("aurora");
-  const t = THEMES[tk];
-
-  const { from: df, to: dt } = useMemo(() => getMonthRange(cy, cm), [cy, cm]);
-  const [lf, setLf] = useState(df); const [lt, setLt] = useState(dt);
-  const [tab, setTab] = useState<string | number>("calendar");
-  const [regDate, setRegDate] = useState<string | null>(null);
-
-  // Attendance data
-  const cQ = useAttendanceHistory(df, dt); const lQ = useAttendanceHistory(lf, lt);
-  const cDays = (cQ.data?.days ?? []) as HDay[]; const lDays = (lQ.data?.days ?? []) as HDay[];
-  const tw = lDays.reduce((a, d) => a + (d.workedMinutes ?? 0), 0);
-  const tb = lDays.reduce((a, d) => a + (d.breakMinutes ?? 0), 0);
-  const today = todayInTz(tz);
-  const rowRefs = useRef<Map<string, HTMLTableRowElement>>(new Map());
-
-  // HR Events data
-  const monthStr = `${cy}-${String(cm + 1).padStart(2, "0")}`;
-  const { data: hrData } = useHREvents(monthStr);
-
-  // Tenant holidays from settings (covers future dates too)
+  const { from, to } = getMonthRange(year, month);
+  const { data: historyData, isLoading } = useAttendanceHistory(from, to);
   const { data: tenant } = useTenantConfig();
-  const tenantHolidays = tenant?.settings?.holidays;
 
-  const eventsMap = useMemo(() => {
-    const birthdays: BirthdayEntry[] = hrData?.birthdays ?? [];
-    const anniversaries: AnniversaryEntry[] = hrData?.anniversaries ?? [];
-    const announcements: HREvent[] = hrData?.announcements ?? [];
-    return buildEventsMap(birthdays, anniversaries, announcements, tenantHolidays);
-  }, [hrData, tenantHolidays]);
+  const days = (historyData?.days ?? []) as HDay[];
+  const tenantHolidays = tenant?.settings?.holidays ?? [];
 
-  useEffect(() => {
-    if (sel) { setPVis(false); const timer = setTimeout(() => setPVis(true), 60); return () => clearTimeout(timer); }
-    else setPVis(false);
-  }, [sel]);
+  // Build calendar cells
+  const cells = useMemo(() => {
+    const result: (HDayMeta | null)[] = [];
+    const firstDay = new Date(year, month, 1);
+    // dow 0=Sun, but we want Mon=0
+    const startDow = (firstDay.getDay() + 6) % 7;
+    for (let i = 0; i < startDow; i++) result.push(null);
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
 
-  const nav = useCallback((d: number) => {
-    let nm = cm + d, ny = cy;
-    if (nm < 0) { nm = 11; ny--; } else if (nm > 11) { nm = 0; ny++; }
-    setCm(nm); setCy(ny); setSel(null);
-  }, [cm, cy]);
+    const byDate: Map<string, HDay> = new Map();
+    days.forEach((d) => byDate.set(d.date, d));
 
-  const selDay = useMemo(() => sel ? cDays.find(d => d.date === sel) : undefined, [sel, cDays]);
-  const selEvents = useMemo(() => sel ? eventsMap.get(sel) : undefined, [sel, eventsMap]);
+    const holidayByDate: Map<string, string> = new Map();
+    tenantHolidays.forEach((h) => holidayByDate.set(h.date, h.name));
+
+    for (let dnum = 1; dnum <= daysInMonth; dnum++) {
+      const mm = String(month + 1).padStart(2, "0");
+      const dd = String(dnum).padStart(2, "0");
+      const date = `${year}-${mm}-${dd}`;
+      const dayDate = new Date(date + "T12:00:00");
+      const dow = (dayDate.getDay() + 6) % 7; // 0=Mon
+      const isFuture = date > today;
+      const h = byDate.get(date);
+      const holidayName = holidayByDate.get(date);
+
+      const merged: HDay = {
+        date,
+        firstInLocal: h?.firstInLocal ?? null,
+        lastOutLocal: h?.lastOutLocal ?? null,
+        breakMinutes: h?.breakMinutes ?? 0,
+        workedMinutes: h?.workedMinutes ?? 0,
+        status: h?.status ?? "NO_RECORD",
+        isHoliday: !!holidayName,
+        holidayName,
+      };
+
+      const status = deriveStatus(merged, dow, isFuture);
+      result.push({
+        d: dnum,
+        date,
+        status,
+        workedMinutes: merged.workedMinutes,
+        holidayName,
+        firstIn: merged.firstInLocal ? merged.firstInLocal.substring(0, 5) : null,
+        lastOut: merged.lastOutLocal ? merged.lastOutLocal.substring(0, 5) : null,
+        breakMin: merged.breakMinutes,
+      });
+    }
+    return result;
+  }, [days, year, month, today, tenantHolidays]);
+
+  // KPIs for the month
+  const realDays = cells.filter((c): c is HDayMeta => c !== null);
+  const workableDays = realDays.filter((d) => d.status !== "off" && d.status !== "future" && d.status !== "holiday").length;
+  const okDays = realDays.filter((d) => d.status === "ok" || d.status === "short").length;
+  const totalWorkedMin = realDays.reduce((sum, d) => sum + d.workedMinutes, 0);
+  const lateCount = realDays.filter((d) => {
+    if (!d.firstIn) return false;
+    const [hh, mm] = d.firstIn.split(":").map(Number);
+    return hh * 60 + mm > 9 * 60 + 10; // after 9:10
+  }).length;
+  const permitCount = realDays.filter((d) => d.status === "leave").length;
+  const attendancePct = workableDays > 0 ? Math.round((okDays / workableDays) * 100) : 0;
+
+  function prevMonth() {
+    if (month === 0) {
+      setYear((y) => y - 1);
+      setMonth(11);
+    } else {
+      setMonth((m) => m - 1);
+    }
+  }
+  function nextMonth() {
+    if (month === 11) {
+      setYear((y) => y + 1);
+      setMonth(0);
+    } else {
+      setMonth((m) => m + 1);
+    }
+  }
+
+  const monthName = MONTHS[month];
+  const monthLabel = `${monthName} ${year}`;
 
   return (
-    <div className="space-y-4 max-w-6xl mx-auto">
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Historial de Asistencia</h1>
-          <p className="text-sm text-muted-foreground">Revisa tu historial de marcaciones, feriados y eventos</p>
+    <>
+      {/* Page Header */}
+      <PageHeader
+        title="Mi asistencia"
+        subtitle="Tu historial de marcaciones, totales y patrones."
+        actions={
+          <>
+            <button
+              className="btn outline btn-md"
+              type="button"
+              onClick={handleExportPdf}
+              disabled={exporting}
+            >
+              <IconSvg d={Icons.download} size={14} />
+              {exporting ? "Generando…" : "Exportar PDF"}
+            </button>
+            <Link
+              href="/requests/new?type=regularize"
+              className="btn outline btn-md"
+              style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+            >
+              <IconSvg d={Icons.edit} size={14} /> Regularizar día
+            </Link>
+          </>
+        }
+      />
+
+      {/* 4 stat-mini KPIs */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 20 }}>
+        <div className="stat-mini">
+          <div className="stat-mini-label">Asistencia mes</div>
+          <div className="stat-mini-value">
+            {isLoading ? "—" : attendancePct}
+            <span style={{ fontSize: 14 }}>%</span>
+          </div>
         </div>
-        <ThemeSelector current={tk} onChange={setTk} />
+        <div className="stat-mini">
+          <div className="stat-mini-label">Horas trabajadas</div>
+          <div className="stat-mini-value">
+            {isLoading ? "—" : Math.round(totalWorkedMin / 60)}
+            <span style={{ fontSize: 14 }}>h</span>
+          </div>
+        </div>
+        <div className="stat-mini">
+          <div className="stat-mini-label">Llegadas tarde</div>
+          <div className="stat-mini-value">{isLoading ? "—" : lateCount}</div>
+        </div>
+        <div className="stat-mini">
+          <div className="stat-mini-label">Permisos</div>
+          <div className="stat-mini-value">{isLoading ? "—" : permitCount}</div>
+        </div>
       </div>
 
-      <Tabs defaultValue="calendar" value={tab} onValueChange={v => { if (v) setTab(v); }}>
-        <TabsList>
-          <TabsTrigger value="calendar" className="gap-1.5"><CalendarDays className="size-4" /> Calendario</TabsTrigger>
-          <TabsTrigger value="list" className="gap-1.5"><List className="size-4" /> Lista</TabsTrigger>
-        </TabsList>
+      {/* Filter row */}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            padding: 6,
+            background: "var(--bg-elevated)",
+            border: "1px solid var(--border)",
+            borderRadius: "var(--r)",
+          }}
+        >
+          <button type="button" className="btn ghost btn-sm" onClick={prevMonth} aria-label="Mes anterior">
+            <IconSvg d={Icons.arrowLeft} size={14} />
+          </button>
+          <span style={{ padding: "4px 10px", fontSize: 14, fontWeight: 600, textTransform: "capitalize" }}>
+            {monthLabel}
+          </span>
+          <button type="button" className="btn ghost btn-sm" onClick={nextMonth} aria-label="Mes siguiente">
+            <IconSvg d={Icons.chevron} size={14} />
+          </button>
+        </div>
+        <div className="tabs" style={{ margin: 0 }}>
+          <button
+            type="button"
+            className={`tab ${view === "cal" ? "active" : ""}`}
+            onClick={() => setView("cal")}
+          >
+            <IconSvg d={Icons.calendar} size={13} /> Calendario
+          </button>
+          <button
+            type="button"
+            className={`tab ${view === "list" ? "active" : ""}`}
+            onClick={() => setView("list")}
+          >
+            <IconSvg d={Icons.dashboard} size={13} /> Lista
+          </button>
+        </div>
+        <div style={{ marginLeft: "auto", display: "flex", gap: 10, fontSize: 11, color: "var(--text-muted)" }}>
+          <span>
+            <span className="legend-dot success" /> OK
+          </span>
+          <span>
+            <span className="legend-dot warn" /> Corta
+          </span>
+          <span>
+            <span className="legend-dot accent" /> Permiso
+          </span>
+          <span>
+            <span className="legend-dot danger" /> Feriado
+          </span>
+        </div>
+      </div>
 
-        <TabsContent value="calendar" className="mt-3">
-          <div className="flex items-center justify-between mb-3">
-            <Button variant="ghost" size="icon" className="size-9" onClick={() => nav(-1)}><ChevronLeft className="size-5" /></Button>
-            <div className="text-center">
-              <h2 className="text-lg font-bold">{MONTHS[cm]} {cy}</h2>
-              <button type="button" onClick={() => { setCy(now.getFullYear()); setCm(now.getMonth()); setSel(today); }}
-                className="text-xs text-primary hover:underline">Ir a hoy</button>
-            </div>
-            <Button variant="ghost" size="icon" className="size-9" onClick={() => nav(1)}><ChevronRight className="size-5" /></Button>
+      {/* Content */}
+      <div className="panel">
+        {isLoading ? (
+          <div
+            style={{
+              padding: "60px 0",
+              textAlign: "center",
+              color: "var(--text-muted)",
+              fontSize: 13,
+            }}
+          >
+            Cargando historial…
           </div>
-
-          {!cQ.isLoading && cDays.length > 0 && <MSummary days={cDays} eventsMap={eventsMap} />}
-          {cQ.isLoading && <div className="flex items-center justify-center py-20"><p className="text-sm text-foreground/40 animate-pulse">Cargando...</p></div>}
-          {cQ.isError && <p className="text-sm text-destructive py-8 text-center">Error al cargar.</p>}
-
-          {!cQ.isLoading && !cQ.isError && (
-            <div className="flex gap-4 mt-3 items-start">
-              <div className="flex-1 min-w-0">
-                <CalGrid year={cy} month={cm} days={cDays} eventsMap={eventsMap}
-                  onSelect={d => setSel(p => p === d ? null : d)} sel={sel} t={t} tz={tz} />
-              </div>
-              <div className={cn("shrink-0 transition-all duration-300 ease-out overflow-hidden", sel ? "w-[320px] opacity-100" : "w-0 opacity-0")}>
-                {selDay ? (
-                  <DetailPanel day={selDay} events={selEvents} onReg={setRegDate} onClose={() => setSel(null)} t={t} vis={pVis} tz={tz} />
-                ) : sel ? (
-                  <EmptyDayPanel dateStr={sel} events={selEvents} onReg={setRegDate} onClose={() => setSel(null)} t={t} vis={pVis} tz={tz} />
-                ) : null}
-              </div>
-            </div>
-          )}
-        </TabsContent>
-
-        <TabsContent value="list" className="mt-4 space-y-4">
-          <div className="flex flex-wrap items-end gap-4">
-            <div className="space-y-1.5"><Label htmlFor="df">Desde</Label><Input id="df" type="date" value={lf} onChange={e => setLf(e.target.value)} /></div>
-            <div className="space-y-1.5"><Label htmlFor="dt">Hasta</Label><Input id="dt" type="date" value={lt} onChange={e => setLt(e.target.value)} /></div>
-          </div>
-          {lQ.isLoading && <p className="text-sm text-foreground/40">Cargando...</p>}
-          {lQ.isError && <p className="text-sm text-destructive">Error al cargar.</p>}
-          {!lQ.isLoading && !lQ.isError && (
-            <div className="rounded-xl border overflow-hidden">
-              <Table>
-                <TableHeader><TableRow>
-                  <TableHead>Fecha</TableHead><TableHead>Entrada</TableHead><TableHead>Salida</TableHead>
-                  <TableHead>Break</TableHead><TableHead>Trabajo</TableHead><TableHead>Estado</TableHead>
-                  <TableHead>Razon</TableHead><TableHead className="w-[90px]" />
-                </TableRow></TableHeader>
-                <TableBody>
-                  {lDays.length === 0 ? (
-                    <TableRow><TableCell colSpan={8} className="text-center text-foreground/40 py-12">Sin registros</TableCell></TableRow>
-                  ) : lDays.map(d => {
-                    const cr = REG_OK.has(d.status) && d.date < today;
-                    return (<TableRow key={d.date} ref={el => { if (el) rowRefs.current.set(d.date, el); }}>
-                      <TableCell className="font-medium">{d.date}</TableCell>
-                      <TableCell>{d.firstInLocal ?? "--:--"}</TableCell><TableCell>{d.lastOutLocal ?? "--:--"}</TableCell>
-                      <TableCell>{fmtMin(d.breakMinutes)}</TableCell>
-                      <TableCell className="font-semibold">{d.workedHHMM ?? fmtMin(d.workedMinutes)}</TableCell>
-                      <TableCell><StatusBadge status={d.status} /></TableCell>
-                      <TableCell className="text-foreground/50">{d.reasonLabel ?? d.reasonCode ?? "-"}</TableCell>
-                      <TableCell>{cr && <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs" onClick={() => setRegDate(d.date)}><PenLineIcon className="size-3.5" /> Regularizar</Button>}</TableCell>
-                    </TableRow>);
-                  })}
-                </TableBody>
-                {lDays.length > 0 && <TableFooter><TableRow>
-                  <TableCell className="font-bold">Total</TableCell><TableCell /><TableCell />
-                  <TableCell className="font-bold">{fmtMin(tb)}</TableCell><TableCell className="font-bold">{fmtMin(tw)}</TableCell>
-                  <TableCell /><TableCell /><TableCell />
-                </TableRow></TableFooter>}
-              </Table>
-            </div>
-          )}
-        </TabsContent>
-      </Tabs>
-
-      <RegularizeDialog open={regDate !== null} onOpenChange={o => { if (!o) setRegDate(null); }} workDate={regDate ?? ""} />
-    </div>
+        ) : view === "cal" ? (
+          <CalendarView cells={cells} todayDate={today} />
+        ) : (
+          <ListView days={realDays} monthName={monthName} />
+        )}
+      </div>
+    </>
   );
 }

@@ -1,5 +1,34 @@
 import { z } from "zod";
 
+/**
+ * Restrict avatar / tenant logo / post image URLs to the configured S3 bucket.
+ * Prevents attackers from pointing the image to a third-party host (tracking,
+ * phishing avatars, content spoofing). Treats `null`/empty as "clear".
+ */
+const trustedImageHost = (() => {
+  const bucket = process.env.REPORT_BUCKET || "novasys-v2-reports";
+  return `${bucket}.s3.amazonaws.com`;
+})();
+
+const trustedImageUrl = z
+  .string()
+  .url()
+  .refine(
+    (u) => {
+      try {
+        const parsed = new URL(u);
+        return (
+          parsed.protocol === "https:" && parsed.hostname === trustedImageHost
+        );
+      } catch {
+        return false;
+      }
+    },
+    {
+      message: `La imagen debe estar alojada en ${trustedImageHost}`,
+    },
+  );
+
 // ── Attendance ──
 export const recordEventSchema = z.object({
   eventType: z.enum(["START", "BREAK_START", "BREAK_END", "END"]),
@@ -74,7 +103,7 @@ export const createHREventSchema = z.object({
   message: z.string().max(1000),
   eventDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   audience: z.string().optional(),
-  imageUrl: z.string().url().optional(),
+  imageUrl: trustedImageUrl.optional(),
 });
 
 // ── Employee Profile ──
@@ -83,7 +112,7 @@ export const updateProfileSchema = z.object({
   FirstName: z.string().max(50).optional(),
   LastName: z.string().max(50).optional(),
   Phone: z.string().max(20).optional(),
-  AvatarUrl: z.string().url().optional(),
+  AvatarUrl: trustedImageUrl.optional(),
   DNI: z.string().max(20).optional(),
   Area: z.string().max(100).optional(),
   Position: z.string().max(100).optional(),

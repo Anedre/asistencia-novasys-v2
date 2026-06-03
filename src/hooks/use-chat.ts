@@ -65,7 +65,10 @@ export function useSendMessage(sessionId: string) {
       return res.json() as Promise<{ message: AIChatMessage; blocks?: UIBlock[] }>;
     },
     onSuccess: () => {
+      // Invalidate both the list (titles, lastUpdated) and the active session
+      // detail so the assistant reply / auto-rename appear without a reload.
       qc.invalidateQueries({ queryKey: ["chat-sessions"] });
+      qc.invalidateQueries({ queryKey: ["chat-session", sessionId] });
     },
   });
 }

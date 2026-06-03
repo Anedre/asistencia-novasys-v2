@@ -4,6 +4,7 @@
  */
 
 import {
+  AdminDeleteUserCommand,
   CognitoIdentityProviderClient,
   InitiateAuthCommand,
   SignUpCommand,
@@ -11,6 +12,7 @@ import {
   ResendConfirmationCodeCommand,
   ForgotPasswordCommand,
   ConfirmForgotPasswordCommand,
+  ChangePasswordCommand,
   type AuthenticationResultType,
 } from "@aws-sdk/client-cognito-identity-provider";
 
@@ -32,10 +34,16 @@ function decodeJwtPayload(token: string): Record<string, unknown> {
   return JSON.parse(Buffer.from(payload, "base64url").toString("utf-8"));
 }
 
-/** Error mapping: Cognito exception name → Spanish user-facing message */
+/** Error mapping: Cognito exception name → Spanish user-facing message.
+ *
+ * IMPORTANT — user enumeration: both `NotAuthorizedException` (wrong password)
+ * and `UserNotFoundException` (email doesn't exist) MUST return the same
+ * message during sign-in / forgot-password / resend-code, otherwise an
+ * attacker can iterate emails to discover which addresses have accounts.
+ */
 const ERROR_MESSAGES: Record<string, string> = {
   NotAuthorizedException: "Correo o contraseña incorrectos",
-  UserNotFoundException: "No existe una cuenta con ese correo",
+  UserNotFoundException: "Correo o contraseña incorrectos",
   UserNotConfirmedException: "Tu cuenta no ha sido verificada. Revisa tu correo.",
   UsernameExistsException: "Ya existe una cuenta con ese correo",
   CodeMismatchException: "Código de verificación incorrecto",
@@ -100,6 +108,30 @@ export interface SignUpParams {
   fullName: string;
   phoneNumber: string;
   nickname: string;
+}
+
+/** Roll back a Cognito user — used when downstream DB writes fail after
+ * sign-up so we don't orphan accounts that have no employee record. Requires
+ * AdminDeleteUser permission on the executing principal and the user pool id
+ * via COGNITO_USER_POOL_ID env var. Errors are swallowed — best-effort. */
+export async function cognitoDeleteUser(username: string): Promise<void> {
+  const userPoolId = process.env.COGNITO_USER_POOL_ID;
+  if (!userPoolId || !username) return;
+  try {
+    await cognitoClient.send(
+      new AdminDeleteUserCommand({
+        UserPoolId: userPoolId,
+        Username: username,
+      }),
+    );
+  } catch (err) {
+    // Best-effort cleanup; surface in logs but don't throw — the caller is
+    // already handling an error path.
+    console.error(
+      "[cognito] AdminDeleteUser failed:",
+      (err as Error)?.name ?? err,
+    );
+  }
 }
 
 export async function cognitoSignUp(
@@ -178,6 +210,39 @@ export async function cognitoConfirmForgotPassword(
       Username: email.toLowerCase(),
       ConfirmationCode: code,
       Password: newPassword,
+    })
+  );
+}
+
+// ── Change Password (authenticated user) ──
+// Re-authenticates with current password to get a fresh access token,
+// then uses ChangePasswordCommand to set the new one.
+export async function cognitoChangePassword(
+  email: string,
+  currentPassword: string,
+  newPassword: string
+): Promise<void> {
+  // Step 1: verify current password by re-authenticating
+  const authResult = await cognitoClient.send(
+    new InitiateAuthCommand({
+      AuthFlow: "USER_PASSWORD_AUTH",
+      ClientId: PASSWORD_CLIENT_ID,
+      AuthParameters: {
+        USERNAME: email.toLowerCase(),
+        PASSWORD: currentPassword,
+      },
+    })
+  );
+  const accessToken = authResult.AuthenticationResult?.AccessToken;
+  if (!accessToken) {
+    throw new Error("No se pudo verificar la contraseña actual");
+  }
+  // Step 2: change password using the fresh access token
+  await cognitoClient.send(
+    new ChangePasswordCommand({
+      AccessToken: accessToken,
+      PreviousPassword: currentPassword,
+      ProposedPassword: newPassword,
     })
   );
 }

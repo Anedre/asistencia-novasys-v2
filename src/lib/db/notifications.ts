@@ -79,7 +79,12 @@ export async function markAllAsRead(recipientId: string): Promise<void> {
   );
 
   const items = unread.Items ?? [];
-  for (const item of items) {
-    await markAsRead(recipientId, item.createdAt as string);
-  }
+  // Fan out updates in parallel — sequential awaits make mark-all O(N)
+  // round-trips, which for inboxes with hundreds of unread items can exceed
+  // the serverless timeout.
+  await Promise.all(
+    items.map((item) =>
+      markAsRead(recipientId, item.createdAt as string).catch(() => undefined),
+    ),
+  );
 }

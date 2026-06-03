@@ -1,65 +1,71 @@
 "use client";
 
+/**
+ * RRHH admin — rediseñado.
+ *
+ * Layout sections (top → bottom):
+ *   1. PageHeader (month picker + create event)
+ *   2. KPI strip — 4 stats (cumples, aniversarios, quinquenios, documentos)
+ *   3. "Celebraciones HOY" hero banner — visible only when someone has a
+ *      birthday or anniversary on today's date (confetti CSS animation)
+ *   4. Two-column row: Cumpleaños del mes  |  Aniversarios del mes
+ *      (avatar-rich rows; quinquenios highlighted with gold pill)
+ *   5. Próximos cumpleaños (cards with progress-bar countdown)
+ *   6. Documentos RRHH — sidebar category filter + main list with file-
+ *      type icons. Upload moved into a side drawer (opens on "+ Subir")
+ *   7. Comunicados — timeline with metadata (date, type) and inline
+ *      reenviar/archive actions
+ *
+ * APIs unchanged. Inline styles removed in favor of `hra-*` classes.
+ */
+
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import Link from "next/link";
-import {
-  Cake,
-  Trophy,
-  Calendar,
-  Plus,
-  Trash2,
-  Megaphone,
-  FolderOpen,
-  Upload,
-  FileText,
-  Loader2,
-  Send,
-  Search,
-  X,
-  Users,
-  Check,
-} from "lucide-react";
+import { toast } from "sonner";
 import { useHREvents, useArchiveHREvent, useResendAnnouncement } from "@/hooks/use-hr";
-import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { IconSvg, Icons } from "@/components/nova/icons";
 import { EmptyState } from "@/components/shared/empty-state";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from "@/components/ui/dialog";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { PageHeader } from "@/components/nova/page-header";
+import { NovaAvatar } from "@/components/nova/avatar";
 import type { BirthdayEntry, AnniversaryEntry, UpcomingBirthday, HREvent } from "@/lib/types";
 
-function TableSkeleton() {
-  return (
-    <div className="space-y-2">
-      {Array.from({ length: 4 }).map((_, i) => (
-        <Skeleton key={i} className="h-10 w-full" />
-      ))}
-    </div>
-  );
+/* ---------------------------------------------------------------- helpers */
+
+const MONTH_NAMES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+
+function shortDate(yyyymmdd: string): string {
+  if (!yyyymmdd) return "";
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(yyyymmdd);
+  if (!m) return yyyymmdd;
+  const day = Number(m[3]);
+  const monthIdx = Number(m[2]) - 1;
+  return `${day} ${(MONTH_NAMES[monthIdx] ?? "").slice(0, 3)}`;
 }
+
+function isToday(yyyymmdd: string): boolean {
+  const d = new Date();
+  const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  return yyyymmdd === today;
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function fileTypeFromName(name: string): { tag: string; cls: string } {
+  const ext = name.split(".").pop()?.toLowerCase() ?? "";
+  if (ext === "pdf") return { tag: "PDF", cls: "pdf" };
+  if (["doc", "docx"].includes(ext)) return { tag: "DOC", cls: "doc" };
+  if (["xls", "xlsx", "csv"].includes(ext)) return { tag: "XLS", cls: "xls" };
+  if (["ppt", "pptx"].includes(ext)) return { tag: "PPT", cls: "ppt" };
+  if (["jpg", "jpeg", "png", "gif", "webp"].includes(ext)) return { tag: "IMG", cls: "img" };
+  if (["zip", "rar", "7z"].includes(ext)) return { tag: "ZIP", cls: "zip" };
+  return { tag: ext.toUpperCase().slice(0, 3) || "•", cls: "doc" };
+}
+
+/* ============================================================ Page */
 
 export default function AdminHRPage() {
   const [month, setMonth] = useState(() => {
@@ -68,267 +74,680 @@ export default function AdminHRPage() {
   });
 
   const { data, isLoading } = useHREvents(month);
-  const archiveMutation = useArchiveHREvent();
-  const [resendEventId, setResendEventId] = useState<string | null>(null);
 
   const birthdays: BirthdayEntry[] = data?.birthdays ?? [];
   const anniversaries: AnniversaryEntry[] = data?.anniversaries ?? [];
   const upcomingBirthdays: UpcomingBirthday[] = data?.upcomingBirthdays ?? [];
   const announcements: HREvent[] = data?.announcements ?? [];
 
-  const resendEvent = announcements.find((a) => a.NotificationID === resendEventId);
+  const todayBdays = birthdays.filter((b) => isToday(b.eventDate));
+  const todayAnniv = anniversaries.filter((a) => isToday(a.eventDate));
+  const todayQuinq = todayAnniv.filter((a) => a.isQuinquenio).length;
+  const quinquenios = anniversaries.filter((a) => a.isQuinquenio).length;
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Gestión RRHH</h1>
-          <p className="text-muted-foreground">
-            Administra eventos, cumpleaños y aniversarios
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
-            <Label htmlFor="month-select">Mes</Label>
-            <Input
+    <>
+      <PageHeader
+        title="Gestión RRHH"
+        subtitle="Administra eventos, cumpleaños, aniversarios y comunicados."
+        actions={
+          <>
+            <input
               id="month-select"
               type="month"
+              className="form-input"
               value={month}
               onChange={(e) => setMonth(e.target.value)}
-              className="w-44"
+              style={{ width: 160, padding: "6px 10px", fontSize: 13 }}
+              aria-label="Mes"
             />
-          </div>
-          <Button render={<Link href="/admin/hr/create" />}>
-            <Plus className="size-4" />
-            Crear Evento
-          </Button>
-        </div>
+            <Link href="/admin/hr/create" className="btn primary btn-sm">
+              <IconSvg d={Icons.plus} size={14} />
+              Crear evento
+            </Link>
+          </>
+        }
+      />
+
+      {/* ─── KPI strip ─── */}
+      <div className="hra-kpis">
+        <KpiCard icon={Icons.cake} label="Cumpleaños del mes" value={birthdays.length} />
+        <KpiCard icon={Icons.party} label="Aniversarios del mes" value={anniversaries.length} variant="warn" />
+        <KpiCard icon={Icons.shield} label="Quinquenios" value={quinquenios} variant="gold" />
+        <KpiCard icon={Icons.doc} label="Documentos" value={<DocCount />} variant="success" />
       </div>
 
-      {/* Cumpleaños del Mes */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Cake className="size-5" />
-            Cumpleaños del Mes
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
+      {/* ─── Celebración HOY ─── */}
+      {(todayBdays.length > 0 || todayAnniv.length > 0) && (
+        <TodayBanner
+          birthdays={todayBdays}
+          anniversaries={todayAnniv}
+          quinqCount={todayQuinq}
+        />
+      )}
+
+      {/* ─── Cumpleaños + Aniversarios del mes ─── */}
+      <div className="hra-cols-2">
+        <SectionBlock icon={Icons.cake} title="Cumpleaños del mes" count={birthdays.length}>
           {isLoading ? (
-            <TableSkeleton />
+            <LoadingRows />
           ) : birthdays.length === 0 ? (
             <EmptyState
-              icon={Cake}
-              title="Sin cumpleaños"
-              description="No hay cumpleaños este mes"
+              icon={Icons.cake}
+              title="Sin cumpleaños este mes"
+              description="Cambia el mes en el selector arriba."
             />
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Nombre</TableHead>
-                  <TableHead>Área</TableHead>
-                  <TableHead>Cargo</TableHead>
-                  <TableHead>Fecha</TableHead>
-                  <TableHead>Edad</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {birthdays.map((b) => (
-                  <TableRow key={b.employeeId}>
-                    <TableCell className="font-medium">
-                      🎂 {b.employeeName}
-                    </TableCell>
-                    <TableCell>{b.area}</TableCell>
-                    <TableCell>{b.position}</TableCell>
-                    <TableCell>{b.eventDate}</TableCell>
-                    <TableCell>{b.years} años</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Aniversarios del Mes */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Trophy className="size-5" />
-            Aniversarios del Mes
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {isLoading ? (
-            <TableSkeleton />
-          ) : anniversaries.length === 0 ? (
-            <EmptyState
-              icon={Trophy}
-              title="Sin aniversarios"
-              description="No hay aniversarios este mes"
-            />
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Nombre</TableHead>
-                  <TableHead>Área</TableHead>
-                  <TableHead>Cargo</TableHead>
-                  <TableHead>Fecha Ingreso</TableHead>
-                  <TableHead>Años</TableHead>
-                  <TableHead>Quinquenio</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {anniversaries.map((a) => (
-                  <TableRow key={a.employeeId}>
-                    <TableCell className="font-medium">
-                      {a.employeeName}
-                    </TableCell>
-                    <TableCell>{a.area}</TableCell>
-                    <TableCell>{a.position}</TableCell>
-                    <TableCell>{a.eventDate}</TableCell>
-                    <TableCell>{a.years} años</TableCell>
-                    <TableCell>
-                      {a.isQuinquenio ? (
-                        <Badge variant="default">🏆 Quinquenio</Badge>
-                      ) : (
-                        <span className="text-muted-foreground">—</span>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Próximos Cumpleaños */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Calendar className="size-5" />
-            Próximos Cumpleaños (30 días)
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {isLoading ? (
-            <TableSkeleton />
-          ) : upcomingBirthdays.length === 0 ? (
-            <EmptyState
-              icon={Calendar}
-              title="Sin próximos cumpleaños"
-              description="No hay cumpleaños en los próximos 30 días"
-            />
-          ) : (
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {upcomingBirthdays.map((u) => (
-                <Card key={u.employeeId}>
-                  <CardContent className="p-4">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="font-medium">🎂 {u.employeeName}</p>
-                        <p className="text-sm text-muted-foreground">
-                          {u.area} — {u.position}
-                        </p>
-                      </div>
-                      <Badge variant="secondary">
-                        {u.daysUntil === 0
-                          ? "¡Hoy!"
-                          : u.daysUntil === 1
-                            ? "Mañana"
-                            : `${u.daysUntil} días`}
-                      </Badge>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Documentos RRHH */}
-      <DocumentosAdmin />
-
-      {/* Comunicados */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Megaphone className="size-5" />
-            Comunicados
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {isLoading ? (
-            <TableSkeleton />
-          ) : announcements.length === 0 ? (
-            <EmptyState
-              icon={Megaphone}
-              title="Sin comunicados"
-              description="No hay comunicados ni feriados este mes"
-            />
-          ) : (
-            <div className="space-y-3">
-              {announcements.map((evt) => (
+            <div className="hra-list">
+              {birthdays.map((b) => (
                 <div
-                  key={evt.NotificationID}
-                  className="flex items-start justify-between rounded-lg border p-4"
+                  key={b.employeeId}
+                  className={`hra-row${isToday(b.eventDate) ? " today" : ""}`}
                 >
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <Badge variant={evt.Type === "HOLIDAY" ? "secondary" : "default"}>
-                        {evt.Type === "HOLIDAY" ? "Feriado" : "Comunicado"}
-                      </Badge>
-                      <span className="font-medium">{evt.Title}</span>
+                  <NovaAvatar name={b.employeeName} size={36} variant="plain" />
+                  <div className="hra-row-main">
+                    <div className="hra-row-name">{b.employeeName}</div>
+                    <div className="hra-row-meta">
+                      {b.area} · {b.position} · {b.years} años
                     </div>
-                    <p className="text-sm text-muted-foreground">{evt.Message}</p>
-                    <p className="text-xs text-muted-foreground">
-                      Fecha: {evt.EventDate}
-                    </p>
                   </div>
-                  <div className="flex items-center gap-1">
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      title="Reenviar"
-                      onClick={() => setResendEventId(evt.NotificationID)}
-                    >
-                      <Send className="size-4 text-primary" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      title="Archivar"
-                      onClick={() => archiveMutation.mutate(evt.NotificationID)}
-                      disabled={archiveMutation.isPending}
-                    >
-                      <Trash2 className="size-4 text-destructive" />
-                    </Button>
-                  </div>
+                  <span className="hra-row-day">{shortDate(b.eventDate)}</span>
                 </div>
               ))}
             </div>
           )}
-        </CardContent>
-      </Card>
+        </SectionBlock>
 
-      {/* Resend dialog */}
-      {resendEvent && (
-        <ResendDialog
-          event={resendEvent}
-          onClose={() => setResendEventId(null)}
-        />
-      )}
+        <SectionBlock icon={Icons.party} title="Aniversarios del mes" count={anniversaries.length}>
+          {isLoading ? (
+            <LoadingRows />
+          ) : anniversaries.length === 0 ? (
+            <EmptyState
+              icon={Icons.party}
+              title="Sin aniversarios este mes"
+              description="Ningún empleado celebra aniversario laboral este mes."
+            />
+          ) : (
+            <div className="hra-list">
+              {anniversaries.map((a) => (
+                <div
+                  key={a.employeeId}
+                  className={`hra-row${isToday(a.eventDate) ? " today" : ""}`}
+                >
+                  <NovaAvatar name={a.employeeName} size={36} variant="plain" />
+                  <div className="hra-row-main">
+                    <div className="hra-row-name-wrap">
+                      <span className="hra-row-name">{a.employeeName}</span>
+                      {a.isQuinquenio && <span className="hra-quinq">Quinquenio</span>}
+                    </div>
+                    <div className="hra-row-meta">
+                      {a.area} · {a.position} · {a.years} años
+                    </div>
+                  </div>
+                  <span className="hra-row-day">{shortDate(a.eventDate)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </SectionBlock>
+      </div>
+
+      {/* ─── Próximos cumpleaños ─── */}
+      <SectionBlock icon={Icons.calendar} title="Próximos cumpleaños (30 días)" count={upcomingBirthdays.length}>
+        {isLoading ? (
+          <LoadingRows />
+        ) : upcomingBirthdays.length === 0 ? (
+          <EmptyState
+            icon={Icons.calendar}
+            title="Sin próximos cumpleaños"
+            description="No hay cumpleaños en los próximos 30 días."
+          />
+        ) : (
+          <div className="hra-upcoming-grid">
+            {upcomingBirthdays.map((u) => (
+              <UpcomingCard key={u.employeeId} entry={u} />
+            ))}
+          </div>
+        )}
+      </SectionBlock>
+
+      {/* ─── Documentos ─── */}
+      <DocumentsLibrary />
+
+      {/* ─── Comunicados ─── */}
+      <SectionBlock icon={Icons.bell} title="Comunicados" count={announcements.length}>
+        {isLoading ? (
+          <LoadingRows />
+        ) : announcements.length === 0 ? (
+          <EmptyState
+            icon={Icons.bell}
+            title="Sin comunicados"
+            description="No hay comunicados ni feriados este mes. Crea uno para anunciarlo al equipo."
+          />
+        ) : (
+          <AnnouncementList events={announcements} />
+        )}
+      </SectionBlock>
+    </>
+  );
+}
+
+/* ============================================================ Pieces */
+
+function KpiCard({
+  icon,
+  label,
+  value,
+  variant = "default",
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: React.ReactNode;
+  variant?: "default" | "warn" | "success" | "gold";
+}) {
+  return (
+    <div className="hra-kpi">
+      <div className={`hra-kpi-icon ${variant === "default" ? "" : variant}`}>
+        <IconSvg d={icon} size={18} />
+      </div>
+      <div className="hra-kpi-main">
+        <div className="hra-kpi-value">{value}</div>
+        <div className="hra-kpi-label">{label}</div>
+      </div>
     </div>
   );
 }
 
-/* ------------------------------------------------------------------ */
-/*  ResendDialog                                                      */
-/* ------------------------------------------------------------------ */
+function DocCount() {
+  const [count, setCount] = useState<number | string>("—");
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/admin/hr/documents")
+      .then((r) => r.json())
+      .then((d) => alive && setCount(d.documents?.length ?? 0))
+      .catch(() => alive && setCount("—"));
+    return () => {
+      alive = false;
+    };
+  }, []);
+  return <>{count}</>;
+}
+
+function TodayBanner({
+  birthdays,
+  anniversaries,
+  quinqCount,
+}: {
+  birthdays: BirthdayEntry[];
+  anniversaries: AnniversaryEntry[];
+  quinqCount: number;
+}) {
+  const names = [
+    ...birthdays.map((b) => b.employeeName),
+    ...anniversaries.map((a) => a.employeeName),
+  ];
+  const hasBday = birthdays.length > 0;
+  const emoji = hasBday ? "🎂" : "🎉";
+  const totalCount = names.length;
+
+  let title: string;
+  if (totalCount === 1) {
+    title = hasBday
+      ? `¡Hoy es cumpleaños de ${names[0]}!`
+      : `¡Hoy es aniversario de ${names[0]}!`;
+  } else {
+    title = `¡${totalCount} celebraciones hoy!`;
+  }
+
+  const sub = totalCount === 1
+    ? hasBday
+      ? `${birthdays[0].position} · ${birthdays[0].area}`
+      : `${anniversaries[0].years} años en la empresa${quinqCount > 0 ? " · ¡Quinquenio!" : ""}`
+    : `${birthdays.length} cumpleaños · ${anniversaries.length} aniversario(s)${quinqCount > 0 ? ` · ${quinqCount} quinquenio(s)` : ""}`;
+
+  return (
+    <div className="hra-today">
+      <span className="hra-today-emoji" role="img" aria-label="celebración">{emoji}</span>
+      <div className="hra-today-main">
+        <h3 className="hra-today-title">{title}</h3>
+        <p className="hra-today-sub">{sub}</p>
+      </div>
+    </div>
+  );
+}
+
+function SectionBlock({
+  icon,
+  title,
+  count,
+  children,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  count?: number;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="hra-section">
+      <div className="hra-section-head">
+        <span className="hra-section-icon">
+          <IconSvg d={icon} size={15} />
+        </span>
+        <span className="hra-section-title">{title}</span>
+        {typeof count === "number" && (
+          <span className="hra-section-count">{count}</span>
+        )}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function UpcomingCard({ entry }: { entry: UpcomingBirthday }) {
+  // Progress = "how close we are" — 0 days = full bar, 30 days = empty
+  const pct = Math.max(0, Math.min(100, ((30 - entry.daysUntil) / 30) * 100));
+  const urgency =
+    entry.daysUntil === 0 ? "urgent" : entry.daysUntil <= 7 ? "soon" : "";
+  const label =
+    entry.daysUntil === 0
+      ? "¡Hoy!"
+      : entry.daysUntil === 1
+      ? "Mañana"
+      : `En ${entry.daysUntil} días`;
+
+  return (
+    <div className={`hra-upcoming ${urgency}`}>
+      <div className="hra-upcoming-head">
+        <NovaAvatar name={entry.employeeName} size={36} variant="plain" />
+        <div className="hra-upcoming-info">
+          <div className="hra-upcoming-name">{entry.employeeName}</div>
+          <div className="hra-upcoming-area">
+            {entry.area} · {entry.position}
+          </div>
+        </div>
+      </div>
+      <div className="hra-upcoming-progress" aria-hidden>
+        <div
+          className="hra-upcoming-progress-fill"
+          style={{ transform: `scaleX(${pct / 100})` }}
+        />
+      </div>
+      <div className="hra-upcoming-foot">
+        <span className="hra-upcoming-date">{shortDate(entry.eventDate)}</span>
+        <span className="hra-upcoming-count">{label}</span>
+      </div>
+    </div>
+  );
+}
+
+function LoadingRows() {
+  return (
+    <div className="hra-list">
+      {Array.from({ length: 3 }).map((_, i) => (
+        <div
+          key={i}
+          style={{ height: 56, background: "var(--bg-subtle)", borderRadius: 12, opacity: 0.6 }}
+        />
+      ))}
+    </div>
+  );
+}
+
+/* ============================================================ Documents */
+
+interface AdminDoc {
+  DocID: string;
+  Title: string;
+  Category: string;
+  FileName: string;
+  FileSize: number;
+  UploadedByName: string;
+  CreatedAt: string;
+}
+
+const CATEGORIES = ["Politicas", "Manuales", "Formatos", "Otros"] as const;
+
+function DocumentsLibrary() {
+  const [docs, setDocs] = useState<AdminDoc[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [filter, setFilter] = useState<string>("Todos");
+  const [uploadOpen, setUploadOpen] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      const res = await fetch("/api/admin/hr/documents");
+      if (!res.ok) throw new Error();
+      const json = await res.json();
+      setDocs(json.documents ?? []);
+    } catch {
+      // silent
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const counts = useMemo(() => {
+    const m: Record<string, number> = { Todos: docs.length };
+    for (const c of CATEGORIES) m[c] = 0;
+    for (const d of docs) m[d.Category] = (m[d.Category] ?? 0) + 1;
+    return m;
+  }, [docs]);
+
+  const filtered = useMemo(
+    () => (filter === "Todos" ? docs : docs.filter((d) => d.Category === filter)),
+    [docs, filter]
+  );
+
+  async function handleDelete(docId: string) {
+    try {
+      await fetch(`/api/admin/hr/documents/${docId}`, { method: "DELETE" });
+      setDocs((prev) => prev.filter((d) => d.DocID !== docId));
+      toast.success("Documento eliminado");
+    } catch {
+      toast.error("Error al eliminar documento");
+    }
+  }
+
+  return (
+    <SectionBlock icon={Icons.doc} title="Documentos RRHH" count={docs.length}>
+      <div className="hra-docs">
+        <aside className="hra-docs-side">
+          {(["Todos", ...CATEGORIES] as const).map((c) => (
+            <button
+              key={c}
+              type="button"
+              className={`hra-docs-side-cat${filter === c ? " active" : ""}`}
+              onClick={() => setFilter(c)}
+            >
+              <span>{c}</span>
+              <span className="hra-docs-side-cat-count">{counts[c] ?? 0}</span>
+            </button>
+          ))}
+          <div className="hra-docs-side-divider" />
+          <button
+            type="button"
+            className="hra-docs-upload-btn"
+            onClick={() => setUploadOpen(true)}
+          >
+            <IconSvg d={Icons.upload} size={14} />
+            Subir documento
+          </button>
+        </aside>
+
+        <div>
+          {isLoading ? (
+            <LoadingRows />
+          ) : filtered.length === 0 ? (
+            <EmptyState
+              icon={Icons.doc}
+              title={filter === "Todos" ? "Sin documentos" : `Sin documentos en ${filter}`}
+              description={
+                filter === "Todos"
+                  ? "Sube el primero usando el botón a la izquierda."
+                  : "Cambia el filtro o sube uno nuevo."
+              }
+            />
+          ) : (
+            <div>
+              {filtered.map((doc) => {
+                const ft = fileTypeFromName(doc.FileName);
+                return (
+                  <div key={doc.DocID} className="hra-doc-row">
+                    <div className={`hra-doc-ftype ${ft.cls}`}>{ft.tag}</div>
+                    <div className="hra-doc-info">
+                      <div className="hra-doc-name">{doc.Title}</div>
+                      <div className="hra-doc-sub">
+                        <span>{doc.Category}</span>
+                        <span className="hra-doc-sub-sep">·</span>
+                        <span>{formatFileSize(doc.FileSize)}</span>
+                        <span className="hra-doc-sub-sep">·</span>
+                        <span>{doc.UploadedByName}</span>
+                        <span className="hra-doc-sub-sep">·</span>
+                        <span>
+                          {new Date(doc.CreatedAt).toLocaleDateString("es-PE", {
+                            day: "numeric",
+                            month: "short",
+                          })}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="hra-doc-actions">
+                      <button
+                        type="button"
+                        className="btn ghost btn-sm"
+                        onClick={() => handleDelete(doc.DocID)}
+                        style={{ color: "var(--danger)" }}
+                        aria-label="Eliminar documento"
+                      >
+                        <IconSvg d={Icons.trash} size={14} />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {uploadOpen && (
+        <UploadDrawer
+          onClose={() => setUploadOpen(false)}
+          onUploaded={() => {
+            setUploadOpen(false);
+            load();
+          }}
+        />
+      )}
+    </SectionBlock>
+  );
+}
+
+function UploadDrawer({
+  onClose,
+  onUploaded,
+}: {
+  onClose: () => void;
+  onUploaded: () => void;
+}) {
+  const [title, setTitle] = useState("");
+  const [category, setCategory] = useState<string>("Politicas");
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  async function handleUpload() {
+    const file = fileRef.current?.files?.[0];
+    if (!file || !title.trim()) {
+      toast.error("Título y archivo son obligatorios");
+      return;
+    }
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("title", title.trim());
+      fd.append("category", category);
+      const res = await fetch("/api/admin/hr/documents", { method: "POST", body: fd });
+      const json = await res.json();
+      if (!res.ok) {
+        toast.error(json.error ?? "Error al subir");
+        return;
+      }
+      toast.success("Documento subido");
+      onUploaded();
+    } catch {
+      toast.error("Error de conexión");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  return (
+    <>
+      <div className="hra-drawer-backdrop" onClick={onClose} />
+      <aside className="hra-drawer" role="dialog" aria-label="Subir documento">
+        <div className="hra-drawer-head">
+          <h3 className="hra-drawer-title">Subir documento</h3>
+          <button
+            type="button"
+            className="btn ghost btn-sm"
+            onClick={onClose}
+            aria-label="Cerrar"
+          >
+            <IconSvg d={Icons.x} size={14} />
+          </button>
+        </div>
+        <div className="hra-drawer-body">
+          <div className="form-group">
+            <label className="form-label" htmlFor="upload-title">
+              Título<span className="req">*</span>
+            </label>
+            <input
+              id="upload-title"
+              className="form-input"
+              placeholder="Ej: Política de vacaciones 2026"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              autoFocus
+            />
+          </div>
+          <div className="form-group">
+            <label className="form-label" htmlFor="upload-cat">
+              Categoría
+            </label>
+            <select
+              id="upload-cat"
+              className="form-select"
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+            >
+              {CATEGORIES.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="form-group">
+            <label className="form-label" htmlFor="upload-file">
+              Archivo<span className="req">*</span>
+            </label>
+            <input
+              id="upload-file"
+              type="file"
+              className="form-input"
+              ref={fileRef}
+              accept=".pdf,.docx,.xlsx,.pptx,.jpg,.jpeg,.png,.webp"
+            />
+            <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}>
+              PDF, DOC, XLS, PPT o imagen. Máx 10 MB.
+            </p>
+          </div>
+        </div>
+        <div className="hra-drawer-foot">
+          <button type="button" className="btn outline" onClick={onClose}>
+            Cancelar
+          </button>
+          <button
+            type="button"
+            className="btn primary"
+            onClick={handleUpload}
+            disabled={uploading}
+          >
+            <IconSvg d={Icons.upload} size={13} />
+            {uploading ? "Subiendo…" : "Subir"}
+          </button>
+        </div>
+      </aside>
+    </>
+  );
+}
+
+/* ============================================================ Announcements */
+
+function AnnouncementList({ events }: { events: HREvent[] }) {
+  const archive = useArchiveHREvent();
+  const [resendId, setResendId] = useState<string | null>(null);
+  const resendEvent = events.find((e) => e.NotificationID === resendId);
+
+  return (
+    <>
+      <div className="hra-announce-list">
+        {events.map((evt) => {
+          const isHoliday = evt.Type === "HOLIDAY";
+          return (
+            <div
+              key={evt.NotificationID}
+              className={`hra-announce${isHoliday ? " holiday" : ""}`}
+            >
+              <div className="hra-announce-icon">
+                <IconSvg d={isHoliday ? Icons.flag : Icons.bell} size={16} />
+              </div>
+              <div className="hra-announce-body">
+                <div className="hra-announce-head">
+                  <span className={`type-tag ${isHoliday ? "warn" : "accent"}`}>
+                    {isHoliday ? "Feriado" : "Comunicado"}
+                  </span>
+                  <span className="hra-announce-title">{evt.Title}</span>
+                </div>
+                <p className="hra-announce-msg">{evt.Message}</p>
+                <div className="hra-announce-meta">
+                  <span className="hra-announce-meta-item">
+                    <IconSvg d={Icons.calendar} size={11} />
+                    {evt.EventDate}
+                  </span>
+                  {evt.Audience && (
+                    <span className="hra-announce-meta-item">
+                      <IconSvg d={Icons.users} size={11} />
+                      {evt.Audience}
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div className="hra-announce-actions">
+                {!isHoliday && (
+                  <button
+                    type="button"
+                    className="btn ghost btn-sm"
+                    title="Reenviar"
+                    onClick={() => setResendId(evt.NotificationID)}
+                  >
+                    <IconSvg d={Icons.send} size={14} />
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="btn ghost btn-sm"
+                  title="Archivar"
+                  onClick={() => {
+                    archive.mutate(evt.NotificationID, {
+                      onSuccess: () => toast.success("Comunicado archivado"),
+                      onError: () => toast.error("Error al archivar"),
+                    });
+                  }}
+                  disabled={archive.isPending}
+                  style={{ color: "var(--danger)" }}
+                >
+                  <IconSvg d={Icons.trash} size={14} />
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {resendEvent && (
+        <ResendDialog event={resendEvent} onClose={() => setResendId(null)} />
+      )}
+    </>
+  );
+}
+
+/* ============================================================ Resend dialog */
 
 interface EmployeeOption {
   EmployeeID: string;
@@ -340,15 +759,6 @@ function normalizeEmployee(raw: Record<string, unknown>): EmployeeOption {
     EmployeeID: (raw.EmployeeID as string) ?? (raw.employeeId as string) ?? "",
     FullName: (raw.FullName as string) ?? (raw.fullName as string) ?? "Sin nombre",
   };
-}
-
-function getInitials(name: string) {
-  return name
-    .split(" ")
-    .map((w) => w[0])
-    .join("")
-    .substring(0, 2)
-    .toUpperCase();
 }
 
 function ResendDialog({
@@ -389,11 +799,6 @@ function ResendDialog({
     return employeeList.filter((e) => e.FullName.toLowerCase().includes(q));
   }, [employeeList, search]);
 
-  const selectedEmps = useMemo(
-    () => employeeList.filter((e) => selectedIds.includes(e.EmployeeID)),
-    [employeeList, selectedIds]
-  );
-
   function toggleEmployee(id: string) {
     setSelectedIds((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
@@ -403,374 +808,188 @@ function ResendDialog({
   const canSend = broadcast || (sendDMs && selectedIds.length > 0);
 
   async function handleSend() {
-    await resendMutation.mutateAsync({
-      id: event.NotificationID,
-      broadcast,
-      employeeIds: sendDMs ? selectedIds : undefined,
-    });
-    onClose();
+    try {
+      await resendMutation.mutateAsync({
+        id: event.NotificationID,
+        broadcast,
+        employeeIds: sendDMs ? selectedIds : undefined,
+      });
+      toast.success("Comunicado reenviado");
+      onClose();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Error al reenviar");
+    }
   }
 
   return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>Reenviar comunicado</DialogTitle>
-          <DialogDescription>
-            {event.Title}
-          </DialogDescription>
-        </DialogHeader>
+    <>
+      <div className="hra-drawer-backdrop" onClick={onClose} />
+      <aside className="hra-drawer" role="dialog" aria-label="Reenviar comunicado">
+        <div className="hra-drawer-head">
+          <div>
+            <h3 className="hra-drawer-title">Reenviar comunicado</h3>
+            <p style={{ margin: "2px 0 0", fontSize: 12, color: "var(--text-muted)" }}>
+              {event.Title}
+            </p>
+          </div>
+          <button
+            type="button"
+            className="btn ghost btn-sm"
+            onClick={onClose}
+            aria-label="Cerrar"
+          >
+            <IconSvg d={Icons.x} size={14} />
+          </button>
+        </div>
 
-        <div className="space-y-4">
-          {/* Broadcast option */}
-          <label className="flex cursor-pointer items-center gap-3 rounded-lg border p-3 transition-colors hover:bg-muted/50">
-            <input
-              type="checkbox"
-              checked={broadcast}
-              onChange={(e) => setBroadcast(e.target.checked)}
-              className="size-4 rounded border-input"
-            />
-            <Users className="size-5 text-primary" />
-            <div>
-              <p className="text-sm font-medium">Enviar al grupo de broadcast</p>
-              <p className="text-xs text-muted-foreground">
-                Crea un grupo con todos los empleados de la empresa
-              </p>
-            </div>
-          </label>
+        <div className="hra-drawer-body">
+          <ChannelOption
+            icon={Icons.users}
+            title="Enviar al grupo de broadcast"
+            desc="Crea un grupo con todos los empleados de la empresa"
+            checked={broadcast}
+            onChange={setBroadcast}
+          />
+          <ChannelOption
+            icon={Icons.send}
+            title="Enviar como mensaje directo"
+            desc="Envía un mensaje individual a empleados seleccionados"
+            checked={sendDMs}
+            onChange={setSendDMs}
+          />
 
-          {/* DM option */}
-          <label className="flex cursor-pointer items-center gap-3 rounded-lg border p-3 transition-colors hover:bg-muted/50">
-            <input
-              type="checkbox"
-              checked={sendDMs}
-              onChange={(e) => setSendDMs(e.target.checked)}
-              className="size-4 rounded border-input"
-            />
-            <Send className="size-5 text-primary" />
-            <div>
-              <p className="text-sm font-medium">Enviar como mensaje directo</p>
-              <p className="text-xs text-muted-foreground">
-                Envia un mensaje individual a empleados seleccionados
-              </p>
-            </div>
-          </label>
-
-          {/* Employee picker (visible when DMs enabled) */}
           {sendDMs && (
-            <div className="space-y-3 rounded-lg border p-3">
-              {/* Selected chips */}
-              {selectedEmps.length > 0 && (
-                <div className="flex flex-wrap gap-1.5">
-                  {selectedEmps.map((emp) => (
-                    <span
-                      key={emp.EmployeeID}
-                      className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary"
-                    >
-                      {emp.FullName.split(" ")[0]}
-                      <button
-                        type="button"
-                        onClick={() => toggleEmployee(emp.EmployeeID)}
-                        className="ml-0.5 rounded-full p-0.5 hover:bg-primary/20"
-                      >
-                        <X className="size-3" />
-                      </button>
-                    </span>
-                  ))}
-                </div>
-              )}
-
-              {/* Search */}
-              <div className="relative">
-                <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  placeholder="Buscar empleado..."
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  className="pl-9"
-                />
-              </div>
-
-              {/* Employee list */}
-              <div className="max-h-48 space-y-1 overflow-y-auto">
+            <div className="form-group" style={{ marginTop: 16 }}>
+              <label className="form-label">Empleados</label>
+              <input
+                className="form-input"
+                placeholder="Buscar..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                style={{ marginBottom: 8 }}
+              />
+              <div
+                style={{
+                  maxHeight: 240,
+                  overflowY: "auto",
+                  border: "1px solid var(--border)",
+                  borderRadius: 10,
+                  padding: 6,
+                }}
+              >
                 {loadingEmps ? (
-                  <p className="py-3 text-center text-sm text-muted-foreground">
-                    Cargando...
+                  <p style={{ padding: 12, fontSize: 13, color: "var(--text-muted)" }}>
+                    Cargando…
                   </p>
                 ) : filtered.length === 0 ? (
-                  <p className="py-3 text-center text-sm text-muted-foreground">
-                    Sin resultados
+                  <p style={{ padding: 12, fontSize: 13, color: "var(--text-muted)" }}>
+                    No se encontraron empleados
                   </p>
                 ) : (
-                  filtered.slice(0, 20).map((emp) => {
+                  filtered.slice(0, 30).map((emp) => {
                     const selected = selectedIds.includes(emp.EmployeeID);
                     return (
                       <button
                         key={emp.EmployeeID}
                         type="button"
                         onClick={() => toggleEmployee(emp.EmployeeID)}
-                        className={`flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-muted/50 ${
-                          selected ? "bg-primary/5" : ""
-                        }`}
+                        className="hra-row"
+                        style={{
+                          width: "100%",
+                          marginBottom: 4,
+                          border: "1px solid transparent",
+                          background: selected
+                            ? "var(--accent-soft, color-mix(in srgb, var(--accent) 10%, transparent))"
+                            : "transparent",
+                          cursor: "pointer",
+                          fontFamily: "inherit",
+                        }}
                       >
-                        <Avatar className="size-7">
-                          <AvatarFallback className="text-xs">
-                            {getInitials(emp.FullName)}
-                          </AvatarFallback>
-                        </Avatar>
-                        <span className="flex-1 truncate">{emp.FullName}</span>
+                        <NovaAvatar name={emp.FullName} size={28} variant="plain" />
+                        <span className="hra-row-name" style={{ flex: 1, textAlign: "left" }}>
+                          {emp.FullName}
+                        </span>
                         {selected && (
-                          <Check className="size-4 text-primary" />
+                          <span style={{ color: "var(--accent-strong, var(--accent))" }}>
+                            <IconSvg d={Icons.check} size={14} />
+                          </span>
                         )}
                       </button>
                     );
                   })
                 )}
               </div>
-
               {selectedIds.length > 0 && (
-                <p className="text-xs text-muted-foreground">
-                  {selectedIds.length} empleado{selectedIds.length !== 1 ? "s" : ""} seleccionado{selectedIds.length !== 1 ? "s" : ""}
+                <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8 }}>
+                  {selectedIds.length} empleado{selectedIds.length !== 1 ? "s" : ""}{" "}
+                  seleccionado{selectedIds.length !== 1 ? "s" : ""}
                 </p>
               )}
             </div>
           )}
         </div>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
+        <div className="hra-drawer-foot">
+          <button type="button" className="btn outline" onClick={onClose}>
             Cancelar
-          </Button>
-          <Button
+          </button>
+          <button
+            type="button"
+            className="btn primary"
             onClick={handleSend}
             disabled={!canSend || resendMutation.isPending}
           >
-            {resendMutation.isPending ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <Send className="size-4" />
-            )}
-            {resendMutation.isPending ? "Enviando..." : "Reenviar"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+            <IconSvg d={Icons.send} size={13} />
+            {resendMutation.isPending ? "Enviando…" : "Reenviar"}
+          </button>
+        </div>
+      </aside>
+    </>
   );
 }
 
-/* ------------------------------------------------------------------ */
-/*  DocumentosAdmin                                                   */
-/* ------------------------------------------------------------------ */
-
-interface AdminDoc {
-  DocID: string;
-  Title: string;
-  Category: string;
-  FileName: string;
-  FileSize: number;
-  UploadedByName: string;
-  CreatedAt: string;
-}
-
-const CATEGORIES = ["Politicas", "Manuales", "Formatos", "Otros"];
-
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function DocumentosAdmin() {
-  const [docs, setDocs] = useState<AdminDoc[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [uploading, setUploading] = useState(false);
-  const [title, setTitle] = useState("");
-  const [category, setCategory] = useState("Politicas");
-  const [error, setError] = useState<string | null>(null);
-  const fileRef = useRef<HTMLInputElement>(null);
-
-  const loadDocs = useCallback(async () => {
-    try {
-      setIsLoading(true);
-      const res = await fetch("/api/admin/hr/documents");
-      if (!res.ok) throw new Error("Error al cargar documentos");
-      const json = await res.json();
-      setDocs(json.documents ?? []);
-    } catch {
-      // silent
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadDocs();
-  }, [loadDocs]);
-
-  async function handleUpload() {
-    const file = fileRef.current?.files?.[0];
-    if (!file || !title.trim()) {
-      setError("Titulo y archivo son obligatorios");
-      return;
-    }
-    setError(null);
-    setUploading(true);
-
-    try {
-      const fd = new FormData();
-      fd.append("file", file);
-      fd.append("title", title.trim());
-      fd.append("category", category);
-
-      const res = await fetch("/api/admin/hr/documents", { method: "POST", body: fd });
-      const json = await res.json();
-
-      if (!res.ok) {
-        setError(json.error ?? "Error al subir documento");
-        return;
-      }
-
-      setTitle("");
-      setCategory("Politicas");
-      if (fileRef.current) fileRef.current.value = "";
-      await loadDocs();
-    } catch {
-      setError("Error de conexion");
-    } finally {
-      setUploading(false);
-    }
-  }
-
-  async function handleDelete(docId: string) {
-    try {
-      await fetch(`/api/admin/hr/documents/${docId}`, { method: "DELETE" });
-      setDocs((prev) => prev.filter((d) => d.DocID !== docId));
-    } catch {
-      // silent
-    }
-  }
-
+function ChannelOption({
+  icon,
+  title,
+  desc,
+  checked,
+  onChange,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  desc: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+}) {
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <FolderOpen className="size-5" />
-          Documentos RRHH
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {/* Upload form */}
-        <div className="rounded-lg border bg-muted/30 p-4">
-          <p className="mb-3 text-sm font-medium">Subir nuevo documento</p>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <div>
-              <Label htmlFor="doc-title">Titulo</Label>
-              <Input
-                id="doc-title"
-                placeholder="Ej: Politica de vacaciones"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-              />
-            </div>
-            <div>
-              <Label htmlFor="doc-category">Categoria</Label>
-              <select
-                id="doc-category"
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-                className="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
-              >
-                {CATEGORIES.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <Label htmlFor="doc-file">Archivo</Label>
-              <Input
-                id="doc-file"
-                type="file"
-                ref={fileRef}
-                accept=".pdf,.docx,.xlsx,.pptx,.jpg,.jpeg,.png,.webp"
-              />
-            </div>
-            <div className="flex items-end">
-              <Button onClick={handleUpload} disabled={uploading} className="w-full">
-                {uploading ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : (
-                  <Upload className="size-4" />
-                )}
-                {uploading ? "Subiendo..." : "Subir"}
-              </Button>
-            </div>
-          </div>
-          {error && (
-            <p className="mt-2 text-sm text-destructive">{error}</p>
-          )}
-        </div>
-
-        {/* Document list */}
-        {isLoading ? (
-          <TableSkeleton />
-        ) : docs.length === 0 ? (
-          <EmptyState
-            icon={FileText}
-            title="Sin documentos"
-            description="Sube el primer documento para que los empleados puedan verlo"
-          />
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Titulo</TableHead>
-                <TableHead>Categoria</TableHead>
-                <TableHead>Archivo</TableHead>
-                <TableHead>Tamaño</TableHead>
-                <TableHead>Subido por</TableHead>
-                <TableHead>Fecha</TableHead>
-                <TableHead className="w-10" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {docs.map((doc) => (
-                <TableRow key={doc.DocID}>
-                  <TableCell className="font-medium">{doc.Title}</TableCell>
-                  <TableCell>
-                    <Badge variant="secondary">{doc.Category}</Badge>
-                  </TableCell>
-                  <TableCell className="max-w-[200px] truncate text-sm text-muted-foreground">
-                    {doc.FileName}
-                  </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
-                    {formatFileSize(doc.FileSize)}
-                  </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
-                    {doc.UploadedByName}
-                  </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
-                    {new Date(doc.CreatedAt).toLocaleDateString("es-PE", {
-                      day: "numeric",
-                      month: "short",
-                    })}
-                  </TableCell>
-                  <TableCell>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      onClick={() => handleDelete(doc.DocID)}
-                    >
-                      <Trash2 className="size-4 text-destructive" />
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
-      </CardContent>
-    </Card>
+    <label
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 12,
+        padding: 12,
+        marginBottom: 10,
+        borderRadius: 12,
+        border: `1.5px solid ${checked ? "var(--accent)" : "var(--border)"}`,
+        background: checked
+          ? "var(--accent-soft, color-mix(in srgb, var(--accent) 8%, transparent))"
+          : "transparent",
+        cursor: "pointer",
+      }}
+    >
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        style={{ width: 16, height: 16 }}
+      />
+      <span style={{ color: "var(--accent-strong, var(--accent))", display: "flex" }}>
+        <IconSvg d={icon} size={18} />
+      </span>
+      <div>
+        <p style={{ margin: 0, fontSize: 13, fontWeight: 500 }}>{title}</p>
+        <p style={{ margin: 0, fontSize: 11, color: "var(--text-muted)" }}>{desc}</p>
+      </div>
+    </label>
   );
 }

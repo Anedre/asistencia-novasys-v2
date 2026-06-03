@@ -1,426 +1,410 @@
 "use client";
 
-import { useState } from "react";
-import {
-  CheckCircle,
-  XCircle,
-  Inbox,
-  Clock,
-  CalendarDays,
-  User,
-  MessageSquare,
-  History,
-} from "lucide-react";
-import {
-  usePendingRequests,
-  useReviewRequest,
-  useApprovalHistory,
-} from "@/hooks/use-requests";
-import {
-  REQUEST_TYPE_LABELS,
-  REQUEST_STATUS_LABELS,
-} from "@/lib/constants/event-types";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
+import { usePendingRequests, useReviewRequest } from "@/hooks/use-requests";
 import { REASON_LABELS } from "@/lib/constants/reason-codes";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-} from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Skeleton } from "@/components/ui/skeleton";
+import { IconSvg, Icons } from "@/components/nova/icons";
+import { NovaAvatar } from "@/components/nova/avatar";
+import { NovaModal } from "@/components/nova/modal";
 import { EmptyState } from "@/components/shared/empty-state";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { PageHeader } from "@/components/nova/page-header";
 import type { ApprovalRequest } from "@/lib/types";
 
-function ApprovalCardSkeleton() {
-  return (
-    <Card>
-      <CardHeader>
-        <Skeleton className="h-5 w-48" />
-        <Skeleton className="h-4 w-32" />
-      </CardHeader>
-      <CardContent className="space-y-2">
-        <Skeleton className="h-4 w-full" />
-        <Skeleton className="h-4 w-3/4" />
-        <Skeleton className="h-4 w-1/2" />
-      </CardContent>
-      <CardFooter className="gap-2">
-        <Skeleton className="h-8 w-24" />
-        <Skeleton className="h-8 w-24" />
-      </CardFooter>
-    </Card>
-  );
+type Decision = { action: "APPROVE" | "REJECT"; reviewerNote?: string };
+
+/* ============================================================
+   Helpers
+   ============================================================ */
+
+function formatShortDate(s: string | undefined): string {
+  if (!s) return "—";
+  const d = s.length === 10 ? new Date(s + "T12:00:00") : new Date(s);
+  return d.toLocaleDateString("es-PE", { day: "2-digit", month: "short" });
 }
 
-function formatDate(dateStr: string | undefined) {
-  if (!dateStr) return "—";
-  // Date-only strings ("2026-04-21") are parsed as UTC midnight by the Date
-  // constructor, which shifts to the previous day in Lima (UTC-5). Force noon
-  // local to avoid the off-by-one. Full ISO timestamps keep their own offset.
-  const d =
-    dateStr.length === 10
-      ? new Date(dateStr + "T12:00:00")
-      : new Date(dateStr);
-  return d.toLocaleDateString("es-PE", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
+function workdaysBetween(from: string, to: string): number {
+  const start = new Date(from + "T12:00:00");
+  const end = new Date(to + "T12:00:00");
+  let count = 0;
+  const cur = new Date(start);
+  while (cur <= end) {
+    const dow = cur.getDay();
+    if (dow !== 0 && dow !== 6) count++;
+    cur.setDate(cur.getDate() + 1);
+  }
+  return count;
 }
+
+function dateRangeLabel(r: ApprovalRequest): string {
+  if (r.dateFrom && r.dateTo) {
+    if (r.dateFrom === r.dateTo) return formatShortDate(r.dateFrom);
+    return `${formatShortDate(r.dateFrom)} – ${formatShortDate(r.dateTo)}`;
+  }
+  if (r.effectiveDate) {
+    if (r.startTime && r.endTime) {
+      return `${formatShortDate(r.effectiveDate)} · ${r.startTime}-${r.endTime}`;
+    }
+    return formatShortDate(r.effectiveDate);
+  }
+  return "—";
+}
+
+function durationLabel(r: ApprovalRequest): string {
+  if (r.requestType === "VACATION" && r.dateFrom && r.dateTo) {
+    const d = workdaysBetween(r.dateFrom, r.dateTo);
+    return d === 1 ? "1 día hábil" : `${d} días hábiles`;
+  }
+  if (r.requestType === "PERMISSION") {
+    if (r.startTime && r.endTime) {
+      const [sh, sm] = r.startTime.split(":").map(Number);
+      const [eh, em] = r.endTime.split(":").map(Number);
+      const mins = eh * 60 + em - sh * 60 - sm;
+      if (mins > 0 && mins < 600) {
+        const h = Math.floor(mins / 60);
+        const m = mins % 60;
+        return h > 0 ? (m > 0 ? `${h}h ${m}m` : `${h} horas`) : `${m} min`;
+      }
+    }
+    return "1 día";
+  }
+  if (r.requestType === "REGULARIZATION_SINGLE") return "1 día";
+  if (r.requestType === "REGULARIZATION_RANGE" && r.dateFrom && r.dateTo) {
+    const d = workdaysBetween(r.dateFrom, r.dateTo);
+    return `${d} días`;
+  }
+  return "—";
+}
+
+const TYPE_META: Record<
+  ApprovalRequest["requestType"],
+  { label: string; cls: string; cat: "vacation" | "leave" | "regularize" }
+> = {
+  VACATION: { label: "Vacaciones", cls: "accent", cat: "vacation" },
+  PERMISSION: { label: "Permiso", cls: "warn", cat: "leave" },
+  REGULARIZATION_SINGLE: { label: "Regularización", cls: "muted", cat: "regularize" },
+  REGULARIZATION_RANGE: { label: "Regularización", cls: "muted", cat: "regularize" },
+};
+
+type TabKey = "all" | "vacation" | "leave" | "regularize";
+
+/* ============================================================
+   Approval card
+   ============================================================ */
 
 function ApprovalCard({
-  request,
-  onAction,
-  showActions = true,
+  r,
+  onDecide,
 }: {
-  request: ApprovalRequest;
-  onAction?: (requestId: string, action: "APPROVE" | "REJECT") => void;
-  showActions?: boolean;
+  r: ApprovalRequest;
+  onDecide: (r: ApprovalRequest, action: "APPROVE" | "REJECT", reviewerNote?: string) => void;
 }) {
-  const typeLabel =
-    REQUEST_TYPE_LABELS[request.requestType] ?? request.requestType;
-  const reasonLabel = REASON_LABELS[request.reasonCode] ?? request.reasonCode;
-  const statusInfo = REQUEST_STATUS_LABELS[request.status] ?? {
-    label: request.status,
-    variant: "outline" as const,
-  };
+  const meta = TYPE_META[r.requestType];
+  const reason = REASON_LABELS[r.reasonCode] ?? r.reasonCode;
+  const isVacationLong =
+    r.requestType === "VACATION" &&
+    r.dateFrom &&
+    r.dateTo &&
+    workdaysBetween(r.dateFrom, r.dateTo) >= 5;
+  const isUrgent = isVacationLong;
+  const area = (r as ApprovalRequest & { area?: string }).area ?? "";
 
-  const dateDisplay =
-    request.dateFrom && request.dateTo
-      ? `${formatDate(request.dateFrom)} — ${formatDate(request.dateTo)}`
-      : formatDate(request.effectiveDate);
+  const [mode, setMode] = useState<null | "approve" | "reject">(null);
+  const [note, setNote] = useState("");
+
+  function closeModal() {
+    setMode(null);
+    setNote("");
+  }
+  function confirmApprove() {
+    setMode(null);
+    onDecide(r, "APPROVE");
+  }
+  function confirmReject() {
+    const n = note.trim();
+    if (!n) return;
+    closeModal();
+    onDecide(r, "REJECT", n);
+  }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          {typeLabel}
-          <Badge variant={statusInfo.variant} className="ml-auto">
-            {statusInfo.label}
-          </Badge>
-        </CardTitle>
-        <CardDescription className="flex items-center gap-1">
-          <User className="h-3.5 w-3.5" />
-          {request.employeeName}
-        </CardDescription>
-      </CardHeader>
-
-      <CardContent className="space-y-2 text-sm">
-        <div className="flex items-center gap-2">
-          <CalendarDays className="h-3.5 w-3.5 text-muted-foreground" />
-          <span>{dateDisplay}</span>
+    <div className="approval-card">
+      <NovaAvatar name={r.employeeName} size={44} variant="accent" />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 4 }}>
+          <span className="pending-who" style={{ fontSize: 14 }}>
+            {r.employeeName}
+          </span>
+          <span className={`type-tag ${meta.cls}`}>{meta.label}</span>
+          {isUrgent && <span className="type-tag danger">Urgente</span>}
+          {area && (
+            <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{area}</span>
+          )}
         </div>
-
-        {request.startTime && request.endTime && (
-          <div className="flex items-center gap-2">
-            <Clock className="h-3.5 w-3.5 text-muted-foreground" />
-            <span>
-              {request.startTime} — {request.endTime}
-            </span>
-            {request.breakMinutes != null && (
-              <span className="text-muted-foreground">
-                ({request.breakMinutes} min break)
-              </span>
-            )}
-          </div>
-        )}
-
-        <div className="flex items-center gap-2">
-          <span className="font-medium text-muted-foreground">Motivo:</span>
-          <span>{reasonLabel}</span>
+        <div style={{ fontSize: 13, color: "var(--text-primary)" }}>
+          {dateRangeLabel(r)} · <strong>{durationLabel(r)}</strong>
         </div>
-
-        {request.reasonNote && (
-          <div className="flex items-start gap-2">
-            <MessageSquare className="mt-0.5 h-3.5 w-3.5 text-muted-foreground" />
-            <span className="text-muted-foreground">{request.reasonNote}</span>
-          </div>
-        )}
-
-        <div className="text-xs text-muted-foreground">
-          Creado el {formatDate(request.createdAt)}
+        <div
+          style={{
+            fontSize: 12,
+            color: "var(--text-secondary)",
+            marginTop: 4,
+            fontStyle: "italic",
+          }}
+        >
+          &quot;{r.reasonNote ?? reason}&quot;
         </div>
+      </div>
+      <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+        <button
+          type="button"
+          className="btn outline btn-sm"
+          onClick={() => setMode("reject")}
+        >
+          <IconSvg d={Icons.x} size={13} /> Rechazar
+        </button>
+        <button
+          type="button"
+          className="btn primary btn-sm"
+          onClick={() => setMode("approve")}
+        >
+          <IconSvg d={Icons.check} size={13} /> Aprobar
+        </button>
+      </div>
 
-        {/* Reviewer info for history items */}
-        {request.reviewedByName && (
-          <div className="mt-2 rounded-lg bg-muted/50 p-2 text-xs space-y-1">
-            <div className="flex items-center gap-1.5">
-              <User className="h-3 w-3 text-muted-foreground" />
-              <span className="font-medium">
-                Revisado por: {request.reviewedByName}
-              </span>
-            </div>
-            {request.reviewedAt && (
-              <div className="text-muted-foreground">
-                Fecha: {formatDate(request.reviewedAt)}
-              </div>
-            )}
-            {request.reviewerNote && (
-              <div className="text-muted-foreground">
-                Nota: {request.reviewerNote}
-              </div>
-            )}
-          </div>
-        )}
-      </CardContent>
+      {/* Approve confirmation */}
+      <NovaModal
+        open={mode === "approve"}
+        onClose={closeModal}
+        title="Aprobar solicitud"
+        footer={
+          <>
+            <button type="button" className="btn outline" onClick={closeModal}>
+              Cancelar
+            </button>
+            <button type="button" className="btn success" onClick={confirmApprove}>
+              <IconSvg d={Icons.check} size={14} /> Aprobar
+            </button>
+          </>
+        }
+      >
+        <p style={{ fontSize: 14, color: "var(--text-secondary)", margin: 0, lineHeight: 1.55 }}>
+          ¿Confirmas aprobar la solicitud de{" "}
+          <strong style={{ color: "var(--text-primary)" }}>{r.employeeName}</strong>{" "}
+          ({meta.label.toLowerCase()} · {dateRangeLabel(r)})?
+        </p>
+      </NovaModal>
 
-      {showActions && onAction && (
-        <CardFooter className="gap-2">
-          <Button
-            size="sm"
-            className="bg-green-600 text-white hover:bg-green-700"
-            onClick={() => onAction(request.RequestID, "APPROVE")}
-          >
-            <CheckCircle className="h-4 w-4" />
-            Aprobar
-          </Button>
-          <Button
-            variant="destructive"
-            size="sm"
-            onClick={() => onAction(request.RequestID, "REJECT")}
-          >
-            <XCircle className="h-4 w-4" />
-            Rechazar
-          </Button>
-        </CardFooter>
-      )}
-    </Card>
+      {/* Reject reason */}
+      <NovaModal
+        open={mode === "reject"}
+        onClose={closeModal}
+        title="Rechazar solicitud"
+        footer={
+          <>
+            <button type="button" className="btn outline" onClick={closeModal}>
+              Cancelar
+            </button>
+            <button
+              type="button"
+              className="btn danger"
+              onClick={confirmReject}
+              disabled={!note.trim()}
+            >
+              <IconSvg d={Icons.x} size={14} /> Rechazar
+            </button>
+          </>
+        }
+      >
+        <div className="form-group" style={{ marginBottom: 0 }}>
+          <label className="form-label" htmlFor={`reject-${r.RequestID}`}>
+            Motivo del rechazo <span className="req">*</span>
+          </label>
+          <textarea
+            id={`reject-${r.RequestID}`}
+            className="form-textarea"
+            autoFocus
+            placeholder="Explica brevemente por qué se rechaza…"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            rows={4}
+          />
+          <span className="form-hint">El empleado verá este motivo. Es obligatorio.</span>
+        </div>
+      </NovaModal>
+    </div>
   );
 }
 
-function HistoryTab({ status }: { status: "APPROVED" | "REJECTED" }) {
-  const { data, isLoading, isError, error } = useApprovalHistory(status);
-  const requests = data?.requests ?? [];
+/* ============================================================
+   Page
+   ============================================================ */
 
-  if (isLoading) {
-    return (
-      <div className="grid gap-4 md:grid-cols-2">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <ApprovalCardSkeleton key={i} />
+export default function AdminApprovalsPage() {
+  const { data, isLoading } = usePendingRequests();
+  const review = useReviewRequest();
+  const [tab, setTab] = useState<TabKey>("all");
+
+  // Decisions taken but still inside the "Deshacer" window — optimistically
+  // hidden from the list and only committed to the server once it elapses.
+  const [pending, setPending] = useState<Record<string, Decision>>({});
+  const timers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const decisionsRef = useRef(pending);
+  decisionsRef.current = pending;
+
+  const commit = useCallback(
+    (id: string, action: "APPROVE" | "REJECT", reviewerNote?: string) => {
+      review.mutate(
+        { requestId: id, action, reviewerNote },
+        {
+          onError: (e) =>
+            toast.error(e instanceof Error ? e.message : "No se pudo guardar la decisión"),
+        }
+      );
+    },
+    [review]
+  );
+
+  const scheduleDecision = useCallback(
+    (r: ApprovalRequest, action: "APPROVE" | "REJECT", reviewerNote?: string) => {
+      const id = r.RequestID;
+      setPending((p) => ({ ...p, [id]: { action, reviewerNote } }));
+      if (timers.current[id]) clearTimeout(timers.current[id]);
+      timers.current[id] = setTimeout(() => {
+        delete timers.current[id];
+        setPending((p) => {
+          const n = { ...p };
+          delete n[id];
+          return n;
+        });
+        commit(id, action, reviewerNote);
+      }, 5000);
+      toast(action === "APPROVE" ? "Solicitud aprobada" : "Solicitud rechazada", {
+        description: r.employeeName,
+        duration: 5000,
+        action: {
+          label: "Deshacer",
+          onClick: () => {
+            if (timers.current[id]) {
+              clearTimeout(timers.current[id]);
+              delete timers.current[id];
+            }
+            setPending((p) => {
+              const n = { ...p };
+              delete n[id];
+              return n;
+            });
+          },
+        },
+      });
+    },
+    [commit]
+  );
+
+  // Flush still-pending decisions on unmount so navigating away doesn't drop them.
+  useEffect(() => {
+    return () => {
+      Object.entries(decisionsRef.current).forEach(([id, dec]) => {
+        if (timers.current[id]) clearTimeout(timers.current[id]);
+        commit(id, dec.action, dec.reviewerNote);
+      });
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const requests = useMemo(
+    () => (data?.requests ?? []).filter((r) => !pending[r.RequestID]),
+    [data, pending]
+  );
+
+  const filtered = useMemo(() => {
+    if (tab === "all") return requests;
+    return requests.filter((r) => TYPE_META[r.requestType].cat === tab);
+  }, [requests, tab]);
+
+  const counts = useMemo(() => {
+    const c = { all: requests.length, vacation: 0, leave: 0, regularize: 0 };
+    requests.forEach((r) => {
+      const cat = TYPE_META[r.requestType].cat;
+      c[cat]++;
+    });
+    return c;
+  }, [requests]);
+
+  const tabs: { key: TabKey; label: string; count: number }[] = [
+    { key: "all", label: "Todas", count: counts.all },
+    { key: "vacation", label: "Vacaciones", count: counts.vacation },
+    { key: "leave", label: "Permisos", count: counts.leave },
+    { key: "regularize", label: "Regularizaciones", count: counts.regularize },
+  ];
+
+  return (
+    <>
+      {/* PageHeader */}
+      <PageHeader
+        title="Aprobaciones"
+        subtitle="Solicitudes pendientes de tu decisión."
+      />
+
+      {/* Tabs */}
+      <div className="tabs">
+        {tabs.map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            className={`tab ${tab === t.key ? "active" : ""}`}
+            onClick={() => setTab(t.key)}
+          >
+            {t.label}
+            <span className="tab-count">{t.count}</span>
+          </button>
         ))}
       </div>
-    );
-  }
 
-  if (isError) {
-    return (
-      <Card>
-        <CardContent className="py-6 text-center text-sm text-destructive">
-          Error al cargar historial: {(error as Error).message}
-        </CardContent>
-      </Card>
-    );
-  }
-
-  if (requests.length === 0) {
-    return (
-      <EmptyState
-        icon={History}
-        title={`Sin solicitudes ${status === "APPROVED" ? "aprobadas" : "rechazadas"}`}
-        description={`No hay solicitudes ${status === "APPROVED" ? "aprobadas" : "rechazadas"} en el historial.`}
-      />
-    );
-  }
-
-  return (
-    <div className="grid gap-4 md:grid-cols-2">
-      {requests.map((req) => (
-        <ApprovalCard
-          key={req.RequestID}
-          request={req}
-          showActions={false}
-        />
-      ))}
-    </div>
-  );
-}
-
-export default function ApprovalsPage() {
-  const { data, isLoading, isError, error } = usePendingRequests();
-  const reviewMutation = useReviewRequest();
-  const requests = data?.requests ?? [];
-
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [selectedRequestId, setSelectedRequestId] = useState<string | null>(
-    null
-  );
-  const [selectedAction, setSelectedAction] = useState<"APPROVE" | "REJECT">(
-    "APPROVE"
-  );
-  const [reviewerNote, setReviewerNote] = useState("");
-
-  const handleAction = (requestId: string, action: "APPROVE" | "REJECT") => {
-    setSelectedRequestId(requestId);
-    setSelectedAction(action);
-    setReviewerNote("");
-    setDialogOpen(true);
-  };
-
-  const handleConfirm = () => {
-    if (!selectedRequestId) return;
-
-    reviewMutation.mutate(
-      {
-        requestId: selectedRequestId,
-        action: selectedAction,
-        reviewerNote: reviewerNote.trim() || undefined,
-      },
-      {
-        onSuccess: () => {
-          setDialogOpen(false);
-          setSelectedRequestId(null);
-          setReviewerNote("");
-        },
-      }
-    );
-  };
-
-  return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Aprobaciones</h1>
-        <p className="text-muted-foreground">
-          Gestiona solicitudes pendientes y revisa el historial
-        </p>
-      </div>
-
-      <Tabs defaultValue="pending">
-        <TabsList>
-          <TabsTrigger value="pending">
-            Pendientes{requests.length > 0 ? ` (${requests.length})` : ""}
-          </TabsTrigger>
-          <TabsTrigger value="approved">Aprobadas</TabsTrigger>
-          <TabsTrigger value="rejected">Rechazadas</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="pending" className="mt-4">
-          {isLoading && (
-            <div className="grid gap-4 md:grid-cols-2">
-              {Array.from({ length: 4 }).map((_, i) => (
-                <ApprovalCardSkeleton key={i} />
-              ))}
-            </div>
-          )}
-
-          {isError && (
-            <Card>
-              <CardContent className="py-6 text-center text-sm text-destructive">
-                Error al cargar solicitudes: {(error as Error).message}
-              </CardContent>
-            </Card>
-          )}
-
-          {!isLoading && !isError && requests.length === 0 && (
-            <EmptyState
-              icon={Inbox}
-              title="Sin solicitudes pendientes"
-              description="No hay solicitudes que requieran tu aprobacion en este momento."
-            />
-          )}
-
-          {!isLoading && requests.length > 0 && (
-            <div className="grid gap-4 md:grid-cols-2">
-              {requests.map((req) => (
-                <ApprovalCard
-                  key={req.RequestID}
-                  request={req}
-                  onAction={handleAction}
+      {/* List */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {isLoading ? (
+          Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="approval-card" style={{ opacity: 0.5 }}>
+              <div
+                style={{
+                  width: 44,
+                  height: 44,
+                  background: "var(--bg-subtle)",
+                  borderRadius: "50%",
+                  flexShrink: 0,
+                }}
+              />
+              <div style={{ flex: 1 }}>
+                <div style={{ height: 14, width: "30%", background: "var(--bg-subtle)", borderRadius: 4 }} />
+                <div
+                  style={{
+                    height: 10,
+                    width: "60%",
+                    background: "var(--bg-subtle)",
+                    borderRadius: 4,
+                    marginTop: 8,
+                  }}
                 />
-              ))}
+              </div>
             </div>
-          )}
-        </TabsContent>
-
-        <TabsContent value="approved" className="mt-4">
-          <HistoryTab status="APPROVED" />
-        </TabsContent>
-
-        <TabsContent value="rejected" className="mt-4">
-          <HistoryTab status="REJECTED" />
-        </TabsContent>
-      </Tabs>
-
-      {/* Review Confirmation Dialog */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
-              {selectedAction === "APPROVE"
-                ? "Aprobar solicitud"
-                : "Rechazar solicitud"}
-            </DialogTitle>
-            <DialogDescription>
-              {selectedAction === "APPROVE"
-                ? "Confirma la aprobacion de esta solicitud. Puedes agregar una nota opcional."
-                : "Confirma el rechazo de esta solicitud. Se recomienda agregar un motivo."}
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-2">
-            <Label htmlFor="reviewerNote">Nota del revisor (opcional)</Label>
-            <Textarea
-              id="reviewerNote"
-              placeholder="Escribe un comentario..."
-              value={reviewerNote}
-              onChange={(e) => setReviewerNote(e.target.value)}
-              rows={3}
-            />
-          </div>
-
-          {reviewMutation.isError && (
-            <p className="text-sm text-destructive">
-              {(reviewMutation.error as Error).message}
-            </p>
-          )}
-
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setDialogOpen(false)}
-              disabled={reviewMutation.isPending}
-            >
-              Cancelar
-            </Button>
-            {selectedAction === "APPROVE" ? (
-              <Button
-                className="bg-green-600 text-white hover:bg-green-700"
-                onClick={handleConfirm}
-                disabled={reviewMutation.isPending}
-              >
-                <CheckCircle className="h-4 w-4" />
-                {reviewMutation.isPending
-                  ? "Procesando..."
-                  : "Confirmar aprobacion"}
-              </Button>
-            ) : (
-              <Button
-                variant="destructive"
-                onClick={handleConfirm}
-                disabled={reviewMutation.isPending}
-              >
-                <XCircle className="h-4 w-4" />
-                {reviewMutation.isPending
-                  ? "Procesando..."
-                  : "Confirmar rechazo"}
-              </Button>
-            )}
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
+          ))
+        ) : filtered.length === 0 ? (
+          <EmptyState
+            icon={Icons.check}
+            title={tab === "all" ? "¡Todo al día!" : "Sin solicitudes en esta categoría"}
+            description={
+              tab === "all"
+                ? "No hay solicitudes pendientes de aprobación. Cuando tu equipo cree solicitudes, aparecerán aquí."
+                : "Cambia de pestaña para ver otras solicitudes (vacaciones, permisos o regularizaciones)."
+            }
+          />
+        ) : (
+          filtered.map((r) => (
+            <ApprovalCard key={r.RequestID} r={r} onDecide={scheduleDecision} />
+          ))
+        )}
+      </div>
+    </>
   );
 }

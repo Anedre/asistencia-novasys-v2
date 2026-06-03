@@ -1,34 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetDescription,
-} from "@/components/ui/sheet";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Switch } from "@/components/ui/switch";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { History, Loader2, Undo2, AlertTriangle } from "lucide-react";
+import { IconSvg, Icons } from "@/components/nova/icons";
+import { EmptyState } from "@/components/shared/empty-state";
+import { PageHeader } from "@/components/nova/page-header";
 import type {
   AuditEntry,
   AuditEntityType,
@@ -69,13 +44,12 @@ function formatDate(iso: string): string {
   }
 }
 
-function actionBadgeVariant(
-  action: string
-): "default" | "secondary" | "destructive" | "outline" {
-  if (action === "DELETE" || action === "REJECT") return "destructive";
-  if (action === "REVERT") return "outline";
-  if (action === "APPROVE") return "default";
-  return "secondary";
+function actionTagClass(action: string): string {
+  if (action === "DELETE" || action === "REJECT") return "danger";
+  if (action === "REVERT") return "muted";
+  if (action === "APPROVE") return "success";
+  if (action === "CREATE") return "accent";
+  return "warn";
 }
 
 export default function AuditPage() {
@@ -176,209 +150,336 @@ export default function AuditPage() {
   }
 
   return (
-    <div className="space-y-4 p-4 sm:p-6">
-      <div className="flex items-center gap-3">
-        <History className="h-6 w-6" />
-        <div>
-          <h1 className="text-2xl font-semibold">Historial de cambios</h1>
-          <p className="text-sm text-muted-foreground">
-            Revisa y deshace acciones de administración. Se guardan los últimos
-            90 días.
-          </p>
-        </div>
-      </div>
+    <>
+      <PageHeader
+        title="Historial de cambios"
+        subtitle="Revisa y deshace acciones de administración. Se guardan los últimos 90 días."
+      />
 
-      <Card>
-        <CardHeader className="flex flex-col gap-3 pb-3 sm:flex-row sm:items-end sm:justify-between">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-            <div className="space-y-1.5">
-              <Label>Entidad</Label>
-              <Select
+      <div className="panel">
+        <div
+          style={{
+            display: "flex",
+            gap: 16,
+            alignItems: "flex-end",
+            justifyContent: "space-between",
+            flexWrap: "wrap",
+            marginBottom: 16,
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              gap: 16,
+              alignItems: "flex-end",
+              flexWrap: "wrap",
+            }}
+          >
+            <div className="form-group" style={{ marginBottom: 0, minWidth: 240 }}>
+              <label className="form-label" htmlFor="entity-filter">
+                Entidad
+              </label>
+              <select
+                id="entity-filter"
+                className="form-select"
                 value={entityFilter}
-                onValueChange={(v) =>
-                  setEntityFilter(v as AuditEntityType | "ALL")
+                onChange={(e) =>
+                  setEntityFilter(e.target.value as AuditEntityType | "ALL")
                 }
               >
-                <SelectTrigger className="w-[240px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {Object.entries(ENTITY_LABELS).map(([k, v]) => (
-                    <SelectItem key={k} value={k}>
-                      {v}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                {Object.entries(ENTITY_LABELS).map(([k, v]) => (
+                  <option key={k} value={k}>
+                    {v}
+                  </option>
+                ))}
+              </select>
             </div>
-            <div className="flex items-center gap-2">
-              <Switch
+            <label
+              htmlFor="hide-reverted"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                fontSize: 13,
+                color: "var(--text-secondary)",
+                cursor: "pointer",
+                marginBottom: 6,
+              }}
+            >
+              <span
                 id="hide-reverted"
-                checked={hideReverted}
-                onCheckedChange={setHideReverted}
-              />
-              <Label htmlFor="hide-reverted">Ocultar revertidos</Label>
-            </div>
-          </div>
-          <Button variant="outline" onClick={() => loadPage()} disabled={loading}>
-            {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Refrescar
-          </Button>
-        </CardHeader>
-
-        <CardContent className="pt-0">
-          {error && (
-            <div className="mb-3 flex items-center gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-              <AlertTriangle className="h-4 w-4" /> {error}
-            </div>
-          )}
-
-          {loading && entries.length === 0 ? (
-            <div className="flex items-center justify-center py-10 text-muted-foreground">
-              <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Cargando…
-            </div>
-          ) : grouped.length === 0 ? (
-            <div className="py-10 text-center text-muted-foreground">
-              No hay entradas que coincidan con los filtros.
-            </div>
-          ) : (
-            <div className="divide-y">
-              {grouped.map((e) => (
-                <AuditRow
-                  key={e.AuditID}
-                  entry={e}
-                  onSelect={() => setSelected(e)}
-                />
-              ))}
-            </div>
-          )}
-
-          {nextCursor && (
-            <div className="pt-4 text-center">
-              <Button
-                variant="outline"
-                onClick={() => loadPage(nextCursor)}
-                disabled={loadingMore}
+                className={`toggle ${hideReverted ? "on" : ""}`}
+                onClick={() => setHideReverted((v) => !v)}
+                role="switch"
+                aria-checked={hideReverted}
+                tabIndex={0}
               >
-                {loadingMore && (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                )}
-                Cargar más
-              </Button>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+                <span className="toggle-knob" />
+              </span>
+              Ocultar revertidos
+            </label>
+          </div>
+          <button
+            type="button"
+            className="btn outline btn-sm"
+            onClick={() => loadPage()}
+            disabled={loading}
+          >
+            {loading && <IconSvg d={Icons.history} size={13} />}
+            Refrescar
+          </button>
+        </div>
+
+        {error && (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              borderRadius: "var(--r)",
+              border: "1px solid color-mix(in srgb, var(--danger) 40%, transparent)",
+              background: "color-mix(in srgb, var(--danger) 10%, transparent)",
+              padding: "8px 12px",
+              fontSize: 13,
+              color: "var(--danger)",
+              marginBottom: 12,
+            }}
+          >
+            <IconSvg d={Icons.alert} size={14} />
+            {error}
+          </div>
+        )}
+
+        {loading && entries.length === 0 ? (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: "40px 0",
+              color: "var(--text-muted)",
+              fontSize: 13,
+            }}
+          >
+            Cargando…
+          </div>
+        ) : grouped.length === 0 ? (
+          <EmptyState
+            icon={Icons.history}
+            title="Sin entradas"
+            description="No hay entradas que coincidan con los filtros. Prueba ampliar el rango de fechas o quitar la entidad seleccionada."
+          />
+        ) : (
+          <div style={{ borderTop: "1px solid var(--border)" }}>
+            {grouped.map((e) => (
+              <AuditRow
+                key={e.AuditID}
+                entry={e}
+                onSelect={() => setSelected(e)}
+              />
+            ))}
+          </div>
+        )}
+
+        {nextCursor && (
+          <div style={{ paddingTop: 16, textAlign: "center" }}>
+            <button
+              type="button"
+              className="btn outline btn-sm"
+              onClick={() => loadPage(nextCursor)}
+              disabled={loadingMore}
+            >
+              {loadingMore ? "Cargando…" : "Cargar más"}
+            </button>
+          </div>
+        )}
+      </div>
 
       {/* Detail drawer */}
-      <Sheet
-        open={!!selected && !confirmOpen}
-        onOpenChange={(o) => !o && setSelected(null)}
-      >
-        <SheetContent className="w-full sm:max-w-xl overflow-y-auto">
-          {selected && (
-            <>
-              <SheetHeader>
-                <SheetTitle className="flex items-center gap-2">
-                  <Badge variant={actionBadgeVariant(selected.action)}>
-                    {ACTION_LABELS[selected.action] ?? selected.action}
-                  </Badge>
-                  {selected.entityLabel}
-                </SheetTitle>
-                <SheetDescription>
-                  Por <strong>{selected.actorName}</strong> ·{" "}
-                  {formatDate(selected.createdAt)}
-                </SheetDescription>
-              </SheetHeader>
-
-              <div className="mt-4 space-y-4">
-                {selected.reason && (
-                  <div>
-                    <p className="text-xs font-medium text-muted-foreground">
-                      Motivo
-                    </p>
-                    <p className="text-sm">{selected.reason}</p>
-                  </div>
-                )}
-
-                {selected.revertedAt && (
-                  <div className="rounded-md border bg-muted/50 px-3 py-2 text-sm">
-                    Esta entrada ya fue revertida el{" "}
-                    {formatDate(selected.revertedAt)}.
-                  </div>
-                )}
-
-                {selected.isGroupSummary ? (
-                  <div className="rounded-md border p-3 text-sm">
-                    Operación en bloque con {selected.groupSize ?? "varias"}{" "}
-                    entradas. Al revertir, se deshace todo el grupo en conjunto.
-                  </div>
-                ) : (
-                  <DiffPanel diff={selected.diff} />
-                )}
-
-                <div className="flex justify-end pt-2">
-                  <Button
-                    variant="destructive"
-                    disabled={!!selected.revertedAt}
-                    onClick={() => setConfirmOpen(true)}
-                  >
-                    <Undo2 className="mr-2 h-4 w-4" /> Revertir
-                  </Button>
-                </div>
+      {selected && !confirmOpen && (
+        <div
+          className="sheet-backdrop"
+          onClick={() => setSelected(null)}
+        >
+          <div
+            className="sheet"
+            onClick={(e) => e.stopPropagation()}
+            style={{ maxWidth: 600 }}
+          >
+            <div className="sheet-head">
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                <span className={`type-tag ${actionTagClass(selected.action)}`}>
+                  {ACTION_LABELS[selected.action] ?? selected.action}
+                </span>
+                <h3 className="sheet-title">{selected.entityLabel}</h3>
               </div>
-            </>
-          )}
-        </SheetContent>
-      </Sheet>
+              <button
+                type="button"
+                className="btn ghost btn-sm"
+                onClick={() => setSelected(null)}
+                aria-label="Cerrar"
+              >
+                <IconSvg d={Icons.x} size={14} />
+              </button>
+            </div>
+            <div className="sheet-body">
+              <p style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 16 }}>
+                Por <strong style={{ color: "var(--text-primary)" }}>{selected.actorName}</strong> ·{" "}
+                {formatDate(selected.createdAt)}
+              </p>
+
+              {selected.reason && (
+                <div style={{ marginBottom: 16 }}>
+                  <p
+                    style={{
+                      fontSize: 11,
+                      fontWeight: 600,
+                      color: "var(--text-muted)",
+                      letterSpacing: "0.05em",
+                      textTransform: "uppercase",
+                      marginBottom: 4,
+                    }}
+                  >
+                    Motivo
+                  </p>
+                  <p style={{ fontSize: 13, color: "var(--text-primary)" }}>
+                    {selected.reason}
+                  </p>
+                </div>
+              )}
+
+              {selected.revertedAt && (
+                <div
+                  style={{
+                    borderRadius: "var(--r)",
+                    border: "1px solid var(--border)",
+                    background: "var(--bg-subtle)",
+                    padding: "10px 12px",
+                    fontSize: 13,
+                    marginBottom: 16,
+                  }}
+                >
+                  Esta entrada ya fue revertida el {formatDate(selected.revertedAt)}.
+                </div>
+              )}
+
+              {selected.isGroupSummary ? (
+                <div
+                  style={{
+                    borderRadius: "var(--r)",
+                    border: "1px solid var(--border)",
+                    padding: "12px",
+                    fontSize: 13,
+                    marginBottom: 16,
+                  }}
+                >
+                  Operación en bloque con {selected.groupSize ?? "varias"}{" "}
+                  entradas. Al revertir, se deshace todo el grupo en conjunto.
+                </div>
+              ) : (
+                <DiffPanel diff={selected.diff} />
+              )}
+            </div>
+            <div className="sheet-foot">
+              <button
+                type="button"
+                className="btn outline"
+                onClick={() => setSelected(null)}
+              >
+                Cerrar
+              </button>
+              <button
+                type="button"
+                className="btn danger"
+                disabled={!!selected.revertedAt}
+                onClick={() => setConfirmOpen(true)}
+              >
+                <IconSvg d={Icons.history} size={13} />
+                Revertir
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Confirm dialog */}
-      <Dialog
-        open={confirmOpen}
-        onOpenChange={(o) => {
-          if (!o) {
+      {confirmOpen && (
+        <div
+          className="sheet-backdrop"
+          onClick={() => {
             setConfirmOpen(false);
             setRevertError(null);
-          }
-        }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Confirmar revert</DialogTitle>
-            <DialogDescription>
-              Esta acción restaurará el estado anterior del registro. Se creará
-              una nueva entrada en el historial indicando el revert. Esta
-              operación también puede ser deshecha.
-            </DialogDescription>
-          </DialogHeader>
-
-          {revertError && (
-            <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-              <span>{revertError}</span>
+          }}
+        >
+          <div
+            className="sheet"
+            onClick={(e) => e.stopPropagation()}
+            style={{ maxWidth: 460 }}
+          >
+            <div className="sheet-head">
+              <h3 className="sheet-title">Confirmar revert</h3>
+              <button
+                type="button"
+                className="btn ghost btn-sm"
+                onClick={() => {
+                  setConfirmOpen(false);
+                  setRevertError(null);
+                }}
+                aria-label="Cerrar"
+              >
+                <IconSvg d={Icons.x} size={14} />
+              </button>
             </div>
-          )}
+            <div className="sheet-body">
+              <p style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 12 }}>
+                Esta acción restaurará el estado anterior del registro. Se
+                creará una nueva entrada en el historial indicando el revert.
+                Esta operación también puede ser deshecha.
+              </p>
 
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setConfirmOpen(false)}
-              disabled={reverting}
-            >
-              Cancelar
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={handleRevert}
-              disabled={reverting}
-            >
-              {reverting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Sí, revertir
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
+              {revertError && (
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "flex-start",
+                    gap: 8,
+                    borderRadius: "var(--r)",
+                    border: "1px solid color-mix(in srgb, var(--danger) 40%, transparent)",
+                    background: "color-mix(in srgb, var(--danger) 10%, transparent)",
+                    padding: "10px 12px",
+                    fontSize: 13,
+                    color: "var(--danger)",
+                  }}
+                >
+                  <span style={{ flexShrink: 0, marginTop: 2 }}>
+                    <IconSvg d={Icons.alert} size={14} />
+                  </span>
+                  <span>{revertError}</span>
+                </div>
+              )}
+            </div>
+            <div className="sheet-foot">
+              <button
+                type="button"
+                className="btn outline"
+                onClick={() => setConfirmOpen(false)}
+                disabled={reverting}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="btn danger"
+                onClick={handleRevert}
+                disabled={reverting}
+              >
+                {reverting ? "Revirtiendo…" : "Sí, revertir"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -396,19 +497,63 @@ function AuditRow({
     <button
       type="button"
       onClick={onSelect}
-      className="flex w-full items-center gap-3 px-3 py-3 text-left transition hover:bg-muted/60"
+      style={{
+        display: "flex",
+        width: "100%",
+        alignItems: "center",
+        gap: 12,
+        padding: "12px 8px",
+        textAlign: "left",
+        background: "transparent",
+        border: "none",
+        borderBottom: "1px solid var(--border)",
+        cursor: "pointer",
+        transition: "background 0.12s",
+        fontFamily: "inherit",
+        color: "inherit",
+      }}
+      onMouseEnter={(e) => (e.currentTarget.style.background = "var(--bg-subtle)")}
+      onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
     >
-      <div className="w-24 shrink-0 text-xs text-muted-foreground">
+      <div
+        style={{
+          width: 96,
+          flexShrink: 0,
+          fontSize: 11,
+          color: "var(--text-muted)",
+        }}
+      >
         {formatDate(entry.createdAt)}
       </div>
-      <div className="w-36 shrink-0">
-        <Badge variant={actionBadgeVariant(entry.action)}>
+      <div style={{ width: 156, flexShrink: 0 }}>
+        <span className={`type-tag ${actionTagClass(entry.action)}`}>
           {ACTION_LABELS[entry.action] ?? entry.action}
-        </Badge>
+        </span>
       </div>
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium">{entry.entityLabel}</p>
-        <p className="truncate text-xs text-muted-foreground">
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <p
+          style={{
+            margin: 0,
+            fontSize: 13,
+            fontWeight: 500,
+            color: "var(--text-primary)",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {entry.entityLabel}
+        </p>
+        <p
+          style={{
+            margin: 0,
+            fontSize: 11,
+            color: "var(--text-muted)",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
           {entry.actorName}
           {entry.isGroupSummary && entry.groupSize
             ? ` · ${entry.groupSize} día(s)`
@@ -417,9 +562,9 @@ function AuditRow({
         </p>
       </div>
       {reverted && (
-        <Badge variant="outline" className="shrink-0">
+        <span className="type-tag muted" style={{ flexShrink: 0 }}>
           Revertido
-        </Badge>
+        </span>
       )}
     </button>
   );
@@ -431,29 +576,45 @@ function DiffPanel({ diff }: { diff: AuditEntry["diff"] }) {
   const entries = Object.entries(diff);
   if (entries.length === 0) {
     return (
-      <div className="rounded-md border p-3 text-sm text-muted-foreground">
+      <div
+        style={{
+          borderRadius: "var(--r)",
+          border: "1px solid var(--border)",
+          padding: 12,
+          fontSize: 13,
+          color: "var(--text-muted)",
+        }}
+      >
         Sin cambios detectables entre el antes y el después.
       </div>
     );
   }
   return (
-    <div className="overflow-hidden rounded-md border">
-      <table className="w-full text-sm">
-        <thead className="bg-muted/50 text-xs uppercase text-muted-foreground">
+    <div
+      style={{
+        overflow: "hidden",
+        borderRadius: "var(--r)",
+        border: "1px solid var(--border)",
+      }}
+    >
+      <table className="table" style={{ fontSize: 12 }}>
+        <thead>
           <tr>
-            <th className="px-3 py-2 text-left">Campo</th>
-            <th className="px-3 py-2 text-left">Antes</th>
-            <th className="px-3 py-2 text-left">Después</th>
+            <th>Campo</th>
+            <th>Antes</th>
+            <th>Después</th>
           </tr>
         </thead>
         <tbody>
           {entries.map(([field, change]) => (
-            <tr key={field} className="border-t">
-              <td className="px-3 py-2 font-mono text-xs">{field}</td>
-              <td className="px-3 py-2 text-xs text-red-600 dark:text-red-400">
+            <tr key={field}>
+              <td className="tcell-mono" style={{ fontSize: 11 }}>
+                {field}
+              </td>
+              <td style={{ fontSize: 11, color: "var(--danger)" }}>
                 {formatValue(change.from)}
               </td>
-              <td className="px-3 py-2 text-xs text-emerald-600 dark:text-emerald-400">
+              <td style={{ fontSize: 11, color: "var(--success)" }}>
                 {formatValue(change.to)}
               </td>
             </tr>

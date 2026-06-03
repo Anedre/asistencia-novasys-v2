@@ -26,7 +26,10 @@ export const GET = withErrorHandler(
       );
     }
 
-    if (!channel.Members.includes(user.employeeId)) {
+    if (
+      !channel.Members.includes(user.employeeId) ||
+      (user.tenantId && channel.TenantID && channel.TenantID !== user.tenantId)
+    ) {
       return NextResponse.json(
         { error: "No eres miembro de este canal" },
         { status: 403 }
@@ -50,7 +53,10 @@ export const PATCH = withErrorHandler(
     if (!channel) {
       return NextResponse.json({ error: "Canal no encontrado" }, { status: 404 });
     }
-    if (!channel.Members.includes(user.employeeId)) {
+    if (
+      !channel.Members.includes(user.employeeId) ||
+      (user.tenantId && channel.TenantID && channel.TenantID !== user.tenantId)
+    ) {
       return NextResponse.json({ error: "No eres miembro de este canal" }, { status: 403 });
     }
     if (channel.Type === "direct") {
@@ -101,6 +107,9 @@ export const DELETE = withErrorHandler(
       );
     }
 
+    if (user.tenantId && channel.TenantID && channel.TenantID !== user.tenantId) {
+      return NextResponse.json({ error: "No autorizado" }, { status: 403 });
+    }
     if (channel.CreatedBy !== user.employeeId && user.role !== "ADMIN") {
       return NextResponse.json(
         { error: "Solo el creador puede eliminar este canal" },

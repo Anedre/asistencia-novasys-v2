@@ -10,6 +10,12 @@ import { getPostsByTenant } from "@/lib/db/posts";
 import { getEventsByTenant } from "@/lib/db/events";
 import { workDateLima, clockLima } from "@/lib/utils/time";
 import { getHolidaySet } from "@/lib/utils/holidays";
+import { LIMA_TZ } from "@/lib/constants/timezone";
+
+// Lambdas/Vercel run with TZ=UTC, so passing a "es-PE" locale to
+// toLocaleTimeString without `timeZone` would render UTC times to Spanish
+// users. Always pin the formatter to Lima.
+const LIMA_TIME = { hour: "2-digit", minute: "2-digit", timeZone: LIMA_TZ } as const;
 
 export interface EmployeePresence {
   employeeId: string;
@@ -31,6 +37,8 @@ export interface DashboardMetrics {
   onBreakNow: number;
   pendingRequests: number;
   anomaliesToday: number;
+  /** How many employees arrived late today (after schedule + grace period). */
+  lateToday: number;
   todayDate: string;
   isHoliday: boolean;
   holidayName?: string;
@@ -83,6 +91,7 @@ export async function getDashboardMetrics(tenantId?: string): Promise<DashboardM
 
   let onBreak = 0;
   let anomalies = 0;
+  let lateToday = 0;
 
   // Build employee lookup
   const empMap = new Map<string, (typeof employees)[0]>();
@@ -142,6 +151,7 @@ export async function getDashboardMetrics(tenantId?: string): Promise<DashboardM
 
     if (hasBreakStart && !hasOut) onBreak++;
     if (s.anomalies && s.anomalies.length > 0) anomalies++;
+    if (Number(s.lateMinutes ?? 0) > 0) lateToday++;
   }
 
   // Add employees who didn't check in
@@ -184,17 +194,17 @@ export async function getDashboardMetrics(tenantId?: string): Promise<DashboardM
 
   // 1) Attendance events
   const attendanceLabels: Record<string, string> = {
-    START: "Marco entrada",
-    BREAK_START: "Inicio break",
-    BREAK_END: "Fin de break",
-    END: "Marco salida",
+    START: "Marcó entrada",
+    BREAK_START: "Inició break",
+    BREAK_END: "Terminó break",
+    END: "Marcó salida",
   };
   for (const ev of todayEvents) {
     if (!empMap.has(ev.EmployeeID)) continue;
     const emp = empMap.get(ev.EmployeeID);
     const timeStr = ev.serverClockLocal ?? clockLima(new Date(ev.serverTimeUtc));
     activityItems.push({
-      id: ev.EventTS,
+      id: `attendance:${ev.EmployeeID}:${ev.EventTS}`,
       type: "attendance",
       employeeName: emp?.FullName ?? ev.EmployeeID,
       action: attendanceLabels[ev.eventType] ?? ev.eventType,
@@ -206,37 +216,52 @@ export async function getDashboardMetrics(tenantId?: string): Promise<DashboardM
   // 2) Posts
   for (const post of recentPosts) {
     activityItems.push({
-      id: post.PostID,
+      id: `post:${post.PostID}`,
       type: "post",
       employeeName: post.AuthorName,
-      action: "Publico un post",
-      detail: post.Content.slice(0, 60) + (post.Content.length > 60 ? "..." : ""),
-      time: post.CreatedAt ? new Date(post.CreatedAt).toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit" }) : "",
+      action: "Publicó un post",
+      // Code-point-aware slice so emoji surrogate pairs (4-byte chars in
+      // UTF-16) don't get cut in half producing mojibake in the activity feed.
+      detail: (() => {
+        const chars = Array.from(post.Content);
+        return chars.length > 60 ? chars.slice(0, 60).join("") + "..." : post.Content;
+      })(),
+      time: post.CreatedAt ? new Date(post.CreatedAt).toLocaleTimeString("es-PE", LIMA_TIME) : "",
       sortTs: post.CreatedAt ?? "",
     });
   }
 
   // 3) Approval requests (pending + approved)
   const requestLabels: Record<string, string> = {
-    REGULARIZATION_SINGLE: "regularizacion",
-    REGULARIZATION_RANGE: "regularizacion",
+    REGULARIZATION_SINGLE: "regularización",
+    REGULARIZATION_RANGE: "regularización",
     PERMISSION: "permiso",
     VACATION: "vacaciones",
   };
-  const allRequests = [...pendingRequests, ...recentRequests];
+  const statusLabels: Record<string, string> = {
+    REJECTED: "rechazada",
+    CANCELLED: "cancelada",
+    PENDING: "pendiente",
+  };
+  const seenRequestIds = new Set<string>();
+  const allRequests = [...pendingRequests, ...recentRequests].filter((r) => {
+    if (seenRequestIds.has(r.RequestID)) return false;
+    seenRequestIds.add(r.RequestID);
+    return true;
+  });
   for (const req of allRequests) {
     const typeLabel = requestLabels[req.requestType] ?? req.requestType;
     const statusAction = req.status === "PENDING"
-      ? `Solicito ${typeLabel}`
+      ? `Solicitó ${typeLabel}`
       : req.status === "APPROVED"
         ? `Solicitud de ${typeLabel} aprobada`
-        : `Solicitud de ${typeLabel} ${req.status.toLowerCase()}`;
+        : `Solicitud de ${typeLabel} ${statusLabels[req.status] ?? req.status.toLowerCase()}`;
     activityItems.push({
-      id: req.RequestID,
+      id: `request:${req.RequestID}`,
       type: "request",
       employeeName: req.employeeName,
       action: statusAction,
-      time: req.createdAt ? new Date(req.createdAt).toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit" }) : "",
+      time: req.createdAt ? new Date(req.createdAt).toLocaleTimeString("es-PE", LIMA_TIME) : "",
       sortTs: req.updatedAt ?? req.createdAt ?? "",
     });
   }
@@ -244,12 +269,12 @@ export async function getDashboardMetrics(tenantId?: string): Promise<DashboardM
   // 4) Calendar events
   for (const ev of calendarEvents) {
     activityItems.push({
-      id: ev.EventID,
+      id: `event:${ev.EventID}`,
       type: "event",
       employeeName: ev.CreatorName ?? "Sistema",
       action: ev.Status === "CANCELLED" ? "Cancelo un evento" : "Creo un evento",
       detail: ev.Title,
-      time: ev.CreatedAt ? new Date(ev.CreatedAt).toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit" }) : "",
+      time: ev.CreatedAt ? new Date(ev.CreatedAt).toLocaleTimeString("es-PE", LIMA_TIME) : "",
       sortTs: ev.CreatedAt ?? "",
     });
   }
@@ -265,6 +290,7 @@ export async function getDashboardMetrics(tenantId?: string): Promise<DashboardM
     onBreakNow: onBreak,
     pendingRequests: pendingRequests.length,
     anomaliesToday: anomalies,
+    lateToday,
     todayDate,
     isHoliday: isHol,
     holidayName: holName,

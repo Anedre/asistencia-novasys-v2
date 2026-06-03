@@ -40,10 +40,15 @@ export interface DailySummary {
   lastOutLocal?: string;
   breakStartUtc?: string;
   breakStartLocal?: string;
+  lastBreakEndUtc?: string;
+  lastBreakEndLocal?: string;
   breakMinutes: number;
   workedMinutes: number;
   plannedMinutes: number;
   deltaMinutes: number;
+  /** Minutes the employee arrived after their schedule start + tolerance.
+   *  0 means on time (or no schedule available). */
+  lateMinutes?: number;
   status: DayStatus;
   source: EventSource;
   regularizationId?: string;
@@ -64,12 +69,15 @@ export interface TodayStatus {
   firstInLocal: string | null;
   lastOutLocal: string | null;
   breakStartLocal: string | null;
+  breakEndLocal: string | null;
   breakMinutes: number;
   workedMinutes: number;
   workedHHMM: string;
   plannedMinutes: number;
   deltaMinutes: number;
   deltaHHMM: string;
+  /** Minutes the employee arrived late today (0 = on time / no schedule). */
+  lateMinutes: number;
   hasOpenBreak: boolean;
   hasOpenShift: boolean;
   anomalies: string[];

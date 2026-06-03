@@ -2,28 +2,12 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Loader2,
-  Mail,
-  KeyRound,
-  ArrowLeft,
-  CheckCircle,
-  Lock,
-  AlertTriangle,
-} from "lucide-react";
 import { AuthLayout } from "@/components/auth/AuthLayout";
-import { StepProgress } from "@/components/auth/StepProgress";
+import { DefaultBrandPanel, NovaDesignLogo } from "@/components/auth/BrandPanel";
+import { IconSvg, Icons } from "@/components/nova/icons";
+import { Spinner } from "@/components/nova/spinner";
 
 type Step = "email" | "code" | "done";
-
-const STEPS = [
-  { id: "email", label: "Correo" },
-  { id: "code", label: "Código" },
-  { id: "done", label: "Listo" },
-];
 
 export default function ForgotPasswordPage() {
   const [step, setStep] = useState<Step>("email");
@@ -85,8 +69,7 @@ export default function ForgotPasswordPage() {
         }),
       });
       const data = await res.json();
-      if (!res.ok)
-        throw new Error(data.error || "Error al cambiar la contraseña");
+      if (!res.ok) throw new Error(data.error || "Error al cambiar la contraseña");
       setStep("done");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error inesperado");
@@ -95,181 +78,297 @@ export default function ForgotPasswordPage() {
     }
   }
 
-  const currentStepIndex = STEPS.findIndex((s) => s.id === step);
-
   return (
     <AuthLayout>
-      <div className="space-y-8">
-        <StepProgress steps={STEPS} currentIndex={currentStepIndex} />
-
-        <div className="space-y-2">
-          <h1 className="text-3xl font-bold tracking-tight">
-            {step === "email" && "Recuperar contraseña"}
-            {step === "code" && "Cambia tu contraseña"}
-            {step === "done" && "¡Contraseña actualizada!"}
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            {step === "email" &&
-              "Te enviaremos un código de verificación a tu correo."}
-            {step === "code" && (
-              <>
-                Enviamos un código a{" "}
-                <strong className="text-foreground">{email}</strong>
-              </>
-            )}
-            {step === "done" && "Ya puedes iniciar sesión con tu nueva contraseña."}
-          </p>
-        </div>
-
-        {error && (
-          <div className="flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-            <span>{error}</span>
-          </div>
-        )}
-
-        {/* ── STEP: Email ── */}
-        {step === "email" && (
-          <form onSubmit={handleRequestCode} className="space-y-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="email">Correo electrónico</Label>
-              <div className="relative">
-                <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="tu@correo.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  autoFocus
-                  className="h-12 pl-10"
-                />
-              </div>
-            </div>
-
-            <Button
-              type="submit"
-              className="h-12 w-full text-base font-medium"
-              disabled={loading}
-            >
-              {loading ? (
-                <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-              ) : (
-                <Mail className="mr-2 h-5 w-5" />
-              )}
-              Enviar código
-            </Button>
-          </form>
-        )}
-
-        {/* ── STEP: Code + new password ── */}
-        {step === "code" && (
-          <form onSubmit={handleResetPassword} className="space-y-4">
-            <div className="flex justify-center">
-              <div className="flex h-20 w-20 items-center justify-center rounded-full bg-primary/10">
-                <KeyRound className="h-10 w-10 text-primary" />
-              </div>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="code">Código de verificación</Label>
-              <Input
-                id="code"
-                type="text"
-                inputMode="numeric"
-                placeholder="123456"
-                value={code}
-                onChange={(e) =>
-                  setCode(e.target.value.replace(/\D/g, "").slice(0, 6))
-                }
-                autoFocus
-                maxLength={6}
-                className="h-14 text-center text-3xl tracking-[0.5em] font-mono"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="newPassword">Nueva contraseña</Label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  id="newPassword"
-                  type="password"
-                  placeholder="Mínimo 8 caracteres"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  className="h-12 pl-10"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="confirmPassword">Confirmar contraseña</Label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  id="confirmPassword"
-                  type="password"
-                  placeholder="Repite tu nueva contraseña"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  className="h-12 pl-10"
-                />
-              </div>
-            </div>
-
-            <Button
-              type="submit"
-              className="h-12 w-full text-base font-medium"
-              disabled={loading}
-            >
-              {loading ? (
-                <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-              ) : (
-                <CheckCircle className="mr-2 h-5 w-5" />
-              )}
-              Cambiar contraseña
-            </Button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setStep("email");
-                setError("");
-              }}
-              className="w-full text-sm text-muted-foreground hover:text-foreground"
-            >
-              Reenviar código
-            </button>
-          </form>
-        )}
-
-        {/* ── STEP: Done ── */}
-        {step === "done" && (
-          <div className="space-y-5 text-center">
-            <div className="flex justify-center">
-              <div className="flex h-20 w-20 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-950/40">
-                <CheckCircle className="h-10 w-10 text-emerald-600 dark:text-emerald-400" />
-              </div>
-            </div>
-            <Link href="/login">
-              <Button className="h-12 w-full text-base font-medium">
-                Ir al login
-              </Button>
-            </Link>
-          </div>
-        )}
-
-        {step !== "done" && (
-          <div className="text-center text-sm text-muted-foreground">
+      <div className="auth-shell">
+        <DefaultBrandPanel />
+        <div className="auth-pane">
+          <div className="auth-form-wrap">
             <Link
               href="/login"
-              className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                fontSize: 12,
+                color: "var(--text-secondary)",
+                textDecoration: "none",
+                marginBottom: 28,
+              }}
             >
-              <ArrowLeft className="h-3.5 w-3.5" /> Volver al login
+              <IconSvg d={Icons.arrowLeft} size={14} /> Volver al inicio
             </Link>
+
+            {step === "email" && (
+              <>
+                <NovaDesignLogo size={32} />
+                <h2 className="auth-heading" style={{ marginTop: 28 }}>
+                  Recuperar contraseña
+                </h2>
+                <p className="auth-sub">Te enviaremos un código para restablecerla.</p>
+
+                {error && (
+                  <div
+                    role="alert"
+                    aria-live="assertive"
+                    style={{
+                      padding: "10px 12px",
+                      borderRadius: "var(--r)",
+                      border: "1px solid color-mix(in srgb, var(--danger) 40%, transparent)",
+                      background: "color-mix(in srgb, var(--danger) 10%, transparent)",
+                      color: "var(--danger)",
+                      fontSize: 13,
+                      marginBottom: 14,
+                    }}
+                  >
+                    {error}
+                  </div>
+                )}
+
+                <form onSubmit={handleRequestCode}>
+                  <div className="form-group">
+                    <label className="form-label" htmlFor="email">
+                      Correo corporativo<span className="req">*</span>
+                    </label>
+                    <input
+                      id="email"
+                      className="form-input"
+                      type="email"
+                      placeholder="tu@empresa.com"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      autoComplete="email"
+                      autoFocus
+                      disabled={loading}
+                    />
+                    <span className="form-hint">
+                      Usa el correo con el que iniciaste sesión por última vez.
+                    </span>
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="btn primary btn-lg"
+                    disabled={loading || !email.trim()}
+                    style={{ width: "100%", justifyContent: "center", gap: 8 }}
+                  >
+                    {loading ? (
+                      <>
+                        <Spinner size={14} /> Enviando…
+                      </>
+                    ) : (
+                      <>
+                        Enviar código <IconSvg d={Icons.send} size={14} />
+                      </>
+                    )}
+                  </button>
+                </form>
+
+                <div
+                  style={{
+                    marginTop: 28,
+                    padding: 14,
+                    background: "var(--bg-subtle)",
+                    borderRadius: "var(--r)",
+                    border: "1px solid var(--border)",
+                  }}
+                >
+                  <div style={{ display: "flex", gap: 10 }}>
+                    <span style={{ color: "var(--text-muted)", flexShrink: 0 }}>
+                      <IconSvg d={Icons.helpCircle} size={18} />
+                    </span>
+                    <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+                      <strong style={{ color: "var(--text-primary)" }}>
+                        ¿No tienes acceso a tu correo?
+                      </strong>
+                      <p style={{ margin: "4px 0 0" }}>
+                        Contacta a tu administrador o escríbenos a{" "}
+                        <a
+                          href="mailto:soporte@novaassistance.com"
+                          style={{ color: "var(--accent)" }}
+                        >
+                          soporte@novaassistance.com
+                        </a>
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {step === "code" && (
+              <>
+                <h2 className="auth-heading">Ingresa el código</h2>
+                <p className="auth-sub">
+                  Enviamos un código a{" "}
+                  <strong style={{ color: "var(--text-primary)" }}>{email}</strong>
+                </p>
+
+                {error && (
+                  <div
+                    role="alert"
+                    aria-live="assertive"
+                    style={{
+                      padding: "10px 12px",
+                      borderRadius: "var(--r)",
+                      border: "1px solid color-mix(in srgb, var(--danger) 40%, transparent)",
+                      background: "color-mix(in srgb, var(--danger) 10%, transparent)",
+                      color: "var(--danger)",
+                      fontSize: 13,
+                      marginBottom: 14,
+                    }}
+                  >
+                    {error}
+                  </div>
+                )}
+
+                <form onSubmit={handleResetPassword}>
+                  <div className="form-group">
+                    <label className="form-label" htmlFor="reset-code">Código de verificación</label>
+                    <input
+                      id="reset-code"
+                      className="form-input"
+                      type="text"
+                      inputMode="numeric"
+                      placeholder="123456"
+                      value={code}
+                      onChange={(e) =>
+                        setCode(e.target.value.replace(/\D/g, "").slice(0, 6))
+                      }
+                      autoComplete="one-time-code"
+                      autoFocus
+                      maxLength={6}
+                      style={{
+                        textAlign: "center",
+                        fontFamily: "var(--font-mono)",
+                        fontSize: 22,
+                        letterSpacing: "0.4em",
+                      }}
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label" htmlFor="new-password">Nueva contraseña</label>
+                    <div style={{ position: "relative" }}>
+                      <span
+                        style={{
+                          position: "absolute",
+                          left: 12,
+                          top: "50%",
+                          transform: "translateY(-50%)",
+                          color: "var(--text-muted)",
+                          pointerEvents: "none",
+                        }}
+                      >
+                        <IconSvg d={Icons.lock} size={15} />
+                      </span>
+                      <input
+                        id="new-password"
+                        className="form-input"
+                        type="password"
+                        placeholder="Mínimo 8 caracteres"
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        autoComplete="new-password"
+                        minLength={8}
+                        style={{ paddingLeft: 38 }}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label" htmlFor="confirm-password">Confirmar contraseña</label>
+                    <div style={{ position: "relative" }}>
+                      <span
+                        style={{
+                          position: "absolute",
+                          left: 12,
+                          top: "50%",
+                          transform: "translateY(-50%)",
+                          color: "var(--text-muted)",
+                          pointerEvents: "none",
+                        }}
+                      >
+                        <IconSvg d={Icons.lock} size={15} />
+                      </span>
+                      <input
+                        id="confirm-password"
+                        className="form-input"
+                        type="password"
+                        placeholder="Repite tu nueva contraseña"
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        autoComplete="new-password"
+                        minLength={8}
+                        style={{ paddingLeft: 38 }}
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="btn primary btn-lg"
+                    disabled={loading || code.length !== 6 || !newPassword || !confirmPassword}
+                    style={{ width: "100%", justifyContent: "center", gap: 8 }}
+                  >
+                    {loading ? (
+                      <>
+                        <Spinner size={14} /> Actualizando…
+                      </>
+                    ) : (
+                      <>
+                        Cambiar contraseña <IconSvg d={Icons.check} size={14} />
+                      </>
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setStep("email");
+                      setError("");
+                    }}
+                    className="btn ghost"
+                    style={{ width: "100%", justifyContent: "center", marginTop: 8, fontSize: 12 }}
+                  >
+                    Reenviar código
+                  </button>
+                </form>
+              </>
+            )}
+
+            {step === "done" && (
+              <>
+                <div
+                  style={{
+                    width: 56,
+                    height: 56,
+                    borderRadius: "50%",
+                    background: "color-mix(in srgb, var(--success) 14%, transparent)",
+                    color: "var(--success)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    marginBottom: 20,
+                  }}
+                >
+                  <IconSvg d={Icons.check} size={26} />
+                </div>
+                <h2 className="auth-heading">¡Contraseña actualizada!</h2>
+                <p className="auth-sub">
+                  Ya puedes iniciar sesión con tu nueva contraseña.
+                </p>
+                <Link
+                  className="btn primary btn-lg"
+                  href="/login"
+                  style={{ width: "100%", justifyContent: "center", textDecoration: "none" }}
+                >
+                  Ir al login
+                </Link>
+              </>
+            )}
           </div>
-        )}
+        </div>
       </div>
     </AuthLayout>
   );

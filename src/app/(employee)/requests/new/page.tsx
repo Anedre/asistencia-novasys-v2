@@ -1,18 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { ArrowLeft, Send } from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useCreateRequest } from "@/hooks/use-requests";
 import { ALL_REASON_OPTIONS } from "@/lib/constants/reason-codes";
 import { REQUEST_TYPE_LABELS } from "@/lib/constants/event-types";
 import type { RequestType, CreateRequestInput } from "@/lib/types";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+import { IconSvg, Icons } from "@/components/nova/icons";
+import { PageHeader } from "@/components/nova/page-header";
 
 const REQUEST_TYPES: { value: RequestType; label: string }[] = [
   { value: "REGULARIZATION_SINGLE", label: REQUEST_TYPE_LABELS.REGULARIZATION_SINGLE },
@@ -27,22 +23,82 @@ const isRegularization = (type: RequestType) =>
 const isRangeType = (type: RequestType) =>
   type === "REGULARIZATION_RANGE" || type === "PERMISSION" || type === "VACATION";
 
+/**
+ * Map URL ?type=... query param to internal RequestType.
+ * Accepted values: vacation, permission, regularize, regularize-range
+ */
+function paramToRequestType(param: string | null): RequestType {
+  switch (param) {
+    case "vacation":
+      return "VACATION";
+    case "permission":
+      return "PERMISSION";
+    case "regularize-range":
+      return "REGULARIZATION_RANGE";
+    case "regularize":
+      return "REGULARIZATION_SINGLE";
+    default:
+      return "REGULARIZATION_SINGLE";
+  }
+}
+
 export default function NewRequestPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const createMutation = useCreateRequest();
 
-  const [requestType, setRequestType] = useState<RequestType>("REGULARIZATION_SINGLE");
-  const [effectiveDate, setEffectiveDate] = useState("");
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
+  // Honor ?type= query param so contextual CTAs land on the right form
+  const initialType = paramToRequestType(searchParams.get("type"));
+  const initialDate = searchParams.get("date") || "";
+
+  const [requestType, setRequestType] = useState<RequestType>(initialType);
+  const [effectiveDate, setEffectiveDate] = useState(initialDate);
+  const [dateFrom, setDateFrom] = useState(initialDate);
+  const [dateTo, setDateTo] = useState(initialDate);
   const [startTime, setStartTime] = useState("09:00");
   const [endTime, setEndTime] = useState("18:00");
   const [breakMinutes, setBreakMinutes] = useState(60);
   const [reasonCode, setReasonCode] = useState("");
   const [reasonNote, setReasonNote] = useState("");
+  const [validationError, setValidationError] = useState<string | null>(null);
+
+  // ── Client-side validation ──
+  function validate(): string | null {
+    // Range types require dateFrom + dateTo with valid order
+    if (isRangeType(requestType)) {
+      if (!dateFrom) return "Selecciona la fecha de inicio";
+      if (!dateTo) return "Selecciona la fecha de fin";
+      if (dateTo < dateFrom) return "La fecha de fin no puede ser anterior a la de inicio";
+    } else {
+      if (!effectiveDate) return "Selecciona la fecha a regularizar";
+    }
+
+    // Regularization types require valid time order
+    if (isRegularization(requestType)) {
+      if (!startTime || !endTime) return "Indica las horas de entrada y salida";
+      if (endTime <= startTime) return "La hora de salida debe ser mayor que la de entrada";
+      // Break can't exceed total worked time
+      const [sh, sm] = startTime.split(":").map(Number);
+      const [eh, em] = endTime.split(":").map(Number);
+      const totalMin = (eh * 60 + em) - (sh * 60 + sm);
+      if (breakMinutes > totalMin) return "El break no puede ser mayor que el tiempo trabajado";
+      if (breakMinutes < 0) return "El break no puede ser negativo";
+    }
+
+    if (!reasonCode) return "Selecciona un motivo";
+
+    return null;
+  }
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setValidationError(null);
+
+    const error = validate();
+    if (error) {
+      setValidationError(error);
+      return;
+    }
 
     const payload: CreateRequestInput = {
       requestType,
@@ -71,170 +127,250 @@ export default function NewRequestPage() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" render={<Link href="/requests" />}>
-          <ArrowLeft className="h-4 w-4" />
-        </Button>
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Nueva Solicitud</h1>
-          <p className="text-muted-foreground">
-            Crea una nueva solicitud de regularizacion o permiso
-          </p>
+    <>
+      {/* PageHeader */}
+      <PageHeader
+        breadcrumb={[
+          { label: "Mis solicitudes", href: "/requests" },
+          { label: "Nueva" },
+        ]}
+        title="Nueva solicitud"
+        subtitle="Crea una nueva solicitud de regularización o permiso."
+        actions={
+          <Link href="/requests" className="btn outline btn-sm">
+            <IconSvg d={Icons.arrowLeft} size={14} />
+            Volver
+          </Link>
+        }
+      />
+
+      <div className="panel" style={{ maxWidth: 720 }}>
+        <div className="panel-title">Datos de la solicitud</div>
+        <div className="panel-sub" style={{ marginBottom: 16 }}>
+          Completa los campos para enviar tu solicitud
         </div>
-      </div>
 
-      <Card className="max-w-2xl">
-        <CardHeader>
-          <CardTitle>Datos de la solicitud</CardTitle>
-          <CardDescription>Completa los campos para enviar tu solicitud</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-5">
-            {/* Request Type */}
-            <div className="space-y-2">
-              <Label htmlFor="requestType">Tipo de solicitud</Label>
-              <select
-                id="requestType"
-                value={requestType}
-                onChange={(e) => setRequestType(e.target.value as RequestType)}
-                className="flex h-8 w-full items-center rounded-lg border border-input bg-transparent px-2.5 py-1 text-sm transition-colors outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
-              >
-                {REQUEST_TYPES.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-            </div>
+        <form onSubmit={handleSubmit}>
+          {/* Request Type */}
+          <div className="form-group">
+            <label className="form-label" htmlFor="requestType">
+              Tipo de solicitud<span className="req">*</span>
+            </label>
+            <select
+              id="requestType"
+              className="form-select"
+              value={requestType}
+              onChange={(e) => setRequestType(e.target.value as RequestType)}
+            >
+              {REQUEST_TYPES.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
 
-            {/* Date fields */}
-            {isRangeType(requestType) ? (
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="dateFrom">Fecha inicio</Label>
-                  <Input
-                    id="dateFrom"
-                    type="date"
-                    value={dateFrom}
-                    onChange={(e) => setDateFrom(e.target.value)}
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="dateTo">Fecha fin</Label>
-                  <Input
-                    id="dateTo"
-                    type="date"
-                    value={dateTo}
-                    onChange={(e) => setDateTo(e.target.value)}
-                    required
-                  />
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                <Label htmlFor="effectiveDate">Fecha</Label>
-                <Input
-                  id="effectiveDate"
+          {/* Date fields */}
+          {isRangeType(requestType) ? (
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label" htmlFor="dateFrom">
+                  Fecha inicio<span className="req">*</span>
+                </label>
+                <input
+                  id="dateFrom"
+                  className="form-input"
                   type="date"
-                  value={effectiveDate}
-                  onChange={(e) => setEffectiveDate(e.target.value)}
+                  value={dateFrom}
+                  onChange={(e) => setDateFrom(e.target.value)}
                   required
                 />
               </div>
-            )}
-
-            {/* Time fields — only for regularizations */}
-            {isRegularization(requestType) && (
-              <div className="grid gap-4 sm:grid-cols-3">
-                <div className="space-y-2">
-                  <Label htmlFor="startTime">Hora entrada</Label>
-                  <Input
-                    id="startTime"
-                    type="time"
-                    value={startTime}
-                    onChange={(e) => setStartTime(e.target.value)}
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="endTime">Hora salida</Label>
-                  <Input
-                    id="endTime"
-                    type="time"
-                    value={endTime}
-                    onChange={(e) => setEndTime(e.target.value)}
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="breakMinutes">Break (min)</Label>
-                  <Input
-                    id="breakMinutes"
-                    type="number"
-                    min={0}
-                    max={120}
-                    value={breakMinutes}
-                    onChange={(e) => setBreakMinutes(Number(e.target.value))}
-                  />
-                </div>
+              <div className="form-group">
+                <label className="form-label" htmlFor="dateTo">
+                  Fecha fin<span className="req">*</span>
+                </label>
+                <input
+                  id="dateTo"
+                  className="form-input"
+                  type="date"
+                  value={dateTo}
+                  onChange={(e) => setDateTo(e.target.value)}
+                  required
+                />
               </div>
-            )}
-
-            {/* Reason Code */}
-            <div className="space-y-2">
-              <Label htmlFor="reasonCode">Motivo</Label>
-              <select
-                id="reasonCode"
-                value={reasonCode}
-                onChange={(e) => setReasonCode(e.target.value)}
-                required
-                className="flex h-8 w-full items-center rounded-lg border border-input bg-transparent px-2.5 py-1 text-sm transition-colors outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
-              >
-                <option value="" disabled>
-                  Selecciona un motivo
-                </option>
-                {ALL_REASON_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
             </div>
-
-            {/* Reason Note */}
-            <div className="space-y-2">
-              <Label htmlFor="reasonNote">Nota adicional (opcional)</Label>
-              <Textarea
-                id="reasonNote"
-                placeholder="Detalle adicional sobre tu solicitud..."
-                value={reasonNote}
-                onChange={(e) => setReasonNote(e.target.value)}
-                rows={3}
+          ) : (
+            <div className="form-group">
+              <label className="form-label" htmlFor="effectiveDate">
+                Fecha<span className="req">*</span>
+              </label>
+              <input
+                id="effectiveDate"
+                className="form-input"
+                type="date"
+                value={effectiveDate}
+                onChange={(e) => setEffectiveDate(e.target.value)}
+                required
               />
             </div>
+          )}
 
-            {/* Error message */}
-            {createMutation.isError && (
-              <p className="text-sm text-destructive">
-                {(createMutation.error as Error).message}
-              </p>
-            )}
-
-            {/* Submit */}
-            <div className="flex justify-end gap-3">
-              <Button variant="outline" type="button" render={<Link href="/requests" />}>
-                Cancelar
-              </Button>
-              <Button type="submit" disabled={createMutation.isPending}>
-                <Send className="h-4 w-4" />
-                {createMutation.isPending ? "Enviando..." : "Enviar solicitud"}
-              </Button>
+          {/* Time fields — only for regularizations */}
+          {isRegularization(requestType) && (
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(3, 1fr)",
+                gap: 14,
+              }}
+            >
+              <div className="form-group">
+                <label className="form-label" htmlFor="startTime">
+                  Hora entrada<span className="req">*</span>
+                </label>
+                <input
+                  id="startTime"
+                  className="form-input"
+                  type="time"
+                  value={startTime}
+                  onChange={(e) => setStartTime(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label" htmlFor="endTime">
+                  Hora salida<span className="req">*</span>
+                </label>
+                <input
+                  id="endTime"
+                  className="form-input"
+                  type="time"
+                  value={endTime}
+                  onChange={(e) => setEndTime(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label" htmlFor="breakMinutes">
+                  Break (min)
+                </label>
+                <input
+                  id="breakMinutes"
+                  className="form-input"
+                  type="number"
+                  min={0}
+                  max={120}
+                  value={breakMinutes}
+                  onChange={(e) => setBreakMinutes(Number(e.target.value))}
+                />
+              </div>
             </div>
-          </form>
-        </CardContent>
-      </Card>
-    </div>
+          )}
+
+          {/* Reason Code */}
+          <div className="form-group">
+            <label className="form-label" htmlFor="reasonCode">
+              Motivo<span className="req">*</span>
+            </label>
+            <select
+              id="reasonCode"
+              className="form-select"
+              value={reasonCode}
+              onChange={(e) => setReasonCode(e.target.value)}
+              required
+            >
+              <option value="" disabled>
+                Selecciona un motivo
+              </option>
+              {ALL_REASON_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Reason Note */}
+          <div className="form-group">
+            <label className="form-label" htmlFor="reasonNote">
+              Nota adicional (opcional)
+            </label>
+            <textarea
+              id="reasonNote"
+              className="form-textarea"
+              placeholder="Detalle adicional sobre tu solicitud..."
+              value={reasonNote}
+              onChange={(e) => setReasonNote(e.target.value)}
+              rows={3}
+            />
+          </div>
+
+          {/* Validation error (client-side) */}
+          {validationError && (
+            <div
+              style={{
+                padding: "10px 12px",
+                borderRadius: "var(--r)",
+                border: "1px solid color-mix(in srgb, var(--warning) 40%, transparent)",
+                background: "color-mix(in srgb, var(--warning) 10%, transparent)",
+                color: "var(--warning)",
+                fontSize: 13,
+                marginBottom: 14,
+                display: "flex",
+                alignItems: "flex-start",
+                gap: 8,
+              }}
+            >
+              <IconSvg d={Icons.alert} size={15} />
+              <span>{validationError}</span>
+            </div>
+          )}
+
+          {/* Error message (server-side) */}
+          {createMutation.isError && (
+            <div
+              style={{
+                padding: "10px 12px",
+                borderRadius: "var(--r)",
+                border: "1px solid color-mix(in srgb, var(--danger) 40%, transparent)",
+                background: "color-mix(in srgb, var(--danger) 10%, transparent)",
+                color: "var(--danger)",
+                fontSize: 13,
+                marginBottom: 14,
+                display: "flex",
+                alignItems: "flex-start",
+                gap: 8,
+              }}
+            >
+              <IconSvg d={Icons.alert} size={15} />
+              <span>{(createMutation.error as Error).message}</span>
+            </div>
+          )}
+
+          {/* Submit */}
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "flex-end",
+              gap: 12,
+              marginTop: 8,
+            }}
+          >
+            <Link href="/requests" className="btn outline">
+              Cancelar
+            </Link>
+            <button
+              type="submit"
+              className="btn primary"
+              disabled={createMutation.isPending}
+            >
+              <IconSvg d={Icons.send} size={14} />
+              {createMutation.isPending ? "Enviando..." : "Enviar solicitud"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </>
   );
 }

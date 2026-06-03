@@ -197,6 +197,8 @@ export async function applyBreakEnd(
 
   const setParts = [
     "breakMinutes = if_not_exists(breakMinutes, :zero) + :mins",
+    "lastBreakEndUtc = :utc",
+    "lastBreakEndLocal = :local",
     "updatedAt = :utc",
     "updatedAtLocal = :local",
     "eventsCount = if_not_exists(eventsCount, :zero) + :one",
@@ -279,30 +281,66 @@ export interface DailyTotals {
   deltaMinutes: number;
   anomalies: string[];
   status: string;
+  /** Minutes the employee arrived after their scheduled start (capped at 0
+   *  when on time or no schedule). Always populated, 0 when not late. */
+  lateMinutes: number;
+}
+
+/** Parse "HH:MM" or "HH:MM:SS" → minutes since midnight. Returns null on parse error. */
+function parseClockToMin(clock: string | undefined | null): number | null {
+  if (!clock) return null;
+  const m = /^(\d{1,2}):(\d{2})/.exec(clock);
+  if (!m) return null;
+  const h = Number(m[1]);
+  const mm = Number(m[2]);
+  if (Number.isNaN(h) || Number.isNaN(mm)) return null;
+  return h * 60 + mm;
+}
+
+/** Extract HH:MM:SS from a local ISO string ("2026-05-22T09:15:00-05:00"). */
+function extractLocalClock(iso: string | undefined | null): string | null {
+  if (!iso) return null;
+  const m = /T(\d{2}:\d{2}:\d{2})/.exec(iso);
+  return m ? m[1] : null;
 }
 
 /**
  * Pure computation of worked/planned/delta/status for a daily summary item.
  * No I/O other than the tenant config lookup. Used by recalcDay and by the
  * admin manual-edit endpoint to keep both paths consistent.
+ *
+ * @param employeeStartTime Optional "HH:MM" override (employee's personal
+ *   schedule). When omitted, tenant default schedule is used for late detection.
  */
 export async function computeDailyTotals(
   item: Record<string, unknown>,
-  tenantId?: string
+  tenantId?: string,
+  employeeStartTime?: string
 ): Promise<DailyTotals> {
   // Get tenant config for planned minutes and work policies
   let planned = 480;
   let strictSchedule = false;
   let allowOvertime = true;
+  let tenantStartTime: string | null = null;
+  let toleranceMinutes = 10;
   if (tenantId) {
-    const { getTenantPlannedMinutes, getTenantWorkPolicy } = await import("@/lib/utils/holidays");
+    const {
+      getTenantPlannedMinutes,
+      getTenantWorkPolicy,
+      getTenantDefaultSchedule,
+      getTenantToleranceMinutes,
+    } = await import("@/lib/utils/holidays");
     planned = await getTenantPlannedMinutes(tenantId);
     const policy = await getTenantWorkPolicy(tenantId);
     strictSchedule = policy.strictSchedule;
     allowOvertime = policy.allowOvertime;
+    const sched = await getTenantDefaultSchedule(tenantId);
+    tenantStartTime = sched.startTime;
+    toleranceMinutes = await getTenantToleranceMinutes(tenantId);
   }
 
   const firstIn = item.firstInUtc as string | undefined;
+  const firstInLocal = item.firstInLocal as string | undefined;
   const lastOut = item.lastOutUtc as string | undefined;
   const breakMinutes = Number(item.breakMinutes ?? 0);
   const anomalies: string[] = [];
@@ -328,6 +366,22 @@ export async function computeDailyTotals(
 
   const delta = allowOvertime ? worked - planned : Math.min(0, worked - planned);
 
+  // ── Late-arrival detection ──────────────────────────────────────────
+  // Compare firstInLocal clock vs schedule start (employee → tenant fallback).
+  let lateMinutes = 0;
+  if (firstInLocal) {
+    const arrivalClock = extractLocalClock(firstInLocal);
+    const arrivalMin = parseClockToMin(arrivalClock);
+    const scheduleMin = parseClockToMin(employeeStartTime ?? tenantStartTime);
+    if (arrivalMin !== null && scheduleMin !== null) {
+      const late = arrivalMin - scheduleMin - toleranceMinutes;
+      if (late > 0) {
+        lateMinutes = late;
+        anomalies.push(`Llegada tarde · ${late} min`);
+      }
+    }
+  }
+
   const currentStatus = item.status as string | undefined;
   let finalStatus: string;
   if (currentStatus === "OPEN" && !lastOut) {
@@ -346,24 +400,31 @@ export async function computeDailyTotals(
     deltaMinutes: delta,
     anomalies,
     status: finalStatus,
+    lateMinutes,
   };
 }
 
 /**
- * Recalculate workedMinutes, plannedMinutes, deltaMinutes, status
- * for a given employee/date. Ported from recalc_day in Python.
+ * Recalculate workedMinutes, plannedMinutes, deltaMinutes, status,
+ * lateMinutes for a given employee/date. Ported from recalc_day in Python.
+ *
+ * @param employeeStartTime Optional "HH:MM" — the employee's personal
+ *   scheduled start time. Used for late-arrival detection. If omitted, the
+ *   tenant default schedule is used as fallback.
  */
 export async function recalcDay(
   employeeId: string,
   workDate: string,
-  tenantId?: string
+  tenantId?: string,
+  employeeStartTime?: string
 ): Promise<void> {
   const current = await getDailySummary(employeeId, workDate);
   if (!current) return;
 
   const totals = await computeDailyTotals(
     current as unknown as Record<string, unknown>,
-    tenantId
+    tenantId,
+    employeeStartTime
   );
 
   await docClient.send(
@@ -374,6 +435,7 @@ export async function recalcDay(
         SET workedMinutes = :worked,
             plannedMinutes = :planned,
             deltaMinutes = :delta,
+            lateMinutes = :late,
             anomalies = :anomalies,
             #st = :status,
             #src = :src,
@@ -384,6 +446,7 @@ export async function recalcDay(
         ":worked": totals.workedMinutes,
         ":planned": totals.plannedMinutes,
         ":delta": totals.deltaMinutes,
+        ":late": totals.lateMinutes,
         ":anomalies": totals.anomalies,
         ":status": totals.status,
         ":src": "REALTIME",

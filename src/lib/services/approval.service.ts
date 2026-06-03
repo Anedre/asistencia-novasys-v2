@@ -89,6 +89,10 @@ export async function approveRequest(
   if (request.status !== "PENDING") {
     throw new ConflictError("Solo se pueden aprobar solicitudes pendientes");
   }
+  // Tenant isolation: a reviewer must belong to the same tenant as the request.
+  if (tenantId && request.TenantID && request.TenantID !== tenantId) {
+    throw new NotFoundError("Solicitud no encontrada");
+  }
 
   // Build a minimal actor from the reviewer's identity so regularization
   // audit entries are attributed to the approving admin, not to SYSTEM.
@@ -104,24 +108,42 @@ export async function approveRequest(
   };
 
   // Audit the status change: withAudit captures `before` (PENDING) and `after`
-  // (APPROVED) snapshots, so revert can restore PENDING state.
-  await withAudit(
-    {
-      actor,
-      entityType: "APPROVAL_REQUEST",
-      entityKey: { RequestID: requestId },
-      action: "APPROVE",
-      reason: reviewerNote,
-    },
-    async () =>
-      updateRequestStatus(
-        requestId,
-        "APPROVED",
-        reviewerId,
-        reviewerName,
-        reviewerNote
-      )
-  );
+  // (APPROVED) snapshots, so revert can restore PENDING state. The underlying
+  // DynamoDB UpdateCommand uses ConditionExpression `status = PENDING`, which
+  // makes the transition atomic — if two admins approve simultaneously only
+  // one update succeeds. Surface the second one as a clean conflict instead
+  // of a generic 500.
+  try {
+    await withAudit(
+      {
+        actor,
+        entityType: "APPROVAL_REQUEST",
+        entityKey: { RequestID: requestId },
+        action: "APPROVE",
+        reason: reviewerNote,
+      },
+      async () =>
+        updateRequestStatus(
+          requestId,
+          "APPROVED",
+          reviewerId,
+          reviewerName,
+          reviewerNote
+        )
+    );
+  } catch (err) {
+    if (
+      err &&
+      typeof err === "object" &&
+      "name" in err &&
+      (err as { name: string }).name === "ConditionalCheckFailedException"
+    ) {
+      throw new ConflictError(
+        "La solicitud ya fue procesada por otro administrador",
+      );
+    }
+    throw err;
+  }
 
   // Auto-apply regularization to DailySummary
   try {

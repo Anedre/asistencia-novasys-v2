@@ -7,9 +7,18 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-sans);
-  --font-mono: var(--font-geist-mono);
-  --font-heading: var(--font-sans);
+  /* TYPOGRAPHY — Sora (sans/UI/headers/body) + JetBrains Mono (numbers, clocks, IDs).
+     Legacy role tokens kept as aliases so existing `font-heading` / `font-display`
+     utilities keep resolving — they all collapse onto Sora now. */
+  --font-sans: var(--font-sora), system-ui, -apple-system, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, "Geist Mono", monospace;
+  --font-heading: var(--font-sora), system-ui, sans-serif;
+  --font-display: var(--font-sora), system-ui, sans-serif;
+  --font-body: var(--font-sora), system-ui, sans-serif;
+  --font-button: var(--font-sora), system-ui, sans-serif;
+  --font-ui: var(--font-sora), system-ui, sans-serif;
+  --font-label: var(--font-sora), system-ui, sans-serif;
+  --font-tech-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -39,6 +48,18 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --color-nova-navy: var(--nova-navy);
+  --color-nova-cyan: var(--nova-cyan);
+  /* Corporate multicolor palette — one tone per nav section / metric / KPI */
+  --color-nova-indigo: var(--cat-indigo);
+  --color-nova-teal: var(--cat-teal);
+  --color-nova-violet: var(--cat-violet);
+  --color-nova-amber: var(--cat-amber);
+  --color-nova-rose: var(--cat-rose);
+  --color-nova-slate: var(--cat-slate);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -48,73 +69,143 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/* ============================================================
+   Novaassistance — Orbital Control design tokens
+   Navy + cyan, sober and professional, Linear/Notion-inspired
+   ============================================================ */
+
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
+  /* Brand */
+  --nova-navy: #0A1628;
+  --nova-cyan: #3FBEFF;
+  --nova-cyan-strong: #0096D6;
+
+  /* Corporate multicolor palette (per-category tones, theme-agnostic) */
+  --cat-indigo: #6366F1;
+  --cat-teal:   #14B8A6;
+  --cat-violet: #8B5CF6;
+  --cat-amber:  #F59E0B;
+  --cat-rose:   #FB7185;
+  --cat-slate:  #94A3B8;
+  --cat-cyan:   #3FBEFF;
+  /* Primary-button gradient stops (dark): indigo → cyan */
+  --grad-primary-from: #5B54F0;
+  --grad-primary-to:   #3FBEFF;
+
+  /* State colors */
+  --success: #10B981;
+  --warning: #F59E0B;
+  --danger: #F43F5E;
+
+  /* Light theme — shadcn variables mapped to Orbital Control */
+  --background: #F8FAFC;
+  --foreground: #0A1628;
+  --card: #FFFFFF;
+  --card-foreground: #0A1628;
+  --popover: #FFFFFF;
+  --popover-foreground: #0A1628;
+
+  /* Primary = navy (dark text-like surfaces, navy buttons) */
+  --primary: #0A1628;
+  --primary-foreground: #FFFFFF;
+
+  /* Secondary = subtle gray for outlines/secondary surfaces */
+  --secondary: #F1F5F9;
+  --secondary-foreground: #0A1628;
+
+  /* Muted = slate */
+  --muted: #F1F5F9;
+  --muted-foreground: #64748B;
+
+  /* Accent = cyan (the orbital accent) */
+  --accent: #3FBEFF;
+  --accent-foreground: #FFFFFF;
+  --accent-soft: rgba(63, 190, 255, 0.12);
+
+  --destructive: #F43F5E;
+  --destructive-foreground: #FFFFFF;
+
+  --border: #E2E8F0;
+  --border-strong: #CBD5E1;
+  --input: #E2E8F0;
+  --ring: #3FBEFF;
+
+  /* Chart palette — Orbital states */
+  --chart-1: #3FBEFF;
+  --chart-2: #10B981;
+  --chart-3: #F59E0B;
+  --chart-4: #F43F5E;
+  --chart-5: #8B5CF6;
+
   --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+
+  /* Sidebar — Orbital navy on light */
+  --sidebar: #FFFFFF;
+  --sidebar-foreground: #0A1628;
+  --sidebar-primary: #0A1628;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: rgba(63, 190, 255, 0.12);
+  --sidebar-accent-foreground: #0096D6;
+  --sidebar-border: #E2E8F0;
+  --sidebar-ring: #3FBEFF;
+
+  /* Custom shadows matching Orbital design */
+  --shadow-nova-xs: 0 1px 1px rgba(10, 22, 40, 0.04), 0 0 0 1px rgba(10, 22, 40, 0.04);
+  --shadow-nova-sm: 0 1px 2px rgba(10, 22, 40, 0.05), 0 1px 3px rgba(10, 22, 40, 0.06);
+  --shadow-nova-md: 0 4px 8px -2px rgba(10, 22, 40, 0.06), 0 2px 4px -2px rgba(10, 22, 40, 0.04);
+  --shadow-nova-lg: 0 12px 24px -8px rgba(10, 22, 40, 0.10), 0 4px 8px -4px rgba(10, 22, 40, 0.06);
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  /* Dark theme — Orbital nocturnal (deep) — matches the new handoff exactly */
+  --background: #04070E;
+  --foreground: #F4F7FB;
+  --card: #0C1320;
+  --card-foreground: #F4F7FB;
+  --popover: #0C1320;
+  --popover-foreground: #F4F7FB;
+
+  /* Primary inverts — cyan as primary in dark for visibility */
+  --primary: #3FBEFF;
+  --primary-foreground: #0A1628;
+
+  --secondary: #151F2F;
+  --secondary-foreground: #F4F7FB;
+
+  --muted: #080D17;
+  --muted-foreground: #9FB0C6;
+
+  --accent: #3FBEFF;
+  --accent-foreground: #0A1628;
+  --accent-soft: rgba(63, 190, 255, 0.14);
+
+  --destructive: #F43F5E;
+  --destructive-foreground: #FFFFFF;
+
+  --border: #1B2636;
+  --border-strong: #30405A;
+  --input: #1B2636;
+  --ring: #3FBEFF;
+
+  --chart-1: #3FBEFF;
+  --chart-2: #10B981;
+  --chart-3: #F59E0B;
+  --chart-4: #F43F5E;
+  --chart-5: #A78BFA;
+
+  --sidebar: #0C1320;
+  --sidebar-foreground: #F4F7FB;
+  --sidebar-primary: #3FBEFF;
+  --sidebar-primary-foreground: #0A1628;
+  --sidebar-accent: rgba(63, 190, 255, 0.14);
+  --sidebar-accent-foreground: #3FBEFF;
+  --sidebar-border: #1B2636;
+  --sidebar-ring: #3FBEFF;
+
+  --shadow-nova-xs: 0 1px 1px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.03);
+  --shadow-nova-sm: 0 2px 6px rgba(0, 0, 0, 0.55);
+  --shadow-nova-md: 0 6px 18px rgba(0, 0, 0, 0.6);
+  --shadow-nova-lg: 0 18px 44px rgba(0, 0, 0, 0.7);
 }
 
 @layer base {
@@ -123,8 +214,185 @@
   }
   body {
     @apply bg-background text-foreground;
+    font-feature-settings: "ss01", "cv11";
+    -webkit-font-smoothing: antialiased;
   }
   html {
     @apply font-sans;
+  }
+  /* Tabular numerals for time/data */
+  .tabular-nums { font-variant-numeric: tabular-nums; }
+  /* Subtle scrollbar styling */
+  * { scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+  *::-webkit-scrollbar { width: 8px; height: 8px; }
+  *::-webkit-scrollbar-thumb {
+    background: var(--border-strong);
+    border-radius: 4px;
+  }
+  *::-webkit-scrollbar-track { background: transparent; }
+}
+
+/* ============================================================
+   Novaassistance utility classes — Orbital Control patterns
+   Used across redesigned screens. Avoid relying on Tailwind's
+   default palette for brand-specific accents.
+   ============================================================ */
+
+@layer components {
+  /* Hero panel with subtle radial accent */
+  .nova-hero {
+    position: relative;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xl);
+    background: var(--card);
+    padding: 28px 32px;
+  }
+  .nova-hero::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+      radial-gradient(ellipse 600px 200px at 80% 50%, var(--accent-soft), transparent 60%),
+      radial-gradient(ellipse 300px 200px at 0% 100%, var(--accent-soft), transparent 70%);
+    opacity: 0.6;
+  }
+  .nova-hero > * { position: relative; }
+
+  /* Status pulse dot */
+  .nova-pulse {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--success);
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.6);
+    animation: nova-pulse 2s infinite;
+  }
+  @keyframes nova-pulse {
+    0%   { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.45); }
+    70%  { box-shadow: 0 0 0 8px transparent; }
+    100% { box-shadow: 0 0 0 0 transparent; }
+  }
+
+  /* Big numeric "stat" with delta */
+  .nova-stat-value {
+    font-family: var(--font-sans);
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: -0.025em;
+    color: var(--foreground);
+    font-variant-numeric: tabular-nums;
+  }
+  .nova-stat-label {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--muted-foreground);
+  }
+  .nova-stat-delta {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 6px;
+    font-variant-numeric: tabular-nums;
+  }
+  .nova-stat-delta.up { color: var(--success); background: rgba(16, 185, 129, 0.12); }
+  .nova-stat-delta.down { color: var(--danger); background: rgba(244, 63, 94, 0.12); }
+
+  /* Segmented progress bar */
+  .nova-segbar {
+    display: flex;
+    height: 8px;
+    border-radius: 999px;
+    overflow: hidden;
+    background: var(--muted);
+    gap: 2px;
+  }
+  .nova-segbar > span {
+    height: 100%;
+    transition: width 0.6s ease;
+  }
+  .nova-segbar > .seg-success { background: var(--success); }
+  .nova-segbar > .seg-accent  { background: var(--accent); }
+  .nova-segbar > .seg-warn    { background: var(--warning); }
+  .nova-segbar > .seg-danger  { background: var(--danger); }
+  .nova-segbar > .seg-muted   { background: var(--muted-foreground); opacity: 0.4; }
+
+  /* Sober chips */
+  .nova-chip {
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--muted-foreground);
+    background: transparent;
+    transition: all 0.15s;
+    border: none;
+    cursor: pointer;
+  }
+  .nova-chip:hover { background: var(--muted); color: var(--foreground); }
+  .nova-chip.active {
+    background: var(--accent-soft);
+    color: var(--nova-cyan-strong);
+  }
+  .dark .nova-chip.active { color: var(--accent); }
+
+  /* Status pill */
+  .nova-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+  .nova-pill.success { background: rgba(16, 185, 129, 0.14); color: var(--success); }
+  .nova-pill.warn    { background: rgba(245, 158, 11, 0.14); color: var(--warning); }
+  .nova-pill.danger  { background: rgba(244, 63, 94, 0.14); color: var(--danger); }
+  .nova-pill.accent  { background: var(--accent-soft); color: var(--nova-cyan-strong); }
+  .dark .nova-pill.accent { color: var(--accent); }
+  .nova-pill.muted   { background: var(--muted); color: var(--muted-foreground); }
+
+  /* Card lift on hover */
+  .nova-card-hover {
+    transition: all 0.18s ease;
+  }
+  .nova-card-hover:hover {
+    border-color: var(--border-strong);
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-nova-sm);
+  }
+
+  /* Fade-up entry */
+  @keyframes nova-fade-up {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: none; }
+  }
+  .nova-fade-up { animation: nova-fade-up 0.4s ease-out both; }
+
+  /* Live indicator */
+  .nova-live {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--muted-foreground);
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
   }
 }

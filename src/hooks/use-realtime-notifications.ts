@@ -1,10 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef } from "react";
 import { useNotifications } from "@/hooks/use-notifications";
+import { useSession } from "next-auth/react";
 import { toast } from "sonner";
 
 export function useRealtimeNotifications() {
+  const { status } = useSession();
+  const isAuthed = status === "authenticated";
   const { data, refetch } = useNotifications();
   const prevCountRef = useRef<number>(0);
   const hasPermissionRef = useRef(false);
@@ -46,11 +49,12 @@ export function useRealtimeNotifications() {
     prevCountRef.current = unreadCount;
   }, [data]);
 
-  // Poll every 12 seconds
-  useEffect(() => {
-    const interval = setInterval(() => { refetch(); }, 12000);
-    return () => clearInterval(interval);
-  }, [refetch]);
+  // Manual polling removed: useNotifications already runs `refetchInterval:
+  // 60000` (or whatever the base hook sets). Stacking a second 12s setInterval
+  // here on top compounded the request rate ~5x and bombarded the server.
+  // If a faster realtime cadence is needed, bump the base hook's
+  // refetchInterval instead of layering polls.
+  void isAuthed;
 
   return data;
 }

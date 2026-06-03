@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { useTenant } from "@/lib/contexts/tenant-context";
 import { useTenantConfig } from "@/hooks/use-tenant";
+import { NovaMark } from "@/components/brand/nova-logo";
 import {
   Tooltip,
   TooltipContent,
@@ -25,7 +26,6 @@ import {
   Settings,
   BarChart3,
   ArrowLeftRight,
-  MessageSquare,
   MessageCircle,
   Newspaper,
 } from "lucide-react";
@@ -109,8 +109,8 @@ export function Sidebar({
       {/* Logo */}
       <div
         className={cn(
-          "flex h-16 items-center border-b",
-          collapsed ? "justify-center px-3" : "gap-2 px-6"
+          "flex h-16 items-center border-b border-sidebar-border",
+          collapsed ? "justify-center px-3" : "gap-2.5 px-5"
         )}
       >
         {logoUrl ? (
@@ -121,12 +121,17 @@ export function Sidebar({
             className="h-8 w-8 shrink-0 rounded-lg object-contain"
           />
         ) : (
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground font-bold text-sm">
-            {logoLetter}
-          </div>
+          <NovaMark size={32} />
         )}
         {!collapsed && (
-          <span className="truncate text-lg font-semibold">{displayName}</span>
+          <div className="min-w-0 leading-none">
+            <div className="truncate text-[14px] font-bold tracking-[0.04em] text-sidebar-foreground">
+              {displayName}
+            </div>
+            <div className="mt-0.5 text-[10px] font-medium tracking-[0.18em] text-[color:var(--nova-cyan-strong)] dark:text-[color:var(--nova-cyan)]">
+              ASSISTANCE
+            </div>
+          </div>
         )}
       </div>
 
@@ -210,12 +215,28 @@ export function Sidebar({
         })}
       </nav>
 
-      {/* Footer */}
-      {!collapsed && (
-        <div className="border-t p-4">
-          <p className="text-xs text-muted-foreground text-center">
-            {displayName} Asistencia v2
-          </p>
+      {/* Footer — company card */}
+      {!collapsed ? (
+        <div className="border-t border-sidebar-border p-3">
+          <div className="flex items-center gap-2.5 rounded-lg p-2 transition-colors hover:bg-sidebar-accent/40">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-gradient-to-br from-[var(--nova-cyan)] to-[var(--nova-cyan-strong)] text-white text-[11px] font-bold tracking-[0.05em]">
+              {logoLetter}
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-[13px] font-semibold text-sidebar-foreground">
+                {displayName}
+              </div>
+              <div className="text-[11px] text-muted-foreground">
+                Workspace
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="border-t border-sidebar-border p-3 flex justify-center">
+          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-gradient-to-br from-[var(--nova-cyan)] to-[var(--nova-cyan-strong)] text-white text-[11px] font-bold">
+            {logoLetter}
+          </div>
         </div>
       )}
     </aside>

@@ -3,6 +3,7 @@ import { requireAdmin, requireSession } from "@/lib/auth-helpers";
 import { getTenantById, updateTenantSettings, updateTenantBranding } from "@/lib/db/tenants";
 import { withErrorHandler } from "@/lib/utils/errors";
 import { withAudit } from "@/lib/services/audit.service";
+import { invalidateTenantConfigCache } from "@/lib/utils/holidays";
 
 /** GET /api/tenant/settings — read tenant settings */
 export const GET = withErrorHandler(async () => {
@@ -59,6 +60,10 @@ export const PUT = withErrorHandler(async (req: Request) => {
       }
     }
   );
+
+  // Drop the in-memory tenant config cache so subsequent attendance writes
+  // (holiday checks, planned-minutes, work policy) see the latest values.
+  invalidateTenantConfigCache(user.tenantId);
 
   const updated = await getTenantById(user.tenantId);
   return NextResponse.json({ ok: true, tenant: updated });

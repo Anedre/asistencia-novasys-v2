@@ -340,10 +340,10 @@ export function ChatWidget() {
                   <Sparkles className="h-7 w-7 text-primary" />
                 </div>
                 <h3 className="mt-3 text-sm font-semibold">
-                  ¿En que te puedo ayudar?
+                  ¿En qué te puedo ayudar?
                 </h3>
                 <p className="mt-1 text-[11px] text-muted-foreground max-w-[280px]">
-                  Ejecuto acciones reales: regularizo asistencia, creo solicitudes, consulto horas y mas.
+                  Ejecuto acciones reales: regularizo asistencia, creo solicitudes, consulto horas y más.
                 </p>
               </div>
               <div className="grid grid-cols-2 gap-2 mt-auto">

@@ -3,6 +3,7 @@ import {
   cognitoForgotPassword,
   cognitoConfirmForgotPassword,
   getCognitoErrorMessage,
+  isCognitoError,
 } from "@/lib/cognito";
 
 /**
@@ -31,11 +32,20 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // Step 1: Initiate forgot password (send code to email)
-    await cognitoForgotPassword(email);
+    // Step 1: Initiate forgot password (send code to email).
+    //
+    // To prevent email enumeration we ALWAYS return the same success message
+    // here regardless of whether the address exists. The `UserNotFoundException`
+    // path is treated as a soft success so attackers can't iterate emails.
+    try {
+      await cognitoForgotPassword(email);
+    } catch (err) {
+      if (!isCognitoError(err, "UserNotFoundException")) throw err;
+    }
     return NextResponse.json({
       ok: true,
-      message: "Se envió un código de verificación a tu correo",
+      message:
+        "Si la cuenta existe, te enviamos un código de verificación a tu correo",
     });
   } catch (error) {
     const message = getCognitoErrorMessage(error);

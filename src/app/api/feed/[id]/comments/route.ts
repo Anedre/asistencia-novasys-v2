@@ -11,18 +11,32 @@ export const POST = withErrorHandler(
     const body = await req.json();
 
     const { content } = body;
-    if (!content) {
+    const trimmed = typeof content === "string" ? content.trim() : "";
+    if (!trimmed) {
       return NextResponse.json({ error: "Contenido requerido" }, { status: 400 });
     }
 
     const post = await getPostById(id);
     if (!post) return NextResponse.json({ error: "Publicacion no encontrada" }, { status: 404 });
 
+    // Same visibility predicate as the LIST endpoint — prevents commenting on
+    // private/cross-tenant posts whose ID happened to leak.
+    const canSee =
+      (!user.tenantId || !post.TenantID || post.TenantID === user.tenantId) &&
+      (post.AuthorID === user.employeeId ||
+        post.Visibility === "company" ||
+        (post.Visibility === "area" && post.TargetArea === user.area) ||
+        user.role === "ADMIN" ||
+        user.role === "SUPER_ADMIN");
+    if (!canSee) {
+      return NextResponse.json({ error: "Publicacion no encontrada" }, { status: 404 });
+    }
+
     const comment: PostComment = {
       CommentID: `CMT#${crypto.randomUUID()}`,
       AuthorID: user.employeeId,
       AuthorName: user.name,
-      Content: content,
+      Content: trimmed,
       CreatedAt: new Date().toISOString(),
     };
 

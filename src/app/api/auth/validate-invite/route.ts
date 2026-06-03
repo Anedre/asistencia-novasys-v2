@@ -56,7 +56,11 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error("[validate-invite]", error);
+    console.error(
+      "[validate-invite]",
+      (error as { name?: string })?.name,
+      (error as { message?: string })?.message,
+    );
     return NextResponse.json(
       { error: "Error al validar la invitacion" },
       { status: 500 }

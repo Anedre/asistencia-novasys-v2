@@ -1,612 +1,416 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
-import {
-  Users,
-  Search,
-  MoreHorizontal,
-  Shield,
-  ShieldOff,
-  UserX,
-  Loader2,
-  Pencil,
-} from "lucide-react";
-import {
-  useAdminEmployees,
-  useUpdateEmployeeRole,
-  useUpdateEmployeeProfile,
-  useDeactivateEmployee,
-} from "@/hooks/use-employee";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Table,
-  TableHeader,
-  TableRow,
-  TableHead,
-  TableBody,
-  TableCell,
-} from "@/components/ui/table";
-import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-} from "@/components/ui/dropdown-menu";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from "@/components/ui/dialog";
-import { EmptyState } from "@/components/shared/empty-state";
+import { useAdminEmployees, useAdminDashboard } from "@/hooks/use-employee";
+import { IconSvg, Icons } from "@/components/nova/icons";
+import { NovaAvatar } from "@/components/nova/avatar";
 import { InviteEmployeeDialog } from "@/components/admin/invite-employee-dialog";
+import { PageHeader } from "@/components/nova/page-header";
+import { fmtClock } from "@/lib/utils/time";
 
-function roleBadge(role: string) {
-  return (
-    <Badge variant={role === "ADMIN" ? "default" : "outline"}>{role}</Badge>
-  );
+/* ============================================================
+   Types
+   ============================================================ */
+
+interface EmployeeRow {
+  employeeId: string;
+  email: string;
+  fullName: string;
+  firstName?: string;
+  lastName?: string;
+  dni: string;
+  area: string;
+  position: string;
+  role: string;
+  workMode: string;
+  status: string;
+  phone: string | null;
 }
 
-function workModeBadge(mode: string) {
-  const styles: Record<string, string> = {
-    REMOTE: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300",
-    ONSITE:
-      "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300",
-    HYBRID:
-      "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300",
-  };
-  const labels: Record<string, string> = {
-    REMOTE: "Remoto",
-    ONSITE: "Presencial",
-    HYBRID: "Hibrido",
-  };
+interface PresenceLite {
+  employeeId: string;
+  status: string;
+  firstInLocal: string | null;
+  workedMinutes: number;
+}
+
+const PRESENCE_META: Record<string, { label: string; dot: "success" | "warn" | "accent" | "muted" | "danger" }> = {
+  WORKING: { label: "Trabajando", dot: "success" },
+  ON_BREAK: { label: "En break", dot: "warn" },
+  BREAK: { label: "En break", dot: "warn" },
+  COMPLETED: { label: "Completa", dot: "accent" },
+  NOT_CHECKED_IN: { label: "Sin marcar", dot: "muted" },
+  NOT_CHECKED: { label: "Sin marcar", dot: "muted" },
+  INACTIVE: { label: "Inactivo", dot: "muted" },
+};
+
+const WORK_MODE_LABEL: Record<string, string> = {
+  ONSITE: "Presencial",
+  REMOTE: "Remoto",
+  HYBRID: "Híbrido",
+};
+
+/* ============================================================
+   Presence cell
+   ============================================================ */
+
+function PresenceCell({ status }: { status: string }) {
+  const cfg = PRESENCE_META[status] ?? PRESENCE_META.NOT_CHECKED_IN;
   return (
-    <span
-      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${styles[mode] ?? ""}`}
-    >
-      {labels[mode] ?? mode}
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+      <span className={`legend-dot ${cfg.dot}`} />
+      <span style={{ fontSize: 12, color: "var(--text-primary)" }}>{cfg.label}</span>
     </span>
   );
 }
 
-function statusBadge(status: string) {
-  if (status === "ACTIVE") {
-    return (
-      <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800 dark:bg-green-900/30 dark:text-green-300">
-        Activo
-      </span>
-    );
-  }
-  return (
-    <span className="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800 dark:bg-red-900/30 dark:text-red-300">
-      Inactivo
-    </span>
-  );
-}
+/* ============================================================
+   Page
+   ============================================================ */
 
-function TableSkeleton() {
-  return (
-    <div className="space-y-3">
-      {Array.from({ length: 5 }).map((_, i) => (
-        <Skeleton key={i} className="h-12 w-full" />
-      ))}
-    </div>
-  );
-}
+const PAGE_SIZE = 12;
 
-interface ConfirmDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  title: string;
-  description: string;
-  confirmText: string;
-  variant?: "default" | "destructive";
-  loading?: boolean;
-  onConfirm: () => void;
-}
-
-function ConfirmDialog({
-  open,
-  onOpenChange,
-  title,
-  description,
-  confirmText,
-  variant = "default",
-  loading,
-  onConfirm,
-}: ConfirmDialogProps) {
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>{description}</DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancelar
-          </Button>
-          <Button
-            variant={variant === "destructive" ? "destructive" : "default"}
-            onClick={onConfirm}
-            disabled={loading}
-          >
-            {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {confirmText}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-export default function EmployeesPage() {
-  const { data, isLoading, isError } = useAdminEmployees(false);
-  const updateRole = useUpdateEmployeeRole();
-  const updateProfile = useUpdateEmployeeProfile();
-  const deactivate = useDeactivateEmployee();
-
+export default function AdminEmployeesPage() {
+  const { data: employeesData, isLoading } = useAdminEmployees(true);
+  const { data: dashboardData } = useAdminDashboard();
   const [search, setSearch] = useState("");
-  const [showInactive, setShowInactive] = useState(false);
+  const [areaFilter, setAreaFilter] = useState<string>("all");
+  const [page, setPage] = useState(1);
 
-  // Dialog state
-  const [roleDialog, setRoleDialog] = useState<{
-    open: boolean;
-    empId: string;
-    empName: string;
-    newRole: "ADMIN" | "EMPLOYEE";
-  }>({ open: false, empId: "", empName: "", newRole: "ADMIN" });
+  const allEmployees: EmployeeRow[] = useMemo(
+    () => (employeesData?.employees ?? []) as EmployeeRow[],
+    [employeesData]
+  );
 
-  const [deleteDialog, setDeleteDialog] = useState<{
-    open: boolean;
-    empId: string;
-    empName: string;
-  }>({ open: false, empId: "", empName: "" });
+  // Presence map from dashboard
+  type DashboardLike = { presence?: PresenceLite[] };
+  const presenceMap = useMemo(() => {
+    const map = new Map<string, PresenceLite>();
+    const presence = (dashboardData as DashboardLike | undefined)?.presence ?? [];
+    presence.forEach((p) => map.set(p.employeeId, p));
+    return map;
+  }, [dashboardData]);
 
-  // Edit dialog state
-  const [editDialog, setEditDialog] = useState<{
-    open: boolean;
-    empId: string;
-    FullName: string;
-    FirstName: string;
-    LastName: string;
-    Phone: string;
-    DNI: string;
-    Area: string;
-    Position: string;
-  }>({
-    open: false,
-    empId: "",
-    FullName: "",
-    FirstName: "",
-    LastName: "",
-    Phone: "",
-    DNI: "",
-    Area: "",
-    Position: "",
-  });
+  // Areas — collapse accent/spacing/casing variants (e.g. "Consultoria" vs
+  // "Consultoría") so one area never shows up as two separate filter chips.
+  const areaKey = (raw?: string | null) =>
+    (raw ?? "").trim().replace(/\s+/g, " ").toLowerCase().normalize("NFD").replace(/\p{M}/gu, "");
+  const hasDiacritics = (s: string) => s !== s.normalize("NFD").replace(/\p{M}/gu, "");
+  const areaCanon = useMemo(() => {
+    const byKey = new Map<string, string>();
+    allEmployees.forEach((e) => {
+      const s = (e.area ?? "").trim().replace(/\s+/g, " ");
+      if (!s) return;
+      const key = areaKey(s);
+      const cur = byKey.get(key);
+      // Prefer the variant that carries diacritics (the correct Spanish spelling).
+      if (!cur || (hasDiacritics(s) && !hasDiacritics(cur))) byKey.set(key, s);
+    });
+    return byKey;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allEmployees]);
+  const areas = useMemo(
+    () => Array.from(new Set(areaCanon.values())).sort((a, b) => a.localeCompare(b, "es")),
+    [areaCanon]
+  );
+  const areaLabel = (raw?: string | null) => areaCanon.get(areaKey(raw)) || (raw ?? "").trim() || "—";
 
-  const [feedback, setFeedback] = useState<{
-    type: "success" | "error";
-    text: string;
-  } | null>(null);
-
-  const allEmployees = data?.employees ?? [];
-
-  const employees = useMemo(() => {
-    let list = allEmployees;
-    if (!showInactive) {
-      list = list.filter((e) => e.status === "ACTIVE");
-    }
-    return list;
-  }, [allEmployees, showInactive]);
-
+  // Filter
   const filtered = useMemo(() => {
-    if (!search.trim()) return employees;
-    const q = search.toLowerCase();
-    return employees.filter(
-      (e) =>
+    const q = search.trim().toLowerCase();
+    return allEmployees.filter((e) => {
+      if (areaFilter !== "all" && areaKey(e.area) !== areaKey(areaFilter)) return false;
+      if (!q) return true;
+      return (
         e.fullName.toLowerCase().includes(q) ||
         e.email.toLowerCase().includes(q) ||
-        e.area.toLowerCase().includes(q) ||
-        e.dni?.toLowerCase().includes(q)
-    );
-  }, [employees, search]);
+        e.dni?.toLowerCase().includes(q) ||
+        e.position?.toLowerCase().includes(q)
+      );
+    });
+  }, [allEmployees, search, areaFilter]);
 
-  const activeCount = allEmployees.filter((e) => e.status === "ACTIVE").length;
-  const inactiveCount = allEmployees.filter(
-    (e) => e.status === "INACTIVE"
-  ).length;
+  // Pagination
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const start = (safePage - 1) * PAGE_SIZE;
+  const pageRows = filtered.slice(start, start + PAGE_SIZE);
 
-  async function handleRoleChange() {
-    setFeedback(null);
-    try {
-      await updateRole.mutateAsync({
-        id: roleDialog.empId,
-        role: roleDialog.newRole,
-      });
-      setFeedback({
-        type: "success",
-        text: `${roleDialog.empName} ahora es ${roleDialog.newRole}`,
-      });
-      setRoleDialog((d) => ({ ...d, open: false }));
-    } catch (err) {
-      setFeedback({
-        type: "error",
-        text: err instanceof Error ? err.message : "Error al cambiar rol",
-      });
-    }
-  }
+  // KPIs
+  type DashKpis = {
+    totalActiveEmployees?: number;
+    presentToday?: number;
+    weeklyAttendancePct?: number;
+    anomaliesToday?: number;
+  };
+  const dash = dashboardData as DashKpis | undefined;
+  const totalActive = dash?.totalActiveEmployees ?? allEmployees.length;
+  const presentToday = dash?.presentToday ?? 0;
+  const presentPct = totalActive > 0 ? Math.round((presentToday / totalActive) * 100) : 0;
+  const attendancePct = dash?.weeklyAttendancePct ?? presentPct;
+  const anomalies = dash?.anomaliesToday ?? 0;
 
-  async function handleEditSave() {
-    setFeedback(null);
-    try {
-      const { empId, open: _open, ...fields } = editDialog;
-      // Auto-derive FirstName/LastName from FullName
-      const nameParts = fields.FullName.trim().split(/\s+/);
-      const updates: Record<string, string> = {
-        FullName: fields.FullName.trim(),
-        FirstName: nameParts[0] || fields.FirstName,
-        LastName: nameParts.slice(1).join(" ") || fields.LastName,
-        Phone: fields.Phone,
-        DNI: fields.DNI,
-        Area: fields.Area,
-        Position: fields.Position,
-      };
-      // Remove empty values to avoid overwriting with blanks
-      for (const k of Object.keys(updates)) {
-        if (!updates[k]) delete updates[k];
-      }
-      await updateProfile.mutateAsync({ id: empId, updates });
-      setFeedback({ type: "success", text: "Empleado actualizado correctamente" });
-      setEditDialog((d) => ({ ...d, open: false }));
-    } catch (err) {
-      setFeedback({
-        type: "error",
-        text: err instanceof Error ? err.message : "Error al actualizar",
-      });
-    }
-  }
-
-  async function handleDeactivate() {
-    setFeedback(null);
-    try {
-      await deactivate.mutateAsync(deleteDialog.empId);
-      setFeedback({
-        type: "success",
-        text: `${deleteDialog.empName} ha sido desactivado`,
-      });
-      setDeleteDialog((d) => ({ ...d, open: false }));
-    } catch (err) {
-      setFeedback({
-        type: "error",
-        text: err instanceof Error ? err.message : "Error al desactivar",
-      });
-    }
+  function setFilter(a: string) {
+    setAreaFilter(a);
+    setPage(1);
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">
-            Directorio de Empleados
-          </h1>
-          <p className="text-muted-foreground">
-            Gestiona los empleados registrados
-          </p>
+    <>
+      {/* PageHeader */}
+      <PageHeader
+        title="Empleados"
+        subtitle="Gestiona tu equipo, invita a nuevos miembros y revisa su asistencia."
+        actions={
+          <>
+            <button type="button" className="btn outline btn-md">
+              <IconSvg d={Icons.download} size={14} /> Exportar
+            </button>
+            <InviteEmployeeDialog />
+          </>
+        }
+      />
+
+      {/* 4 stat-mini KPIs */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 20 }}>
+        <div className="stat-mini">
+          <div className="stat-mini-label">Total activos</div>
+          <div className="stat-mini-value">{totalActive}</div>
+          <div className="stat-mini-delta" style={{ color: "var(--text-muted)" }}>
+            {filtered.length} en lista
+          </div>
         </div>
-        <InviteEmployeeDialog />
+        <div className="stat-mini">
+          <div className="stat-mini-label">Presentes hoy</div>
+          <div className="stat-mini-value">{presentToday}</div>
+          <div className="stat-mini-delta" style={{ color: "var(--text-muted)" }}>
+            {presentPct}% del total
+          </div>
+        </div>
+        <div className="stat-mini">
+          <div className="stat-mini-label">Asistencia promedio</div>
+          <div className="stat-mini-value">
+            {attendancePct}
+            <span style={{ fontSize: 14, fontWeight: 600, color: "var(--text-secondary)" }}>%</span>
+          </div>
+          <div
+            className="stat-mini-delta"
+            style={{ color: attendancePct >= 90 ? "var(--success)" : "var(--warn)" }}
+          >
+            {attendancePct >= 90 ? "Saludable" : "Atención"}
+          </div>
+        </div>
+        <div className="stat-mini">
+          <div className="stat-mini-label">Anomalías abiertas</div>
+          <div className="stat-mini-value">{anomalies}</div>
+          <div
+            className="stat-mini-delta"
+            style={{ color: anomalies > 0 ? "var(--warn)" : "var(--text-muted)" }}
+          >
+            {anomalies > 0 ? "Requiere revisión" : "Al día"}
+          </div>
+        </div>
       </div>
 
-      {feedback && (
-        <div
-          className={`flex items-center gap-2 rounded-md p-3 text-sm ${
-            feedback.type === "success"
-              ? "bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-300"
-              : "bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300"
-          }`}
-        >
-          {feedback.text}
-        </div>
-      )}
-
-      <Card>
-        <CardHeader>
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <CardTitle className="flex items-center gap-2">
-              <Users className="h-5 w-5" />
-              Empleados ({filtered.length})
-              <span className="text-xs font-normal text-muted-foreground">
-                ({activeCount} activos{inactiveCount > 0 && `, ${inactiveCount} inactivos`})
-              </span>
-            </CardTitle>
-            <div className="flex items-center gap-2">
-              <label className="flex items-center gap-2 text-sm cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={showInactive}
-                  onChange={(e) => setShowInactive(e.target.checked)}
-                  className="rounded"
-                />
-                Mostrar inactivos
-              </label>
-              <div className="relative w-full sm:w-72">
-                <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  placeholder="Buscar por nombre, email, DNI..."
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  className="pl-9"
-                />
-              </div>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {isError && (
-            <p className="text-sm text-destructive">
-              Error al cargar los empleados. Intenta de nuevo.
-            </p>
-          )}
-
-          {isLoading ? (
-            <TableSkeleton />
-          ) : filtered.length === 0 ? (
-            <EmptyState
-              icon={Users}
-              title="Sin resultados"
-              description="No se encontraron empleados con los criterios de busqueda."
+      {/* Table */}
+      <div className="table-wrap">
+        <div className="table-toolbar">
+          <div className="searchbar" style={{ maxWidth: 280 }}>
+            <span style={{ color: "var(--text-muted)" }}>
+              <IconSvg d={Icons.search} size={14} />
+            </span>
+            <input
+              placeholder="Buscar por nombre, email, DNI…"
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(1);
+              }}
             />
-          ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Nombre</TableHead>
-                    <TableHead>Email</TableHead>
-                    <TableHead>DNI</TableHead>
-                    <TableHead>Area</TableHead>
-                    <TableHead>Cargo</TableHead>
-                    <TableHead>Rol</TableHead>
-                    <TableHead>Modalidad</TableHead>
-                    <TableHead>Estado</TableHead>
-                    <TableHead className="w-24">Acciones</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filtered.map((emp) => (
-                    <TableRow key={emp.employeeId}>
-                      <TableCell className="font-medium">
-                        {emp.fullName}
-                      </TableCell>
-                      <TableCell className="text-xs">{emp.email}</TableCell>
-                      <TableCell>{emp.dni || "—"}</TableCell>
-                      <TableCell>{emp.area}</TableCell>
-                      <TableCell>{emp.position}</TableCell>
-                      <TableCell>{roleBadge(emp.role)}</TableCell>
-                      <TableCell>{workModeBadge(emp.workMode)}</TableCell>
-                      <TableCell>{statusBadge(emp.status)}</TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-1">
-                          <Link
-                            href={`/admin/employees/${encodeURIComponent(emp.employeeId)}`}
-                            className="inline-flex h-7 items-center rounded-lg border border-border bg-background px-2.5 text-[0.8rem] font-medium hover:bg-muted dark:border-input dark:bg-input/30 dark:hover:bg-input/50"
-                          >
-                            Ver
-                          </Link>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger
-                              render={<Button variant="ghost" size="sm" />}
-                            >
-                              <MoreHorizontal className="h-4 w-4" />
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem
-                                onClick={() =>
-                                  setEditDialog({
-                                    open: true,
-                                    empId: emp.employeeId,
-                                    FullName: emp.fullName,
-                                    FirstName: emp.firstName ?? "",
-                                    LastName: emp.lastName ?? "",
-                                    Phone: emp.phone ?? "",
-                                    DNI: emp.dni ?? "",
-                                    Area: emp.area,
-                                    Position: emp.position,
-                                  })
-                                }
-                              >
-                                <Pencil className="mr-2 h-4 w-4" />
-                                Editar datos
-                              </DropdownMenuItem>
-                              <DropdownMenuSeparator />
-                              {emp.role === "EMPLOYEE" ? (
-                                <DropdownMenuItem
-                                  onClick={() =>
-                                    setRoleDialog({
-                                      open: true,
-                                      empId: emp.employeeId,
-                                      empName: emp.fullName,
-                                      newRole: "ADMIN",
-                                    })
-                                  }
-                                >
-                                  <Shield className="mr-2 h-4 w-4" />
-                                  Hacer Administrador
-                                </DropdownMenuItem>
-                              ) : (
-                                <DropdownMenuItem
-                                  onClick={() =>
-                                    setRoleDialog({
-                                      open: true,
-                                      empId: emp.employeeId,
-                                      empName: emp.fullName,
-                                      newRole: "EMPLOYEE",
-                                    })
-                                  }
-                                >
-                                  <ShieldOff className="mr-2 h-4 w-4" />
-                                  Quitar Admin
-                                </DropdownMenuItem>
-                              )}
-                              <DropdownMenuSeparator />
-                              {emp.status === "ACTIVE" && (
-                                <DropdownMenuItem
-                                  className="text-destructive"
-                                  onClick={() =>
-                                    setDeleteDialog({
-                                      open: true,
-                                      empId: emp.employeeId,
-                                      empName: emp.fullName,
-                                    })
-                                  }
-                                >
-                                  <UserX className="mr-2 h-4 w-4" />
-                                  Desactivar Cuenta
-                                </DropdownMenuItem>
-                              )}
-                            </DropdownMenuContent>
-                          </DropdownMenu>
+          </div>
+          <div style={{ display: "flex", gap: 4, marginLeft: 8, flexWrap: "wrap" }}>
+            <button
+              type="button"
+              className={`chip ${areaFilter === "all" ? "active" : ""}`}
+              onClick={() => setFilter("all")}
+            >
+              Todos
+            </button>
+            {areas.map((a) => (
+              <button
+                key={a}
+                type="button"
+                className={`chip ${areaFilter === a ? "active" : ""}`}
+                onClick={() => setFilter(a)}
+              >
+                {a}
+              </button>
+            ))}
+          </div>
+          <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+            <button type="button" className="btn ghost btn-sm">
+              <IconSvg d={Icons.filter} size={13} /> Filtros
+            </button>
+          </div>
+        </div>
+
+        <table className="table">
+          <thead>
+            <tr>
+              <th>Empleado</th>
+              <th>Área / Modalidad</th>
+              <th>Hoy</th>
+              <th>Horas hoy</th>
+              <th>Rol</th>
+              <th>Estado</th>
+              <th style={{ width: 40 }} />
+            </tr>
+          </thead>
+          <tbody>
+            {isLoading ? (
+              Array.from({ length: 6 }).map((_, i) => (
+                <tr key={i}>
+                  <td colSpan={7}>
+                    <div
+                      style={{
+                        height: 32,
+                        background: "var(--bg-subtle)",
+                        borderRadius: 4,
+                        margin: "4px 0",
+                        opacity: 0.6,
+                      }}
+                    />
+                  </td>
+                </tr>
+              ))
+            ) : pageRows.length === 0 ? (
+              <tr>
+                <td
+                  colSpan={7}
+                  style={{ textAlign: "center", padding: "48px 0", color: "var(--text-muted)", fontSize: 13 }}
+                >
+                  {search || areaFilter !== "all"
+                    ? "Sin empleados que coincidan con los filtros"
+                    : "Sin empleados registrados"}
+                </td>
+              </tr>
+            ) : (
+              pageRows.map((e) => {
+                const presence = presenceMap.get(e.employeeId);
+                const workedMin = presence?.workedMinutes ?? 0;
+                const h = Math.floor(workedMin / 60);
+                const m = workedMin % 60;
+                const isAdmin = e.role === "ADMIN" || e.role === "SUPER_ADMIN";
+                const isActive = e.status === "ACTIVE";
+
+                return (
+                  <tr key={e.employeeId} onClick={() => (window.location.href = `/admin/employees/${encodeURIComponent(e.employeeId)}`)}>
+                    <td>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <NovaAvatar name={e.fullName} size={36} variant="plain" />
+                        <div>
+                          <div className="tcell-strong">{e.fullName}</div>
+                          <div className="tcell-muted">{e.position || "—"}</div>
                         </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                      </div>
+                    </td>
+                    <td>
+                      <div style={{ fontSize: 13, color: "var(--text-primary)" }}>{areaLabel(e.area)}</div>
+                      <div className="tcell-muted">
+                        {WORK_MODE_LABEL[e.workMode] ?? e.workMode}
+                      </div>
+                    </td>
+                    <td>
+                      <PresenceCell status={presence?.status ?? "NOT_CHECKED_IN"} />
+                      {presence?.firstInLocal && (
+                        <div className="tcell-muted" style={{ marginTop: 2 }}>
+                          {fmtClock(presence.firstInLocal)}
+                        </div>
+                      )}
+                    </td>
+                    <td>
+                      <span className="tcell-mono">
+                        {workedMin > 0 ? `${h}h ${String(m).padStart(2, "0")}m` : "—"}
+                      </span>
+                    </td>
+                    <td>
+                      <span className={`type-tag ${isAdmin ? "accent" : "muted"}`}>
+                        {e.role}
+                      </span>
+                    </td>
+                    <td>
+                      <span className={`type-tag ${isActive ? "success" : "danger"}`}>
+                        {isActive ? "Activo" : "Inactivo"}
+                      </span>
+                    </td>
+                    <td onClick={(ev) => ev.stopPropagation()}>
+                      <Link
+                        href={`/admin/employees/${encodeURIComponent(e.employeeId)}`}
+                        className="btn ghost btn-sm"
+                        aria-label="Ver detalle"
+                      >
+                        <IconSvg d={Icons.more} size={14} />
+                      </Link>
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+
+        {/* Pagination */}
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            padding: "12px 16px",
+            borderTop: "1px solid var(--border)",
+            fontSize: 12,
+            color: "var(--text-secondary)",
+          }}
+        >
+          <span>
+            Mostrando {pageRows.length} de {filtered.length} empleados
+            {areaFilter !== "all" && ` · ${areaFilter}`}
+          </span>
+          {totalPages > 1 && (
+            <div style={{ display: "flex", gap: 6 }}>
+              <button
+                type="button"
+                className="btn ghost btn-sm"
+                disabled={safePage === 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+              >
+                <IconSvg d={Icons.arrowLeft} size={12} /> Anterior
+              </button>
+              {Array.from({ length: Math.min(totalPages, 5) }).map((_, i) => {
+                const p = i + 1;
+                return (
+                  <button
+                    key={p}
+                    type="button"
+                    className={`btn ${p === safePage ? "outline" : "ghost"} btn-sm`}
+                    onClick={() => setPage(p)}
+                  >
+                    {p}
+                  </button>
+                );
+              })}
+              <button
+                type="button"
+                className="btn ghost btn-sm"
+                disabled={safePage === totalPages}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              >
+                Siguiente <IconSvg d={Icons.arrow} size={12} />
+              </button>
             </div>
           )}
-        </CardContent>
-      </Card>
-
-      {/* Role change dialog */}
-      <ConfirmDialog
-        open={roleDialog.open}
-        onOpenChange={(open) => setRoleDialog((d) => ({ ...d, open }))}
-        title="Cambiar Rol"
-        description={`¿Estas seguro de que deseas cambiar el rol de ${roleDialog.empName} a ${roleDialog.newRole}?`}
-        confirmText={
-          roleDialog.newRole === "ADMIN"
-            ? "Hacer Administrador"
-            : "Quitar Admin"
-        }
-        loading={updateRole.isPending}
-        onConfirm={handleRoleChange}
-      />
-
-      {/* Deactivate dialog */}
-      <ConfirmDialog
-        open={deleteDialog.open}
-        onOpenChange={(open) => setDeleteDialog((d) => ({ ...d, open }))}
-        title="Desactivar Empleado"
-        description={`¿Estas seguro de que deseas desactivar la cuenta de ${deleteDialog.empName}? El empleado no podra acceder al sistema.`}
-        confirmText="Desactivar"
-        variant="destructive"
-        loading={deactivate.isPending}
-        onConfirm={handleDeactivate}
-      />
-
-      {/* Edit employee dialog */}
-      <Dialog
-        open={editDialog.open}
-        onOpenChange={(open) => setEditDialog((d) => ({ ...d, open }))}
-      >
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Editar Empleado</DialogTitle>
-            <DialogDescription>
-              Modifica los datos del empleado. Los cambios se aplicaran inmediatamente.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-4 py-2">
-            <div className="grid gap-1.5">
-              <Label htmlFor="edit-name">Nombre completo</Label>
-              <Input
-                id="edit-name"
-                value={editDialog.FullName}
-                onChange={(e) =>
-                  setEditDialog((d) => ({ ...d, FullName: e.target.value }))
-                }
-                placeholder="Nombre completo"
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="grid gap-1.5">
-                <Label htmlFor="edit-dni">DNI</Label>
-                <Input
-                  id="edit-dni"
-                  value={editDialog.DNI}
-                  onChange={(e) =>
-                    setEditDialog((d) => ({ ...d, DNI: e.target.value }))
-                  }
-                  placeholder="DNI"
-                />
-              </div>
-              <div className="grid gap-1.5">
-                <Label htmlFor="edit-phone">Telefono</Label>
-                <Input
-                  id="edit-phone"
-                  value={editDialog.Phone}
-                  onChange={(e) =>
-                    setEditDialog((d) => ({ ...d, Phone: e.target.value }))
-                  }
-                  placeholder="Telefono"
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="grid gap-1.5">
-                <Label htmlFor="edit-area">Area</Label>
-                <Input
-                  id="edit-area"
-                  value={editDialog.Area}
-                  onChange={(e) =>
-                    setEditDialog((d) => ({ ...d, Area: e.target.value }))
-                  }
-                  placeholder="Area"
-                />
-              </div>
-              <div className="grid gap-1.5">
-                <Label htmlFor="edit-position">Cargo</Label>
-                <Input
-                  id="edit-position"
-                  value={editDialog.Position}
-                  onChange={(e) =>
-                    setEditDialog((d) => ({ ...d, Position: e.target.value }))
-                  }
-                  placeholder="Cargo"
-                />
-              </div>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setEditDialog((d) => ({ ...d, open: false }))}
-            >
-              Cancelar
-            </Button>
-            <Button
-              onClick={handleEditSave}
-              disabled={updateProfile.isPending || !editDialog.FullName.trim()}
-            >
-              {updateProfile.isPending && (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              )}
-              Guardar cambios
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
+        </div>
+      </div>
+    </>
   );
 }

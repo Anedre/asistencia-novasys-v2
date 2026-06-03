@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth-helpers";
 import { getEmployeeById, updateEmployeeRole, deactivateEmployee, updateEmployeeProfile } from "@/lib/db/employees";
 import { getDailySummaryRange } from "@/lib/db/daily-summary";
+import { getRequestsByEmployee } from "@/lib/db/requests";
+import { workDateLima } from "@/lib/utils/time";
 import { withErrorHandler } from "@/lib/utils/errors";
 import { NotFoundError } from "@/lib/utils/errors";
 import { updateEmployeeRoleSchema } from "@/lib/utils/validation";
@@ -16,15 +18,17 @@ export const GET = withErrorHandler(async (req: Request, context: unknown) => {
     throw new NotFoundError("Empleado no encontrado");
   }
 
-  // Last 30 days attendance
-  const today = new Date();
-  const start = new Date(today);
-  start.setDate(start.getDate() - 30);
+  // Last 30 days attendance — anchored on Lima local "today" so the window
+  // doesn't slide forward by a day between 19:00–23:59 Lima (UTC-5), when
+  // toISOString().slice(0,10) would return tomorrow's date.
+  const toDateStr = workDateLima();
+  const startMs = new Date(toDateStr + "T00:00:00-05:00").getTime() - 30 * 86400000;
+  const fromDateStr = workDateLima(new Date(startMs));
 
-  const toDateStr = today.toISOString().slice(0, 10);
-  const fromDateStr = start.toISOString().slice(0, 10);
-
-  const summaries = await getDailySummaryRange(id, fromDateStr, toDateStr);
+  const [summaries, requestsRaw] = await Promise.all([
+    getDailySummaryRange(id, fromDateStr, toDateStr),
+    getRequestsByEmployee(id, 50),
+  ]);
 
   const recentAttendance = summaries.map((s) => ({
     date: s.WorkDate.replace("DATE#", ""),
@@ -33,6 +37,16 @@ export const GET = withErrorHandler(async (req: Request, context: unknown) => {
     breakMinutes: s.breakMinutes ?? 0,
     workedMinutes: s.workedMinutes ?? 0,
     status: s.status,
+  }));
+
+  const requests = requestsRaw.map((r) => ({
+    id: r.RequestID,
+    requestType: r.requestType,
+    status: r.status,
+    dateFrom: r.dateFrom ?? null,
+    dateTo: r.dateTo ?? null,
+    effectiveDate: r.effectiveDate ?? null,
+    createdAt: r.createdAt ?? null,
   }));
 
   return NextResponse.json({
@@ -58,6 +72,7 @@ export const GET = withErrorHandler(async (req: Request, context: unknown) => {
       updatedAt: employee.UpdatedAt,
     },
     recentAttendance,
+    requests,
   });
 });
 

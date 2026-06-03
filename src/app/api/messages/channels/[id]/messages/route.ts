@@ -4,7 +4,7 @@ import { withErrorHandler } from "@/lib/utils/errors";
 import { getChannelById, updateChannelLastMessage } from "@/lib/db/chat-channels";
 import { getMessagesByChannel, createMessage } from "@/lib/db/chat-messages";
 import { putNotification } from "@/lib/db/notifications";
-import type { ChatMessage } from "@/lib/types/channel";
+import type { ChatMessage, ReplyInfo } from "@/lib/types/channel";
 
 export const GET = withErrorHandler(
   async (
@@ -22,7 +22,10 @@ export const GET = withErrorHandler(
       );
     }
 
-    if (!channel.Members.includes(user.employeeId)) {
+    if (
+      !channel.Members.includes(user.employeeId) ||
+      (user.tenantId && channel.TenantID && channel.TenantID !== user.tenantId)
+    ) {
       return NextResponse.json(
         { error: "No eres miembro de este canal" },
         { status: 403 }
@@ -53,7 +56,10 @@ export const POST = withErrorHandler(
       );
     }
 
-    if (!channel.Members.includes(user.employeeId)) {
+    if (
+      !channel.Members.includes(user.employeeId) ||
+      (user.tenantId && channel.TenantID && channel.TenantID !== user.tenantId)
+    ) {
       return NextResponse.json(
         { error: "No eres miembro de este canal" },
         { status: 403 }
@@ -61,9 +67,10 @@ export const POST = withErrorHandler(
     }
 
     const body = await req.json();
-    const { content, type: msgType } = body as {
+    const { content, type: msgType, replyTo } = body as {
       content: string;
       type?: "text" | "image" | "file";
+      replyTo?: ReplyInfo;
     };
 
     if (!content || !content.trim()) {
@@ -82,6 +89,16 @@ export const POST = withErrorHandler(
       Content: content.trim(),
       Type: msgType || "text",
       CreatedAt: now,
+      ...(replyTo &&
+        replyTo.messageId &&
+        replyTo.senderName &&
+        replyTo.content && {
+          ReplyTo: {
+            messageId: replyTo.messageId,
+            senderName: replyTo.senderName,
+            content: replyTo.content.slice(0, 200),
+          },
+        }),
     };
 
     await createMessage(message);

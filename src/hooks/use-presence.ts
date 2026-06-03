@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useCallback, useRef } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
+import { useSession } from "next-auth/react";
 
 const HEARTBEAT_INTERVAL = 30_000; // 30 seconds
 const PRESENCE_POLL_INTERVAL = 10_000; // 10 seconds
@@ -13,8 +14,13 @@ const PRESENCE_POLL_INTERVAL = 10_000; // 10 seconds
 export function useHeartbeat() {
   const typingChannelRef = useRef<string | null>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { status } = useSession();
+  const isAuthed = status === "authenticated";
 
   useEffect(() => {
+    // Don't ping presence (or bombard the server with 401s) while signed out.
+    if (!isAuthed) return;
+
     // Send initial heartbeat
     fetch("/api/presence", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) }).catch(() => {});
 
@@ -32,7 +38,7 @@ export function useHeartbeat() {
       clearInterval(id);
       window.removeEventListener("beforeunload", handleUnload);
     };
-  }, []);
+  }, [isAuthed]);
 
   const startTyping = useCallback((channelId: string) => {
     if (typingChannelRef.current === channelId) return;
@@ -75,7 +81,10 @@ export function useHeartbeat() {
  * Poll presence status for a list of employee IDs.
  */
 export function usePresence(employeeIds: string[]) {
-  const idsKey = employeeIds.sort().join(",");
+  // Copy before sort — `.sort()` mutates in place, so sorting the caller's
+  // array each render leads to subtle prop-drift in upstream components.
+  const idsKey = [...employeeIds].sort().join(",");
+  const { status } = useSession();
 
   return useQuery({
     queryKey: ["presence", idsKey],
@@ -87,7 +96,7 @@ export function usePresence(employeeIds: string[]) {
       return data.presence as Record<string, { status: string; lastActivity: string; typingIn?: string }>;
     },
     refetchInterval: PRESENCE_POLL_INTERVAL,
-    enabled: employeeIds.length > 0,
+    enabled: employeeIds.length > 0 && status === "authenticated",
   });
 }
 

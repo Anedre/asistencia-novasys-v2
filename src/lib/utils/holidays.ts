@@ -15,6 +15,11 @@ interface TenantCache {
   holidays: Holiday[];
   plannedMinutes: number;
   workPolicy: WorkPolicy;
+  /** Default tenant schedule — used as fallback when an employee doesn't have one set */
+  defaultStartTime: string; // "09:00"
+  defaultEndTime: string; // "18:00"
+  /** Grace period in minutes before a late arrival is flagged. */
+  toleranceMinutes: number;
   expiresAt: number;
 }
 
@@ -48,10 +53,22 @@ async function getTenantConfig(tenantId: string): Promise<TenantCache> {
     if (total > 0) plannedMinutes = total;
   }
 
+  // Default schedule for the tenant — fallback when employee has none.
+  // Priority: workSchedule (extended settings) → defaultSchedule (legacy) → 09:00/18:00.
+  const tenantStart =
+    settings?.workSchedule?.startTime ?? settings?.defaultSchedule?.startTime ?? "09:00";
+  const tenantEnd =
+    settings?.workSchedule?.endTime ?? settings?.defaultSchedule?.endTime ?? "18:00";
+  // Tolerance/grace period before flagging a late arrival.
+  const toleranceMinutes = Number(settings?.workSchedule?.toleranceMinutes ?? 10);
+
   const entry: TenantCache = {
     holidays: settings?.holidays ?? [],
     plannedMinutes,
     workPolicy: settings?.workPolicy ?? DEFAULT_WORK_POLICY,
+    defaultStartTime: tenantStart,
+    defaultEndTime: tenantEnd,
+    toleranceMinutes,
     expiresAt: now + CACHE_TTL,
   };
   cache.set(tenantId, entry);
@@ -130,4 +147,36 @@ export async function getHolidaySet(
     map.set(h.date, h.name);
   }
   return map;
+}
+
+/**
+ * Drop the cached tenant config so the next call re-reads from DynamoDB.
+ * Call this after any mutation that changes holidays / planned schedule /
+ * work policy on the tenant, otherwise downstream attendance calculations
+ * keep using stale values for up to 5 minutes per Lambda instance.
+ */
+export function invalidateTenantConfigCache(tenantId: string): void {
+  cache.delete(tenantId);
+}
+
+/**
+ * Get the tenant default schedule (used as fallback when an employee has
+ * no Schedule of their own).
+ */
+export async function getTenantDefaultSchedule(
+  tenantId: string
+): Promise<{ startTime: string; endTime: string }> {
+  const cfg = await getTenantConfig(tenantId);
+  return { startTime: cfg.defaultStartTime, endTime: cfg.defaultEndTime };
+}
+
+/**
+ * Get the configured grace period (in minutes) for late arrivals.
+ * If `firstInLocal` is at most `scheduleStart + toleranceMinutes`, the
+ * arrival is NOT flagged as late.
+ */
+export async function getTenantToleranceMinutes(
+  tenantId: string
+): Promise<number> {
+  return (await getTenantConfig(tenantId)).toleranceMinutes;
 }

@@ -3,57 +3,12 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
+import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { usePresence, useHeartbeat, formatLastSeen, getPresenceDisplay } from "@/hooks/use-presence";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import {
-  Avatar,
-  AvatarFallback,
-  AvatarBadge,
-} from "@/components/ui/avatar";
-import {
-  Dialog,
-  DialogTrigger,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-  DialogClose,
-} from "@/components/ui/dialog";
-import {
-  Tooltip,
-  TooltipTrigger,
-  TooltipContent,
-  TooltipProvider,
-} from "@/components/ui/tooltip";
-import {
-  MessageCircle,
-  Plus,
-  Send,
-  ArrowLeft,
-  Loader2,
-  Users,
-  Search,
-  X,
-  Hash,
-  CalendarDays,
-  ClipboardCheck,
-  Smile,
-  Reply,
-  Info,
-  Pencil,
-  Check,
-  LogOut,
-  UserPlus,
-  Mail,
-  Building2,
-  Briefcase,
-} from "lucide-react";
-import { cn } from "@/lib/utils";
+import { IconSvg, Icons } from "@/components/nova/icons";
+import { EmptyState } from "@/components/shared/empty-state";
 import {
   useChannels,
   useMessages,
@@ -61,6 +16,8 @@ import {
   useCreateChannel,
 } from "@/hooks/use-messaging";
 import type { ChatChannel, ChatMessage, ReplyInfo } from "@/lib/types/channel";
+import { MessageBubble } from "@/components/messaging/message-bubble";
+import { useChatLastSeen } from "@/hooks/use-chat-last-seen";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -68,17 +25,18 @@ import type { ChatChannel, ChatMessage, ReplyInfo } from "@/lib/types/channel";
 
 const EMOJI_LIST = [
   "\u{1F600}","\u{1F602}","\u{1F972}","\u{1F60D}","\u{1F929}","\u{1F60E}","\u{1F914}","\u{1F605}",
-  "\u{1F44D}","\u{1F44F}","\u{1F64C}","\u{1F4AA}","\u{1F389}","\u{1F525}","\u2764\uFE0F","\u{1F4AF}",
-  "\u2705","\u23F0","\u{1F4CB}","\u{1F4C5}","\u2615","\u{1F680}","\u2B50","\u{1F64F}",
-  "\u{1F622}","\u{1F624}","\u{1F92F}","\u{1F634}","\u{1F91D}","\u{1F44B}","\u2728","\u{1F4AC}",
+  "\u{1F44D}","\u{1F44F}","\u{1F64C}","\u{1F4AA}","\u{1F389}","\u{1F525}","❤️","\u{1F4AF}",
+  "✅","⏰","\u{1F4CB}","\u{1F4C5}","☕","\u{1F680}","⭐","\u{1F64F}",
+  "\u{1F622}","\u{1F624}","\u{1F92F}","\u{1F634}","\u{1F91D}","\u{1F44B}","✨","\u{1F4AC}",
 ] as const;
 
-const QUICK_REACTIONS = ["\u{1F44D}", "\u2764\uFE0F", "\u{1F602}", "\u{1F44F}", "\u{1F525}"] as const;
+const QUICK_REACTIONS = ["\u{1F44D}", "❤️", "\u{1F602}", "\u{1F44F}", "\u{1F525}"] as const;
 
-const AVATAR_COLORS = [
-  "bg-blue-500","bg-emerald-500","bg-amber-500","bg-rose-500","bg-violet-500",
-  "bg-cyan-500","bg-pink-500","bg-teal-500","bg-orange-500","bg-indigo-500",
-] as const;
+// Stable avatar color palette — driven by `.avatar-bg-N` CSS classes (which
+// resolve to the `--avatar-N` tokens defined in `nova-design.css`). Using
+// classes instead of inline hex keeps the messaging surface themable along
+// with the rest of the design system.
+const AVATAR_CLASS_COUNT = 10;
 
 // ---------------------------------------------------------------------------
 // Types & helpers
@@ -110,10 +68,11 @@ function getInitials(name: string): string {
   return (name.slice(0, 2) || "??").toUpperCase();
 }
 
-function colorFor(id: string): string {
+/** Pick an `.avatar-bg-N` class deterministically from an ID. */
+function avatarClassFor(id: string): string {
   let h = 0;
   for (let i = 0; i < id.length; i++) h = id.charCodeAt(i) + ((h << 5) - h);
-  return AVATAR_COLORS[Math.abs(h) % AVATAR_COLORS.length];
+  return `avatar-bg-${(Math.abs(h) % AVATAR_CLASS_COUNT) + 1}`;
 }
 
 function formatRelative(iso: string): string {
@@ -155,6 +114,31 @@ function isSameDay(a: string, b: string): boolean {
   return da.getFullYear() === db.getFullYear() && da.getMonth() === db.getMonth() && da.getDate() === db.getDate();
 }
 
+// Small reusable spinner using nova-design @keyframes spin
+function Spinner({ size = 14 }: { size?: number }) {
+  return (
+    <span
+      aria-hidden
+      style={{
+        display: "inline-block",
+        width: size,
+        height: size,
+        border: "2px solid currentColor",
+        borderTopColor: "transparent",
+        borderRadius: "50%",
+        animation: "spin 0.6s linear infinite",
+      }}
+    />
+  );
+}
+
+// Presence-dot color helper
+function presenceDotColor(status?: string): string {
+  if (status === "online") return "var(--success)";
+  if (status === "idle") return "var(--warn)";
+  return "var(--text-muted)";
+}
+
 // ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
@@ -163,6 +147,7 @@ export default function MessagesPage() {
   const { data: session } = useSession();
   const searchParams = useSearchParams();
   const router = useRouter();
+  const qc = useQueryClient();
 
   const selectedChannelId = searchParams.get("channel");
 
@@ -226,6 +211,27 @@ export default function MessagesPage() {
     if (selectedChannelId) setShowMobileThread(true);
   }, [selectedChannelId]);
 
+  // Unread tracking — a real signal (no server-side read receipts): compare each
+  // channel's LastMessageAt against the last time the viewer opened it,
+  // persisted in localStorage. See useChatLastSeen.
+  const chatSeen = useChatLastSeen();
+
+  // Baseline once channels load, so pre-existing history isn't flagged unread;
+  // only messages that arrive after you last looked count.
+  useEffect(() => {
+    if (!chatSeen.ready || channels.length === 0) return;
+    chatSeen.seed(channels.map((c) => ({ id: c.ChannelID, at: c.LastMessageAt })));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chatSeen.ready, channelsData]);
+
+  // Opening a channel (or a new message while it's open) marks it seen.
+  useEffect(() => {
+    if (!chatSeen.ready || !selectedChannelId) return;
+    const ch = channels.find((c) => c.ChannelID === selectedChannelId);
+    chatSeen.markSeen(selectedChannelId, ch?.LastMessageAt);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chatSeen.ready, selectedChannelId, channelsData]);
+
   // Close emoji picker on outside click
   useEffect(() => {
     if (!showEmojiPicker) return;
@@ -248,17 +254,23 @@ export default function MessagesPage() {
   }, [selectedChannelId]);
 
   // Fetch employees when create dialog or add member opens
+  // Uses /api/employees/directory (public to all authenticated employees) instead
+  // of the admin-only /api/admin/employees, so non-admins can also start chats.
   const fetchEmployees = useCallback(async () => {
     if (employeeList.length > 0) return;
     setEmployeesLoading(true);
     try {
-      const res = await fetch("/api/admin/employees");
-      if (res.ok) {
-        const data = await res.json();
-        const raw = (data.employees ?? data ?? []) as Record<string, unknown>[];
-        setEmployeeList(raw.map(normalizeEmployee));
+      const res = await fetch("/api/employees/directory");
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error || "No se pudo cargar el directorio");
       }
-    } catch { /* silently fail */ } finally {
+      const data = await res.json();
+      const raw = (data.employees ?? data ?? []) as Record<string, unknown>[];
+      setEmployeeList(raw.map(normalizeEmployee));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Error cargando empleados");
+    } finally {
       setEmployeesLoading(false);
     }
   }, [employeeList.length]);
@@ -372,7 +384,7 @@ export default function MessagesPage() {
       sendData.replyTo = replyTo;
       setReplyTo(null);
     }
-    await sendMessage.mutateAsync(sendData as { content: string });
+    await sendMessage.mutateAsync(sendData);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -414,7 +426,7 @@ export default function MessagesPage() {
     const now = new Date();
     const time = now.toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit" });
     const date = now.toLocaleDateString("es-PE", { day: "numeric", month: "long" });
-    sendQuickShare(`\u{1F4CB} *Registro de asistencia*\n\u{1F4C5} ${date}\n\u23F0 Hora: ${time}\n\u2705 Estado: Presente`);
+    sendQuickShare(`\u{1F4CB} *Registro de asistencia*\n\u{1F4C5} ${date}\n⏰ Hora: ${time}\n✅ Estado: Presente`);
   };
 
   const shareEvent = () => {
@@ -428,7 +440,7 @@ export default function MessagesPage() {
   const toggleReaction = async (msgId: string, emoji: string) => {
     if (!selectedChannelId) return;
     try {
-      await fetch(
+      const res = await fetch(
         `/api/messages/channels/${encodeURIComponent(selectedChannelId)}/messages/${encodeURIComponent(msgId)}/reactions`,
         {
           method: "POST",
@@ -436,9 +448,12 @@ export default function MessagesPage() {
           body: JSON.stringify({ emoji }),
         },
       );
-      // Refetch messages to update reactions
-      // The hook auto-refetches via interval, but we can force it
-    } catch { /* ignore */ }
+      if (!res.ok) throw new Error("No se pudo registrar la reacción");
+      // Invalidate messages so the new reaction count appears
+      qc.invalidateQueries({ queryKey: ["messaging-messages", selectedChannelId] });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Error con la reacción");
+    }
   };
 
   // -- Reply --
@@ -495,13 +510,21 @@ export default function MessagesPage() {
     if (!selectedChannelId || !groupNameDraft.trim()) return;
     setSavingGroupName(true);
     try {
-      await fetch(`/api/messages/channels/${encodeURIComponent(selectedChannelId)}`, {
+      const res = await fetch(`/api/messages/channels/${encodeURIComponent(selectedChannelId)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: groupNameDraft.trim() }),
       });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error || "No se pudo renombrar el grupo");
+      }
+      qc.invalidateQueries({ queryKey: ["messaging-channels"] });
       setEditingGroupName(false);
-    } catch { /* ignore */ } finally {
+      toast.success("Grupo renombrado");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Error al renombrar");
+    } finally {
       setSavingGroupName(false);
     }
   };
@@ -510,14 +533,22 @@ export default function MessagesPage() {
     if (!selectedChannelId) return;
     setAddingMember(true);
     try {
-      await fetch(`/api/messages/channels/${encodeURIComponent(selectedChannelId)}/members`, {
+      const res = await fetch(`/api/messages/channels/${encodeURIComponent(selectedChannelId)}/members`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ memberId: emp.EmployeeID, memberName: emp.FullName }),
       });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error || "No se pudo agregar el miembro");
+      }
+      qc.invalidateQueries({ queryKey: ["messaging-channels"] });
       setAddMemberSearch("");
       setShowAddMember(false);
-    } catch { /* ignore */ } finally {
+      toast.success(`${emp.FullName} agregado/a al grupo`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Error agregando miembro");
+    } finally {
       setAddingMember(false);
     }
   };
@@ -526,143 +557,177 @@ export default function MessagesPage() {
     if (!selectedChannelId) return;
     setLeavingGroup(true);
     try {
-      await fetch(`/api/messages/channels/${encodeURIComponent(selectedChannelId)}/members`, {
+      const res = await fetch(`/api/messages/channels/${encodeURIComponent(selectedChannelId)}/members`, {
         method: "DELETE",
       });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error || "No se pudo salir del grupo");
+      }
+      qc.invalidateQueries({ queryKey: ["messaging-channels"] });
       setShowInfoPanel(false);
       router.push("/messages");
-    } catch { /* ignore */ } finally {
+      toast.success("Saliste del grupo");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Error al salir del grupo");
+    } finally {
       setLeavingGroup(false);
     }
   };
+
+  // ---------------------------------------------------------------------------
+  // Mini avatar (replaces shadcn Avatar)
+  // ---------------------------------------------------------------------------
+
+  function MiniAvatar({
+    id,
+    name,
+    isGroupHash,
+    size = 32,
+    fontSize,
+    badgeStatus,
+  }: {
+    id: string;
+    name: string;
+    isGroupHash?: boolean;
+    size?: number;
+    fontSize?: number;
+    badgeStatus?: string;
+  }) {
+    return (
+      <div
+        className={`avatar ${avatarClassFor(id)}`}
+        style={{
+          width: size,
+          height: size,
+          fontSize: fontSize ?? Math.max(10, Math.round(size * 0.32)),
+          color: "#fff",
+          position: "relative",
+          flexShrink: 0,
+        }}
+      >
+        {isGroupHash ? (
+          <span style={{ fontWeight: 700, fontSize: Math.round(size * 0.5) }}>#</span>
+        ) : (
+          <span className="avatar-text">{getInitials(name)}</span>
+        )}
+        {badgeStatus && (
+          <span
+            aria-hidden
+            style={{
+              position: "absolute",
+              right: -1,
+              bottom: -1,
+              width: Math.max(8, Math.round(size * 0.28)),
+              height: Math.max(8, Math.round(size * 0.28)),
+              borderRadius: "50%",
+              background: presenceDotColor(badgeStatus),
+              border: "2px solid var(--bg-elevated)",
+            }}
+          />
+        )}
+      </div>
+    );
+  }
 
   // =========================================================================
   // CHANNEL LIST PANEL
   // =========================================================================
 
   const channelListPanel = (
-    <div className="flex h-full w-full flex-col bg-card">
+    <div
+      style={{
+        display: "flex",
+        height: "100%",
+        width: "100%",
+        flexDirection: "column",
+        background: "var(--bg-elevated)",
+      }}
+    >
       {/* Header */}
-      <div className="flex h-14 shrink-0 items-center justify-between border-b px-4">
-        <h2 className="text-base font-semibold tracking-tight">Mensajes</h2>
-        <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-          <DialogTrigger render={<Button size="sm" className="h-7 gap-1.5 rounded-lg px-3 text-xs" />}>
-            <Plus className="h-3.5 w-3.5" />
-            Nuevo
-          </DialogTrigger>
-
-          {/* Create channel dialog */}
-          <DialogContent className="sm:max-w-md">
-            <DialogHeader>
-              <DialogTitle>Nueva conversacion</DialogTitle>
-              <DialogDescription>Crea un mensaje directo o un grupo de chat.</DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4 py-2">
-              {/* Type switcher */}
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => { setNewChannelType("direct"); setSelectedMembers([]); }}
-                  className={cn(
-                    "flex-1 rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors",
-                    newChannelType === "direct" ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:bg-muted",
-                  )}
-                >
-                  Mensaje directo
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setNewChannelType("group")}
-                  className={cn(
-                    "flex-1 rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors",
-                    newChannelType === "group" ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:bg-muted",
-                  )}
-                >
-                  Grupo
-                </button>
-              </div>
-              {newChannelType === "group" && (
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-medium">Nombre del grupo</Label>
-                  <Input value={newChannelName} onChange={(e) => setNewChannelName(e.target.value)} placeholder="Ej: Equipo Backend" />
-                </div>
-              )}
-              <div className="space-y-1.5">
-                <Label className="text-xs font-medium">Agregar miembros</Label>
-                <div className="relative">
-                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                  <Input value={employeeSearch} onChange={(e) => setEmployeeSearch(e.target.value)} placeholder="Buscar por nombre..." className="pl-9" />
-                </div>
-                {employeesLoading && <p className="text-xs text-muted-foreground animate-pulse">Cargando empleados...</p>}
-                {employeeSearch && filteredEmployees.length > 0 && (
-                  <div className="max-h-40 overflow-y-auto rounded-lg border">
-                    {filteredEmployees.slice(0, 12).map((emp) => (
-                      <button
-                        key={emp.EmployeeID}
-                        className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm hover:bg-accent transition-colors"
-                        onClick={() => { setSelectedMembers((prev) => [...prev, emp]); setEmployeeSearch(""); }}
-                      >
-                        <Avatar size="sm">
-                          <AvatarFallback className={cn("text-[10px] text-white font-semibold", colorFor(emp.EmployeeID))}>
-                            {getInitials(emp.FullName)}
-                          </AvatarFallback>
-                        </Avatar>
-                        <span className="truncate">{emp.FullName}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-              {selectedMembers.length > 0 && (
-                <div className="flex flex-wrap gap-1.5">
-                  {selectedMembers.map((m) => (
-                    <span key={m.EmployeeID} className="inline-flex items-center gap-1 rounded-full bg-primary/10 py-1 pl-1 pr-2 text-xs font-medium text-primary">
-                      <Avatar size="sm">
-                        <AvatarFallback className={cn("text-[9px] text-white font-semibold", colorFor(m.EmployeeID))}>
-                          {getInitials(m.FullName)}
-                        </AvatarFallback>
-                      </Avatar>
-                      {m.FullName.split(" ")[0]}
-                      <button type="button" onClick={() => setSelectedMembers((prev) => prev.filter((p) => p.EmployeeID !== m.EmployeeID))} className="ml-0.5 rounded-full p-0.5 hover:bg-primary/20 transition-colors">
-                        <X className="h-3 w-3" />
-                      </button>
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-            <DialogFooter>
-              <DialogClose render={<Button variant="outline" size="sm" />}>Cancelar</DialogClose>
-              <Button size="sm" onClick={handleCreateChannel} disabled={createChannel.isPending || selectedMembers.length === 0 || (newChannelType === "group" && !newChannelName.trim())}>
-                {createChannel.isPending && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
-                Crear conversacion
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+      <div
+        style={{
+          display: "flex",
+          height: 56,
+          flexShrink: 0,
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 8,
+          borderBottom: "1px solid var(--border)",
+          padding: "0 12px 0 16px",
+        }}
+      >
+        <h2
+          style={{
+            margin: 0,
+            fontSize: 16,
+            fontWeight: 600,
+            color: "var(--text-primary)",
+            letterSpacing: "-0.01em",
+            minWidth: 0,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          Mensajes
+        </h2>
+        <button
+          type="button"
+          className="btn primary btn-sm"
+          onClick={() => setCreateOpen(true)}
+          style={{ flexShrink: 0 }}
+          aria-label="Nueva conversación"
+        >
+          <IconSvg d={Icons.plus} size={14} />
+          Nuevo
+        </button>
       </div>
 
       {/* Search */}
-      <div className="px-4 py-2.5">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
+      <div style={{ padding: "10px 16px" }}>
+        <div style={{ position: "relative" }}>
+          <span
+            style={{
+              position: "absolute",
+              left: 10,
+              top: "50%",
+              transform: "translateY(-50%)",
+              color: "var(--text-muted)",
+              pointerEvents: "none",
+              display: "flex",
+            }}
+          >
+            <IconSvg d={Icons.search} size={14} />
+          </span>
+          <input
+            type="text"
+            className="form-input"
             value={channelSearch}
             onChange={(e) => setChannelSearch(e.target.value)}
-            placeholder="Buscar conversacion..."
-            className="h-9 rounded-lg bg-muted/50 pl-9 text-sm border-0 focus-visible:ring-1"
+            placeholder="Buscar conversación..."
+            style={{ paddingLeft: 32, height: 36, background: "var(--bg-subtle)" }}
           />
         </div>
       </div>
 
       {/* Channel list */}
-      <div className="flex-1 overflow-y-auto min-h-0">
+      <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
         {channelsLoading ? (
-          <div className="space-y-1 px-2 py-1">
+          <div style={{ display: "flex", flexDirection: "column", gap: 4, padding: "4px 8px" }}>
             {[1, 2, 3, 4].map((i) => (
-              <div key={i} className="flex items-center gap-3 rounded-lg px-2 py-3">
+              <div
+                key={i}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 12,
+                  borderRadius: 8,
+                  padding: "12px 8px",
+                }}
+              >
                 <Skeleton className="h-10 w-10 rounded-full" />
-                <div className="flex-1 space-y-1.5">
+                <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
                   <Skeleton className="h-3.5 w-28" />
                   <Skeleton className="h-3 w-40" />
                 </div>
@@ -670,67 +735,129 @@ export default function MessagesPage() {
             ))}
           </div>
         ) : filteredChannels.length === 0 ? (
-          <div className="flex flex-col items-center justify-center px-6 py-12 text-center">
-            <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-muted">
-              <MessageCircle className="h-5 w-5 text-muted-foreground/60" />
-            </div>
-            <p className="text-sm font-medium text-muted-foreground">
-              {channelSearch ? "Sin resultados" : "No tienes conversaciones"}
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground/70">
-              {channelSearch ? "Intenta con otro termino" : "Crea una nueva para empezar"}
-            </p>
-          </div>
+          <EmptyState
+            icon={Icons.chat}
+            title={channelSearch ? "Sin resultados" : "Aún no tienes conversaciones"}
+            description={
+              channelSearch
+                ? "Prueba con otro nombre o termino"
+                : "Inicia una nueva conversación para empezar a chatear con tu equipo"
+            }
+          />
         ) : (
-          <div className="px-2 py-1">
+          <div style={{ padding: "4px 8px" }}>
             {filteredChannels.map((channel) => {
               const isActive = selectedChannelId === channel.ChannelID;
               const displayName = getChannelDisplayName(channel);
               const isDirect = channel.Type === "direct";
-              // Get presence for this DM contact
               const dmContactId = isDirect ? channel.Members.find((m) => m !== currentUserId) : null;
               const contactPresence = dmContactId && allPresenceData ? allPresenceData[dmContactId] : null;
-              const badgeColor = contactPresence?.status === "online"
-                ? "bg-emerald-500"
-                : contactPresence?.status === "idle"
-                  ? "bg-amber-500"
-                  : "bg-gray-400";
+              const myName = currentUserId ? channel.MemberNames[currentUserId] : undefined;
+              const lastIsMine = !!myName && channel.LastMessageBy === myName;
+              const unread =
+                !isActive &&
+                !lastIsMine &&
+                chatSeen.isUnread(channel.ChannelID, channel.LastMessageAt);
+
               return (
                 <button
                   key={channel.ChannelID}
-                  className={cn(
-                    "flex w-full items-center gap-3 rounded-lg px-2 py-2.5 text-left transition-colors",
-                    "hover:bg-accent/50",
-                    isActive && "bg-accent",
-                  )}
+                  type="button"
                   onClick={() => selectChannel(channel.ChannelID)}
+                  style={{
+                    display: "flex",
+                    width: "100%",
+                    alignItems: "center",
+                    gap: 12,
+                    borderRadius: 8,
+                    padding: "10px 8px",
+                    textAlign: "left",
+                    background: isActive ? "var(--bg-subtle)" : "transparent",
+                    border: "none",
+                    cursor: "pointer",
+                    transition: "background 0.12s",
+                    color: "inherit",
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!isActive) e.currentTarget.style.background = "var(--bg-subtle)";
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isActive) e.currentTarget.style.background = "transparent";
+                  }}
                 >
-                  <div className="relative shrink-0">
-                    <Avatar>
-                      <AvatarFallback className={cn("text-xs font-semibold text-white", colorFor(channel.ChannelID))}>
-                        {isDirect ? getInitials(displayName) : <Hash className="h-4 w-4" />}
-                      </AvatarFallback>
-                      {isDirect && <AvatarBadge className={badgeColor} />}
-                    </Avatar>
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="truncate text-sm font-medium">{displayName}</p>
+                  <MiniAvatar
+                    id={channel.ChannelID}
+                    name={displayName}
+                    isGroupHash={!isDirect}
+                    size={40}
+                    badgeStatus={isDirect ? contactPresence?.status : undefined}
+                  />
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: 8,
+                      }}
+                    >
+                      <p
+                        style={{
+                          margin: 0,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                          fontSize: 13,
+                          fontWeight: unread ? 600 : 500,
+                          color: "var(--text-primary)",
+                        }}
+                      >
+                        {displayName}
+                      </p>
                       {channel.LastMessageAt && (
-                        <span className="shrink-0 text-[10px] text-muted-foreground">{formatRelative(channel.LastMessageAt)}</span>
+                        <span
+                          style={{
+                            flexShrink: 0,
+                            fontSize: 10,
+                            fontWeight: unread ? 600 : 400,
+                            color: unread ? "var(--accent-strong)" : "var(--text-muted)",
+                          }}
+                        >
+                          {formatRelative(channel.LastMessageAt)}
+                        </span>
                       )}
                     </div>
-                    <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                    <p
+                      style={{
+                        margin: "2px 0 0",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                        fontSize: 12,
+                        fontWeight: unread ? 500 : 400,
+                        color: unread ? "var(--text-primary)" : "var(--text-muted)",
+                      }}
+                    >
                       {channel.LastMessage ? (
                         <>
-                          {channel.LastMessageBy && <span className="font-medium">{channel.LastMessageBy.split(" ")[0]}: </span>}
+                          {channel.LastMessageBy && (
+                            <span style={{ fontWeight: 500 }}>
+                              {channel.LastMessageBy.split(" ")[0]}:{" "}
+                            </span>
+                          )}
                           {channel.LastMessage}
                         </>
                       ) : (
-                        <span className="italic">Sin mensajes aun</span>
+                        <span style={{ fontStyle: "italic" }}>Sin mensajes aun</span>
                       )}
                     </p>
                   </div>
+                  {unread && (
+                    <span
+                      className="channel-row-unread-dot"
+                      aria-label="Mensajes sin leer"
+                    />
+                  )}
                 </button>
               );
             })}
@@ -741,82 +868,374 @@ export default function MessagesPage() {
   );
 
   // =========================================================================
+  // CREATE CHANNEL SHEET
+  // =========================================================================
+
+  const createChannelSheet = createOpen ? (
+    <div className="sheet-backdrop" onClick={() => setCreateOpen(false)}>
+      <div
+        className="sheet"
+        style={{ maxWidth: 480 }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="sheet-head">
+          <div>
+            <h3 className="sheet-title">Nueva conversación</h3>
+            <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--text-muted)" }}>
+              Crea un mensaje directo o un grupo de chat.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="btn ghost btn-sm"
+            onClick={() => setCreateOpen(false)}
+            aria-label="Cerrar"
+          >
+            <IconSvg d={Icons.x} size={14} />
+          </button>
+        </div>
+
+        <div className="sheet-body">
+          {/* Type switcher */}
+          <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+            <button
+              type="button"
+              onClick={() => {
+                setNewChannelType("direct");
+                setSelectedMembers([]);
+              }}
+              style={{
+                flex: 1,
+                borderRadius: 8,
+                padding: "10px 12px",
+                fontSize: 13,
+                fontWeight: 500,
+                cursor: "pointer",
+                border:
+                  newChannelType === "direct"
+                    ? "1px solid var(--accent)"
+                    : "1px solid var(--border)",
+                background:
+                  newChannelType === "direct" ? "var(--accent-soft)" : "var(--bg-elevated)",
+                color:
+                  newChannelType === "direct" ? "var(--accent-strong)" : "var(--text-secondary)",
+                transition: "all 0.12s",
+              }}
+            >
+              Mensaje directo
+            </button>
+            <button
+              type="button"
+              onClick={() => setNewChannelType("group")}
+              style={{
+                flex: 1,
+                borderRadius: 8,
+                padding: "10px 12px",
+                fontSize: 13,
+                fontWeight: 500,
+                cursor: "pointer",
+                border:
+                  newChannelType === "group"
+                    ? "1px solid var(--accent)"
+                    : "1px solid var(--border)",
+                background:
+                  newChannelType === "group" ? "var(--accent-soft)" : "var(--bg-elevated)",
+                color:
+                  newChannelType === "group" ? "var(--accent-strong)" : "var(--text-secondary)",
+                transition: "all 0.12s",
+              }}
+            >
+              Grupo
+            </button>
+          </div>
+
+          {newChannelType === "group" && (
+            <div className="form-group">
+              <label className="form-label" htmlFor="new-channel-name">
+                Nombre del grupo
+              </label>
+              <input
+                id="new-channel-name"
+                type="text"
+                className="form-input"
+                value={newChannelName}
+                onChange={(e) => setNewChannelName(e.target.value)}
+                placeholder="Ej: Equipo Backend"
+              />
+            </div>
+          )}
+
+          <div className="form-group">
+            <label className="form-label" htmlFor="new-channel-members">
+              Agregar miembros
+            </label>
+            <div style={{ position: "relative" }}>
+              <span
+                style={{
+                  position: "absolute",
+                  left: 10,
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                  color: "var(--text-muted)",
+                  pointerEvents: "none",
+                  display: "flex",
+                }}
+              >
+                <IconSvg d={Icons.search} size={14} />
+              </span>
+              <input
+                id="new-channel-members"
+                type="text"
+                className="form-input"
+                value={employeeSearch}
+                onChange={(e) => setEmployeeSearch(e.target.value)}
+                placeholder="Buscar por nombre..."
+                style={{ paddingLeft: 32 }}
+              />
+            </div>
+            {employeesLoading && (
+              <p className="form-hint" style={{ marginTop: 6 }}>
+                Cargando empleados...
+              </p>
+            )}
+            {employeeSearch && filteredEmployees.length > 0 && (
+              <div
+                style={{
+                  marginTop: 8,
+                  maxHeight: 200,
+                  overflowY: "auto",
+                  borderRadius: 8,
+                  border: "1px solid var(--border)",
+                  background: "var(--bg-elevated)",
+                }}
+              >
+                {filteredEmployees.slice(0, 12).map((emp) => (
+                  <button
+                    key={emp.EmployeeID}
+                    type="button"
+                    style={{
+                      display: "flex",
+                      width: "100%",
+                      alignItems: "center",
+                      gap: 10,
+                      padding: "8px 12px",
+                      textAlign: "left",
+                      fontSize: 13,
+                      background: "transparent",
+                      border: "none",
+                      cursor: "pointer",
+                      transition: "background 0.12s",
+                      color: "var(--text-primary)",
+                    }}
+                    onClick={() => {
+                      setSelectedMembers((prev) => [...prev, emp]);
+                      setEmployeeSearch("");
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = "var(--bg-subtle)")}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                  >
+                    <MiniAvatar id={emp.EmployeeID} name={emp.FullName} size={24} />
+                    <span
+                      style={{
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {emp.FullName}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {selectedMembers.length > 0 && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {selectedMembers.map((m) => (
+                <span
+                  key={m.EmployeeID}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 4,
+                    borderRadius: 999,
+                    background: "var(--accent-soft)",
+                    padding: "4px 8px 4px 4px",
+                    fontSize: 12,
+                    fontWeight: 500,
+                    color: "var(--accent-strong)",
+                  }}
+                >
+                  <MiniAvatar id={m.EmployeeID} name={m.FullName} size={22} />
+                  {m.FullName.split(" ")[0]}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setSelectedMembers((prev) => prev.filter((p) => p.EmployeeID !== m.EmployeeID))
+                    }
+                    style={{
+                      marginLeft: 4,
+                      padding: 2,
+                      borderRadius: "50%",
+                      background: "transparent",
+                      border: "none",
+                      cursor: "pointer",
+                      display: "flex",
+                      color: "inherit",
+                    }}
+                    aria-label={`Quitar ${m.FullName}`}
+                  >
+                    <IconSvg d={Icons.x} size={10} />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="sheet-foot">
+          <button type="button" className="btn outline btn-sm" onClick={() => setCreateOpen(false)}>
+            Cancelar
+          </button>
+          <button
+            type="button"
+            className="btn primary btn-sm"
+            onClick={handleCreateChannel}
+            disabled={
+              createChannel.isPending ||
+              selectedMembers.length === 0 ||
+              (newChannelType === "group" && !newChannelName.trim())
+            }
+          >
+            {createChannel.isPending && <Spinner size={12} />}
+            Crear conversación
+          </button>
+        </div>
+      </div>
+    </div>
+  ) : null;
+
+  // =========================================================================
   // INFO PANEL (DM / Group)
   // =========================================================================
 
-  const infoPanelContent = selectedChannel && showInfoPanel ? (
-    <div
-      className={cn(
-        "absolute inset-y-0 right-0 z-30 flex w-full max-w-xs flex-col border-l bg-card shadow-lg",
-        "transition-transform duration-300 ease-in-out",
-        showInfoPanel ? "translate-x-0" : "translate-x-full",
-      )}
-    >
-      {/* Info panel header */}
-      <div className="flex h-14 shrink-0 items-center justify-between border-b px-4">
-        <h3 className="text-sm font-semibold">
-          {selectedChannel.Type === "direct" ? "Informacion de contacto" : "Informacion del grupo"}
-        </h3>
-        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setShowInfoPanel(false)}>
-          <X className="h-4 w-4" />
-        </Button>
-      </div>
+  const infoPanelContent =
+    selectedChannel && showInfoPanel ? (
+      <div
+        style={{
+          position: "absolute",
+          inset: "0 0 0 auto",
+          zIndex: 30,
+          display: "flex",
+          width: "100%",
+          maxWidth: 320,
+          flexDirection: "column",
+          borderLeft: "1px solid var(--border)",
+          background: "var(--bg-elevated)",
+          boxShadow: "var(--shadow-lg)",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            height: 56,
+            flexShrink: 0,
+            alignItems: "center",
+            justifyContent: "space-between",
+            borderBottom: "1px solid var(--border)",
+            padding: "0 16px",
+          }}
+        >
+          <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600, color: "var(--text-primary)" }}>
+            {selectedChannel.Type === "direct" ? "Informacion de contacto" : "Informacion del grupo"}
+          </h3>
+          <button
+            type="button"
+            className="btn ghost btn-sm"
+            onClick={() => setShowInfoPanel(false)}
+            aria-label="Cerrar"
+          >
+            <IconSvg d={Icons.x} size={14} />
+          </button>
+        </div>
 
-      <ScrollArea className="flex-1">
-        <div className="p-4 space-y-5">
+        <div style={{ flex: 1, overflowY: "auto", padding: 16 }}>
           {/* Avatar & name */}
-          <div className="flex flex-col items-center text-center">
-            <Avatar size="lg" className="!size-16 mb-3">
-              <AvatarFallback className={cn("text-lg font-semibold text-white", colorFor(selectedChannel.ChannelID))}>
-                {selectedChannel.Type === "direct"
-                  ? getInitials(getChannelDisplayName(selectedChannel))
-                  : <Hash className="h-6 w-6" />
-                }
-              </AvatarFallback>
-            </Avatar>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              textAlign: "center",
+              marginBottom: 20,
+            }}
+          >
+            <MiniAvatar
+              id={selectedChannel.ChannelID}
+              name={getChannelDisplayName(selectedChannel)}
+              isGroupHash={selectedChannel.Type !== "direct"}
+              size={64}
+              fontSize={18}
+            />
 
-            {selectedChannel.Type === "group" && editingGroupName ? (
-              <div className="flex items-center gap-2 w-full max-w-[200px]">
-                <Input
-                  value={groupNameDraft}
-                  onChange={(e) => setGroupNameDraft(e.target.value)}
-                  className="h-8 text-sm text-center"
-                  autoFocus
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") handleSaveGroupName();
-                    if (e.key === "Escape") setEditingGroupName(false);
+            <div style={{ marginTop: 12 }}>
+              {selectedChannel.Type === "group" && editingGroupName ? (
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    width: "100%",
+                    maxWidth: 220,
                   }}
-                />
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7 shrink-0"
-                  onClick={handleSaveGroupName}
-                  disabled={savingGroupName}
                 >
-                  {savingGroupName ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
-                </Button>
-              </div>
-            ) : (
-              <div className="flex items-center gap-1.5">
-                <p className="text-sm font-semibold">{getChannelDisplayName(selectedChannel)}</p>
-                {selectedChannel.Type === "group" && selectedChannel.CreatedBy === currentUserId && (
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={groupNameDraft}
+                    onChange={(e) => setGroupNameDraft(e.target.value)}
+                    autoFocus
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleSaveGroupName();
+                      if (e.key === "Escape") setEditingGroupName(false);
+                    }}
+                    style={{ textAlign: "center", height: 32 }}
+                  />
                   <button
                     type="button"
-                    className="p-1 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
-                    onClick={() => {
-                      setGroupNameDraft(selectedChannel.Name || "");
-                      setEditingGroupName(true);
-                    }}
+                    className="btn ghost btn-sm"
+                    onClick={handleSaveGroupName}
+                    disabled={savingGroupName}
                   >
-                    <Pencil className="h-3 w-3" />
+                    {savingGroupName ? <Spinner size={12} /> : <IconSvg d={Icons.check} size={12} />}
                   </button>
-                )}
-              </div>
-            )}
+                </div>
+              ) : (
+                <div style={{ display: "flex", alignItems: "center", gap: 6, justifyContent: "center" }}>
+                  <p style={{ margin: 0, fontSize: 14, fontWeight: 600, color: "var(--text-primary)" }}>
+                    {getChannelDisplayName(selectedChannel)}
+                  </p>
+                  {selectedChannel.Type === "group" &&
+                    selectedChannel.CreatedBy === currentUserId && (
+                      <button
+                        type="button"
+                        className="btn ghost btn-sm"
+                        onClick={() => {
+                          setGroupNameDraft(selectedChannel.Name || "");
+                          setEditingGroupName(true);
+                        }}
+                        style={{ padding: 4 }}
+                      >
+                        <IconSvg d={Icons.edit} size={12} />
+                      </button>
+                    )}
+                </div>
+              )}
+            </div>
 
             {selectedChannel.Type === "group" && (
-              <p className="mt-1 text-xs text-muted-foreground">
+              <p style={{ marginTop: 4, fontSize: 12, color: "var(--text-muted)" }}>
                 {selectedChannel.Members.length} miembro{selectedChannel.Members.length !== 1 ? "s" : ""}
               </p>
             )}
@@ -824,9 +1243,9 @@ export default function MessagesPage() {
 
           {/* DM: contact details */}
           {selectedChannel.Type === "direct" && (
-            <div className="space-y-3">
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
               {infoPanelLoading ? (
-                <div className="space-y-3">
+                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                   <Skeleton className="h-4 w-32" />
                   <Skeleton className="h-4 w-40" />
                   <Skeleton className="h-4 w-36" />
@@ -834,113 +1253,220 @@ export default function MessagesPage() {
               ) : infoPanelData ? (
                 <>
                   {infoPanelData.Position && (
-                    <div className="flex items-center gap-3 text-sm">
-                      <Briefcase className="h-4 w-4 text-muted-foreground shrink-0" />
+                    <div style={{ display: "flex", alignItems: "center", gap: 12, fontSize: 13 }}>
+                      <span style={{ color: "var(--text-muted)", display: "flex", flexShrink: 0 }}>
+                        <IconSvg d={Icons.briefcase} size={16} />
+                      </span>
                       <div>
-                        <p className="text-[11px] text-muted-foreground">Cargo</p>
-                        <p className="font-medium">{infoPanelData.Position}</p>
+                        <p style={{ margin: 0, fontSize: 11, color: "var(--text-muted)" }}>Cargo</p>
+                        <p style={{ margin: 0, fontWeight: 500, color: "var(--text-primary)" }}>
+                          {infoPanelData.Position}
+                        </p>
                       </div>
                     </div>
                   )}
                   {infoPanelData.Area && (
-                    <div className="flex items-center gap-3 text-sm">
-                      <Building2 className="h-4 w-4 text-muted-foreground shrink-0" />
+                    <div style={{ display: "flex", alignItems: "center", gap: 12, fontSize: 13 }}>
+                      <span style={{ color: "var(--text-muted)", display: "flex", flexShrink: 0 }}>
+                        <IconSvg d={Icons.building} size={16} />
+                      </span>
                       <div>
-                        <p className="text-[11px] text-muted-foreground">Area</p>
-                        <p className="font-medium">{infoPanelData.Area}</p>
+                        <p style={{ margin: 0, fontSize: 11, color: "var(--text-muted)" }}>Area</p>
+                        <p style={{ margin: 0, fontWeight: 500, color: "var(--text-primary)" }}>
+                          {infoPanelData.Area}
+                        </p>
                       </div>
                     </div>
                   )}
                   {infoPanelData.Email && (
-                    <div className="flex items-center gap-3 text-sm">
-                      <Mail className="h-4 w-4 text-muted-foreground shrink-0" />
+                    <div style={{ display: "flex", alignItems: "center", gap: 12, fontSize: 13 }}>
+                      <span style={{ color: "var(--text-muted)", display: "flex", flexShrink: 0 }}>
+                        <IconSvg d={Icons.mail} size={16} />
+                      </span>
                       <div>
-                        <p className="text-[11px] text-muted-foreground">Correo</p>
-                        <p className="font-medium break-all">{infoPanelData.Email}</p>
+                        <p style={{ margin: 0, fontSize: 11, color: "var(--text-muted)" }}>Correo</p>
+                        <p
+                          style={{
+                            margin: 0,
+                            fontWeight: 500,
+                            color: "var(--text-primary)",
+                            wordBreak: "break-all",
+                          }}
+                        >
+                          {infoPanelData.Email}
+                        </p>
                       </div>
                     </div>
                   )}
                 </>
               ) : (
-                <p className="text-xs text-muted-foreground italic">No se pudo cargar la informacion</p>
+                <p style={{ fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>
+                  No se pudo cargar la informacion
+                </p>
               )}
             </div>
           )}
 
           {/* Group: member list */}
           {selectedChannel.Type === "group" && (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Miembros</p>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 gap-1 text-xs"
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                }}
+              >
+                <p
+                  style={{
+                    margin: 0,
+                    fontSize: 11,
+                    fontWeight: 600,
+                    color: "var(--text-muted)",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.05em",
+                  }}
+                >
+                  Miembros
+                </p>
+                <button
+                  type="button"
+                  className="btn ghost btn-sm"
                   onClick={() => setShowAddMember(!showAddMember)}
                 >
-                  <UserPlus className="h-3 w-3" />
+                  <IconSvg d={Icons.plus} size={12} />
                   Agregar
-                </Button>
+                </button>
               </div>
 
               {/* Add member UI */}
               {showAddMember && (
-                <div className="space-y-2 rounded-lg border p-2">
-                  <div className="relative">
-                    <Search className="absolute left-2 top-2 h-3.5 w-3.5 text-muted-foreground" />
-                    <Input
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 8,
+                    borderRadius: 8,
+                    border: "1px solid var(--border)",
+                    padding: 8,
+                  }}
+                >
+                  <div style={{ position: "relative" }}>
+                    <span
+                      style={{
+                        position: "absolute",
+                        left: 8,
+                        top: "50%",
+                        transform: "translateY(-50%)",
+                        color: "var(--text-muted)",
+                        display: "flex",
+                      }}
+                    >
+                      <IconSvg d={Icons.search} size={12} />
+                    </span>
+                    <input
+                      type="text"
+                      className="form-input"
                       value={addMemberSearch}
                       onChange={(e) => setAddMemberSearch(e.target.value)}
                       placeholder="Buscar empleado..."
-                      className="h-8 pl-7 text-xs"
                       autoFocus
+                      style={{ height: 30, paddingLeft: 28, fontSize: 12 }}
                     />
                   </div>
                   {addMemberSearch && addMemberFilteredEmployees.length > 0 && (
-                    <div className="max-h-32 overflow-y-auto space-y-0.5">
+                    <div style={{ maxHeight: 160, overflowY: "auto" }}>
                       {addMemberFilteredEmployees.slice(0, 8).map((emp) => (
                         <button
                           key={emp.EmployeeID}
-                          className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-accent transition-colors"
+                          type="button"
+                          style={{
+                            display: "flex",
+                            width: "100%",
+                            alignItems: "center",
+                            gap: 8,
+                            borderRadius: 4,
+                            padding: "6px 8px",
+                            fontSize: 12,
+                            background: "transparent",
+                            border: "none",
+                            cursor: "pointer",
+                            transition: "background 0.12s",
+                            color: "var(--text-primary)",
+                          }}
                           onClick={() => handleAddMember(emp)}
                           disabled={addingMember}
+                          onMouseEnter={(e) =>
+                            (e.currentTarget.style.background = "var(--bg-subtle)")
+                          }
+                          onMouseLeave={(e) =>
+                            (e.currentTarget.style.background = "transparent")
+                          }
                         >
-                          <Avatar size="sm">
-                            <AvatarFallback className={cn("text-[9px] text-white font-semibold", colorFor(emp.EmployeeID))}>
-                              {getInitials(emp.FullName)}
-                            </AvatarFallback>
-                          </Avatar>
-                          <span className="truncate">{emp.FullName}</span>
+                          <MiniAvatar id={emp.EmployeeID} name={emp.FullName} size={22} />
+                          <span
+                            style={{
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {emp.FullName}
+                          </span>
                         </button>
                       ))}
                     </div>
                   )}
                   {addMemberSearch && addMemberFilteredEmployees.length === 0 && (
-                    <p className="text-[11px] text-muted-foreground px-1">Sin resultados</p>
+                    <p style={{ fontSize: 11, color: "var(--text-muted)", padding: "0 4px" }}>
+                      Sin resultados
+                    </p>
                   )}
                 </div>
               )}
 
               {/* Members */}
-              <div className="space-y-1">
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                 {selectedChannel.Members.map((memberId) => {
                   const name = selectedChannel.MemberNames[memberId] ?? "Desconocido";
                   const isCreator = selectedChannel.CreatedBy === memberId;
                   const isMe = memberId === currentUserId;
                   return (
-                    <div key={memberId} className="flex items-center gap-2.5 rounded-lg px-2 py-1.5">
-                      <Avatar size="sm">
-                        <AvatarFallback className={cn("text-[10px] text-white font-semibold", colorFor(memberId))}>
-                          {getInitials(name)}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-xs font-medium">
+                    <div
+                      key={memberId}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 10,
+                        borderRadius: 8,
+                        padding: "6px 8px",
+                      }}
+                    >
+                      <MiniAvatar id={memberId} name={name} size={24} />
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <p
+                          style={{
+                            margin: 0,
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                            fontSize: 12,
+                            fontWeight: 500,
+                            color: "var(--text-primary)",
+                          }}
+                        >
                           {name}
-                          {isMe && <span className="text-muted-foreground"> (tu)</span>}
+                          {isMe && (
+                            <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>
+                              {" "}
+                              (tu)
+                            </span>
+                          )}
                         </p>
                         {isCreator && (
-                          <p className="text-[10px] text-muted-foreground">Creador</p>
+                          <p style={{ margin: 0, fontSize: 10, color: "var(--text-muted)" }}>
+                            Creador
+                          </p>
                         )}
                       </div>
                     </div>
@@ -949,287 +1475,208 @@ export default function MessagesPage() {
               </div>
 
               {/* Leave group */}
-              <div className="pt-2 border-t">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="w-full justify-start gap-2 text-destructive hover:text-destructive hover:bg-destructive/10"
+              <div style={{ paddingTop: 8, borderTop: "1px solid var(--border)" }}>
+                <button
+                  type="button"
+                  className="btn ghost btn-sm"
                   onClick={handleLeaveGroup}
                   disabled={leavingGroup}
+                  style={{
+                    width: "100%",
+                    justifyContent: "flex-start",
+                    color: "var(--danger)",
+                  }}
                 >
-                  {leavingGroup ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <LogOut className="h-3.5 w-3.5" />}
+                  {leavingGroup ? <Spinner size={12} /> : <IconSvg d={Icons.logout} size={14} />}
                   Salir del grupo
-                </Button>
+                </button>
               </div>
             </div>
           )}
         </div>
-      </ScrollArea>
-    </div>
-  ) : null;
+      </div>
+    ) : null;
 
   // =========================================================================
   // MESSAGE BUBBLE
   // =========================================================================
 
   const renderMessage = (msg: ChatMessage, idx: number) => {
-    const isOwn = msg.SenderID === currentUserId;
-    const prev = messages[idx - 1];
-    const showDateSep = !prev || !isSameDay(prev.CreatedAt, msg.CreatedAt);
-    const showSender = !isOwn && (!prev || prev.SenderID !== msg.SenderID || showDateSep);
     const isGroup = selectedChannel?.Type === "group";
-    const isHovered = hoveredMsgId === msg.MessageID;
-
-    // Reactions
-    const reactions = msg.Reactions
-      ? Object.entries(msg.Reactions).filter(([, r]) => r.userIds.length > 0)
-      : [];
-
     return (
-      <div key={msg.MessageID}>
-        {/* Date separator */}
-        {showDateSep && (
-          <div className="flex items-center justify-center py-3">
-            <div className="rounded-full bg-muted/80 px-3 py-1">
-              <span className="text-[11px] font-medium text-muted-foreground">{dateLabelFor(msg.CreatedAt)}</span>
-            </div>
-          </div>
+      <MessageBubble
+        key={msg.MessageID}
+        msg={msg}
+        prev={messages[idx - 1]}
+        currentUserId={currentUserId ?? undefined}
+        isGroup={isGroup}
+        renderAvatar={(m, size) => (
+          <MiniAvatar id={m.SenderID} name={m.SenderName} size={size} />
         )}
-
-        {/* Message row */}
-        <div
-          className={cn("group relative flex items-end gap-2 py-0.5", isOwn ? "flex-row-reverse" : "flex-row")}
-          onMouseEnter={() => setHoveredMsgId(msg.MessageID)}
-          onMouseLeave={() => setHoveredMsgId(null)}
-        >
-          {/* Avatar (groups only, not DMs) */}
-          {!isOwn && isGroup ? (
-            showSender ? (
-              <Avatar size="sm" className="mb-5 shrink-0">
-                <AvatarFallback className={cn("text-[10px] font-semibold text-white", colorFor(msg.SenderID))}>
-                  {getInitials(msg.SenderName)}
-                </AvatarFallback>
-              </Avatar>
-            ) : (
-              <div className="w-6 shrink-0" />
-            )
-          ) : !isOwn ? (
-            /* DM: no avatar spacer needed */
-            null
-          ) : null}
-
-          {/* Bubble wrapper */}
-          <div className={cn("max-w-[75%] flex flex-col", isOwn ? "items-end" : "items-start")}>
-            {/* Sender name (groups) */}
-            {showSender && isGroup && (
-              <span className="mb-0.5 ml-1 text-[11px] font-medium text-muted-foreground">
-                {msg.SenderName.split(" ")[0]}
-              </span>
-            )}
-
-            {/* Bubble */}
-            <div className="relative">
-              <div
-                className={cn(
-                  "relative rounded-2xl px-3 py-2 text-sm leading-relaxed whitespace-pre-wrap break-words",
-                  isOwn
-                    ? "bg-primary text-primary-foreground rounded-br-sm"
-                    : "bg-muted text-foreground rounded-bl-sm",
-                )}
-              >
-                {/* WhatsApp-style tail */}
-                <div
-                  className={cn(
-                    "absolute bottom-0 h-3 w-3",
-                    isOwn
-                      ? "-right-1.5 [clip-path:polygon(0_0,0_100%,100%_100%)] bg-primary"
-                      : "-left-1.5 [clip-path:polygon(100%_0,0_100%,100%_100%)] bg-muted",
-                  )}
-                />
-
-                {/* Reply preview */}
-                {msg.ReplyTo && (
-                  <div
-                    className={cn(
-                      "mb-1.5 rounded-lg px-2.5 py-1.5 text-xs border-l-2",
-                      isOwn
-                        ? "bg-primary-foreground/15 border-primary-foreground/40"
-                        : "bg-background/60 border-foreground/20",
-                    )}
-                  >
-                    <p className={cn("font-semibold text-[11px]", isOwn ? "text-primary-foreground/80" : "text-foreground/70")}>
-                      {msg.ReplyTo.senderName}
-                    </p>
-                    <p className={cn("truncate", isOwn ? "text-primary-foreground/60" : "text-muted-foreground")}>
-                      {msg.ReplyTo.content}
-                    </p>
-                  </div>
-                )}
-
-                {/* Content + inline timestamp */}
-                <span>{msg.Content}</span>
-                <span
-                  className={cn(
-                    "ml-2 inline-block align-bottom text-[10px] leading-none whitespace-nowrap",
-                    isOwn ? "text-primary-foreground/50" : "text-muted-foreground/60",
-                  )}
-                >
-                  {formatBubbleTime(msg.CreatedAt)}
-                </span>
-              </div>
-
-              {/* Hover toolbar: reactions + reply */}
-              {isHovered && (
-                <div
-                  className={cn(
-                    "absolute -top-8 z-20 flex items-center gap-0.5 rounded-lg border bg-popover px-1 py-0.5 shadow-md",
-                    "animate-in fade-in zoom-in-95 duration-100",
-                    isOwn ? "right-0" : "left-0",
-                  )}
-                >
-                  {QUICK_REACTIONS.map((emoji) => (
-                    <button
-                      key={emoji}
-                      type="button"
-                      className="flex h-6 w-6 items-center justify-center rounded text-sm hover:bg-accent transition-colors"
-                      onClick={() => toggleReaction(msg.MessageID, emoji)}
-                    >
-                      {emoji}
-                    </button>
-                  ))}
-                  <div className="mx-0.5 h-4 w-px bg-border" />
-                  <button
-                    type="button"
-                    className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
-                    onClick={() => handleReply(msg)}
-                    title="Responder"
-                  >
-                    <Reply className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {/* Reactions pills */}
-            {reactions.length > 0 && (
-              <div className="mt-0.5 flex flex-wrap gap-1 px-1">
-                <TooltipProvider>
-                  {reactions.map(([emoji, data]) => {
-                    const hasReacted = currentUserId ? data.userIds.includes(currentUserId) : false;
-                    return (
-                      <Tooltip key={emoji}>
-                        <TooltipTrigger
-                          render={
-                            <button
-                              type="button"
-                              className={cn(
-                                "inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[11px] transition-colors",
-                                hasReacted
-                                  ? "border-primary/30 bg-primary/10 text-primary"
-                                  : "border-border bg-background hover:bg-accent",
-                              )}
-                              onClick={() => toggleReaction(msg.MessageID, emoji)}
-                            />
-                          }
-                        >
-                          <span>{emoji}</span>
-                          <span className="font-medium">{data.userIds.length}</span>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          {data.userNames.join(", ")}
-                        </TooltipContent>
-                      </Tooltip>
-                    );
-                  })}
-                </TooltipProvider>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
+        onReact={toggleReaction}
+        onReply={handleReply}
+      />
     );
   };
 
-  // =========================================================================
+    // =========================================================================
   // THREAD PANEL
   // =========================================================================
 
   const threadPanel = selectedChannelId ? (
-    <div className="relative flex h-full w-full flex-col bg-background">
+    <div
+      style={{
+        position: "relative",
+        display: "flex",
+        height: "100%",
+        width: "100%",
+        flexDirection: "column",
+        background: "var(--bg)",
+      }}
+    >
       {/* Thread header */}
-      <div className="flex h-14 shrink-0 items-center gap-3 border-b bg-card px-4">
-        <Button size="sm" variant="ghost" className="md:hidden -ml-1 h-8 w-8 p-0" onClick={handleBackToList}>
-          <ArrowLeft className="h-4 w-4" />
-        </Button>
+      <div
+        style={{
+          display: "flex",
+          height: 56,
+          flexShrink: 0,
+          alignItems: "center",
+          gap: 12,
+          borderBottom: "1px solid var(--border)",
+          background: "var(--bg-elevated)",
+          padding: "0 16px",
+        }}
+      >
+        <button
+          type="button"
+          className="btn ghost btn-sm"
+          onClick={handleBackToList}
+          style={{ marginLeft: -4 }}
+          aria-label="Volver"
+        >
+          <IconSvg d={Icons.arrowLeft} size={14} />
+        </button>
         {selectedChannel && (
           <>
-            {/* Clickable header area to toggle info panel */}
             <button
               type="button"
-              className="flex items-center gap-3 min-w-0 flex-1 hover:opacity-80 transition-opacity"
               onClick={toggleInfoPanel}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 12,
+                minWidth: 0,
+                flex: 1,
+                background: "transparent",
+                border: "none",
+                cursor: "pointer",
+                textAlign: "left",
+                padding: 0,
+                color: "inherit",
+              }}
             >
-              <Avatar>
-                <AvatarFallback className={cn("text-xs font-semibold text-white", colorFor(selectedChannel.ChannelID))}>
-                  {selectedChannel.Type === "direct" ? getInitials(getChannelDisplayName(selectedChannel)) : <Hash className="h-4 w-4" />}
-                </AvatarFallback>
-                {selectedChannel.Type === "direct" && (
-                  <AvatarBadge className={otherUserPresence?.status === "online" ? "bg-emerald-500" : otherUserPresence?.status === "idle" ? "bg-amber-500" : "bg-gray-400"} />
-                )}
-              </Avatar>
-              <div className="min-w-0 flex-1 text-left">
-                <p className="truncate text-sm font-semibold">{getChannelDisplayName(selectedChannel)}</p>
-                <p className={cn("text-[11px]", otherUserPresence?.status === "online" ? "text-emerald-600" : "text-muted-foreground")}>
+              <MiniAvatar
+                id={selectedChannel.ChannelID}
+                name={getChannelDisplayName(selectedChannel)}
+                isGroupHash={selectedChannel.Type !== "direct"}
+                size={32}
+                badgeStatus={
+                  selectedChannel.Type === "direct" ? otherUserPresence?.status : undefined
+                }
+              />
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <p
+                  style={{
+                    margin: 0,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                    fontSize: 13,
+                    fontWeight: 600,
+                    color: "var(--text-primary)",
+                  }}
+                >
+                  {getChannelDisplayName(selectedChannel)}
+                </p>
+                <p
+                  style={{
+                    margin: 0,
+                    fontSize: 11,
+                    color:
+                      otherUserPresence?.status === "online"
+                        ? "var(--success)"
+                        : "var(--text-muted)",
+                  }}
+                >
                   {typingUsers.length > 0
                     ? `${typingUsers.join(", ")} escribiendo...`
                     : selectedChannel.Type === "direct"
                       ? otherUserPresence
-                        ? getPresenceDisplay(otherUserPresence.status).label + (otherUserPresence.status === "offline" && otherUserPresence.lastActivity ? ` · ${formatLastSeen(otherUserPresence.lastActivity)}` : "")
+                        ? getPresenceDisplay(otherUserPresence.status).label +
+                          (otherUserPresence.status === "offline" && otherUserPresence.lastActivity
+                            ? ` · ${formatLastSeen(otherUserPresence.lastActivity)}`
+                            : "")
                         : "Cargando..."
                       : `${selectedChannel.Members.length} miembro${selectedChannel.Members.length !== 1 ? "s" : ""}`}
                 </p>
               </div>
             </button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className={cn(
-                "h-8 w-8 shrink-0 transition-colors",
-                showInfoPanel && "bg-accent text-foreground",
-              )}
+            <button
+              type="button"
+              className={`btn ghost btn-sm`}
               onClick={toggleInfoPanel}
+              style={{
+                flexShrink: 0,
+                background: showInfoPanel ? "var(--bg-subtle)" : "transparent",
+                color: showInfoPanel ? "var(--text-primary)" : "var(--text-secondary)",
+              }}
+              aria-label="Info"
             >
-              <Info className="h-4 w-4" />
-            </Button>
+              <IconSvg d={Icons.helpCircle} size={14} />
+            </button>
           </>
         )}
       </div>
 
       {/* Messages area */}
-      <div className="flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-2xl px-4 py-4 space-y-1">
+      <div style={{ flex: 1, overflowY: "auto" }}>
+        <div
+          style={{
+            maxWidth: 880,
+            margin: "0 auto",
+            padding: "20px 24px",
+            display: "flex",
+            flexDirection: "column",
+            gap: 4,
+          }}
+        >
           {messagesLoading ? (
-            <div className="space-y-4 py-8">
+            <div style={{ display: "flex", flexDirection: "column", gap: 16, padding: "32px 0" }}>
               {[1, 2, 3].map((i) => (
-                <div key={i} className={cn("flex gap-2", i % 2 === 0 ? "justify-end" : "")}>
-                  {i % 2 !== 0 && <Skeleton className="h-8 w-8 rounded-full shrink-0" />}
-                  <div className="space-y-1">
-                    <Skeleton className={cn("h-10 rounded-2xl", i % 2 === 0 ? "w-48" : "w-56")} />
+                <div
+                  key={i}
+                  style={{
+                    display: "flex",
+                    gap: 8,
+                    justifyContent: i % 2 === 0 ? "flex-end" : "flex-start",
+                  }}
+                >
+                  {i % 2 !== 0 && <Skeleton className="h-8 w-8 rounded-full" />}
+                  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                    <Skeleton
+                      className={i % 2 === 0 ? "h-10 w-48 rounded-2xl" : "h-10 w-56 rounded-2xl"}
+                    />
                     <Skeleton className="h-2.5 w-12" />
                   </div>
                 </div>
               ))}
             </div>
           ) : messages.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20 text-center">
-              <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-primary/15 to-primary/5">
-                <Send className="h-6 w-6 text-primary" />
-              </div>
-              <p className="text-sm font-semibold text-foreground">Inicia la conversacion</p>
-              <p className="mt-1.5 max-w-[240px] text-xs text-muted-foreground leading-relaxed">
-                Envia el primer mensaje para comenzar a chatear
-              </p>
-            </div>
+            <EmptyState
+              icon={Icons.send}
+              title="Inicia la conversación"
+              description="Envia el primer mensaje para comenzar a chatear con tu equipo"
+            />
           ) : (
             messages.map((msg, idx) => renderMessage(msg, idx))
           )}
@@ -1239,13 +1686,65 @@ export default function MessagesPage() {
 
       {/* Quick-share pills */}
       {showShareMenu && (
-        <div className="flex items-center justify-center gap-2 border-t bg-card/60 px-4 py-2 animate-in slide-in-from-bottom-2 fade-in duration-200">
-          <button type="button" onClick={shareAttendance} className="flex items-center gap-1.5 rounded-full border bg-background px-3 py-1.5 text-xs font-medium hover:bg-accent transition-colors">
-            <ClipboardCheck className="h-3.5 w-3.5 text-emerald-500" />
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 8,
+            borderTop: "1px solid var(--border)",
+            background: "var(--bg-elevated)",
+            padding: "8px 16px",
+          }}
+        >
+          <button
+            type="button"
+            onClick={shareAttendance}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              borderRadius: 999,
+              border: "1px solid var(--border)",
+              background: "var(--bg-elevated)",
+              padding: "6px 12px",
+              fontSize: 12,
+              fontWeight: 500,
+              cursor: "pointer",
+              transition: "background 0.12s",
+              color: "var(--text-primary)",
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = "var(--bg-subtle)")}
+            onMouseLeave={(e) => (e.currentTarget.style.background = "var(--bg-elevated)")}
+          >
+            <span style={{ color: "var(--success)", display: "flex" }}>
+              <IconSvg d={Icons.check} size={14} />
+            </span>
             Compartir asistencia
           </button>
-          <button type="button" onClick={shareEvent} className="flex items-center gap-1.5 rounded-full border bg-background px-3 py-1.5 text-xs font-medium hover:bg-accent transition-colors">
-            <CalendarDays className="h-3.5 w-3.5 text-blue-500" />
+          <button
+            type="button"
+            onClick={shareEvent}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              borderRadius: 999,
+              border: "1px solid var(--border)",
+              background: "var(--bg-elevated)",
+              padding: "6px 12px",
+              fontSize: 12,
+              fontWeight: 500,
+              cursor: "pointer",
+              transition: "background 0.12s",
+              color: "var(--text-primary)",
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = "var(--bg-subtle)")}
+            onMouseLeave={(e) => (e.currentTarget.style.background = "var(--bg-elevated)")}
+          >
+            <span style={{ color: "var(--accent-strong)", display: "flex" }}>
+              <IconSvg d={Icons.calendar} size={14} />
+            </span>
             Compartir evento
           </button>
         </div>
@@ -1253,14 +1752,47 @@ export default function MessagesPage() {
 
       {/* Emoji picker */}
       {showEmojiPicker && (
-        <div className="fixed bottom-20 right-24 z-50 rounded-xl border bg-popover p-3 shadow-xl animate-in fade-in slide-in-from-bottom-2 duration-150">
-          <div className="grid grid-cols-8 gap-1">
+        <div
+          ref={emojiPickerRef}
+          style={{
+            position: "fixed",
+            bottom: 80,
+            right: 96,
+            zIndex: 50,
+            borderRadius: 12,
+            border: "1px solid var(--border)",
+            background: "var(--bg-elevated)",
+            padding: 12,
+            boxShadow: "var(--shadow-lg)",
+          }}
+        >
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(8, 1fr)",
+              gap: 4,
+            }}
+          >
             {EMOJI_LIST.map((emoji) => (
               <button
                 key={emoji}
                 type="button"
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-lg hover:bg-accent transition-colors"
                 onClick={() => insertEmoji(emoji)}
+                style={{
+                  display: "flex",
+                  height: 32,
+                  width: 32,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  borderRadius: 8,
+                  fontSize: 18,
+                  background: "transparent",
+                  border: "none",
+                  cursor: "pointer",
+                  transition: "background 0.12s",
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = "var(--bg-subtle)")}
+                onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
               >
                 {emoji}
               </button>
@@ -1271,94 +1803,194 @@ export default function MessagesPage() {
 
       {/* Reply bar */}
       {replyTo && (
-        <div className="flex items-center gap-3 border-t bg-muted/50 px-4 py-2 animate-in slide-in-from-bottom-1 duration-150">
-          <div className="h-8 w-1 rounded-full bg-primary shrink-0" />
-          <div className="min-w-0 flex-1">
-            <p className="text-xs font-semibold text-primary">{replyTo.senderName}</p>
-            <p className="truncate text-xs text-muted-foreground">{replyTo.content}</p>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            borderTop: "1px solid var(--border)",
+            background: "var(--bg-subtle)",
+            padding: "8px 16px",
+          }}
+        >
+          <div
+            style={{
+              height: 32,
+              width: 3,
+              borderRadius: 2,
+              background: "var(--accent)",
+              flexShrink: 0,
+            }}
+          />
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <p style={{ margin: 0, fontSize: 12, fontWeight: 600, color: "var(--accent-strong)" }}>
+              {replyTo.senderName}
+            </p>
+            <p
+              style={{
+                margin: 0,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+                fontSize: 12,
+                color: "var(--text-muted)",
+              }}
+            >
+              {replyTo.content}
+            </p>
           </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-6 w-6 shrink-0 text-muted-foreground"
+          <button
+            type="button"
+            className="btn ghost btn-sm"
             onClick={() => setReplyTo(null)}
+            style={{ flexShrink: 0, padding: 4 }}
+            aria-label="Cancelar respuesta"
           >
-            <X className="h-3.5 w-3.5" />
-          </Button>
+            <IconSvg d={Icons.x} size={12} />
+          </button>
         </div>
       )}
 
-      {/* Typing indicator */}
+      {/* Typing indicator — bouncing dots in a "them" bubble (handoff .chat-typing) */}
       {typingUsers.length > 0 && (
-        <div className="px-4 py-1 border-t bg-muted/30">
-          <p className="text-xs text-muted-foreground animate-pulse">
-            {typingUsers.length === 1
-              ? `${typingUsers[0]} está escribiendo...`
-              : `${typingUsers.join(", ")} están escribiendo...`}
-          </p>
+        <div
+          style={{
+            padding: "8px 24px",
+            borderTop: "1px solid var(--border)",
+            background: "var(--bg-elevated)",
+          }}
+        >
+          <div className="msg-typing-row" style={{ maxWidth: 880, margin: "0 auto" }}>
+            <div className="msg-typing-bubble" aria-hidden>
+              <span className="msg-typing-dot" />
+              <span className="msg-typing-dot" />
+              <span className="msg-typing-dot" />
+            </div>
+            <span className="msg-typing-label">
+              {typingUsers.length === 1
+                ? `${typingUsers[0]} está escribiendo…`
+                : `${typingUsers.join(", ")} están escribiendo…`}
+            </span>
+          </div>
         </div>
       )}
 
       {/* Input area */}
-      <form onSubmit={handleSend} className="border-t bg-card">
-        <div className="mx-auto flex max-w-2xl items-center gap-2 px-4 py-3">
+      <form
+        onSubmit={handleSend}
+        style={{
+          borderTop: "1px solid var(--border)",
+          background: "var(--bg-elevated)",
+        }}
+      >
+        <div
+          style={{
+            maxWidth: 880,
+            margin: "0 auto",
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "12px 24px",
+          }}
+        >
           {/* Plus / share toggle */}
-          <Button
+          <button
             type="button"
-            variant="ghost"
-            size="icon"
-            className={cn(
-              "h-9 w-9 shrink-0 rounded-full transition-transform duration-200",
-              showShareMenu && "rotate-45 bg-muted",
-            )}
             onClick={() => setShowShareMenu(!showShareMenu)}
+            style={{
+              display: "flex",
+              height: 36,
+              width: 36,
+              flexShrink: 0,
+              alignItems: "center",
+              justifyContent: "center",
+              borderRadius: "50%",
+              background: showShareMenu ? "var(--bg-subtle)" : "transparent",
+              border: "none",
+              cursor: "pointer",
+              color: "var(--text-secondary)",
+              transition: "all 0.2s",
+              transform: showShareMenu ? "rotate(45deg)" : "rotate(0)",
+            }}
+            aria-label="Compartir"
           >
-            <Plus className="h-5 w-5" />
-          </Button>
+            <IconSvg d={Icons.plus} size={18} />
+          </button>
 
           {/* Text input */}
           <textarea
             ref={inputRef}
             value={messageText}
-            onChange={(e) => { setMessageText(e.target.value); if (selectedChannelId && e.target.value) startTyping(selectedChannelId); }}
+            onChange={(e) => {
+              setMessageText(e.target.value);
+              if (selectedChannelId && e.target.value) startTyping(selectedChannelId);
+            }}
             onKeyDown={handleKeyDown}
             onBlur={() => stopTyping()}
             placeholder="Escribe un mensaje..."
             rows={1}
-            className={cn(
-              "flex-1 resize-none rounded-2xl border bg-muted/50 py-2.5 px-4 text-sm",
-              "placeholder:text-muted-foreground/60",
-              "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:bg-background",
-              "max-h-32 overflow-y-auto",
-            )}
-            style={{ minHeight: "40px" }}
+            className="form-textarea"
+            style={{
+              flex: 1,
+              resize: "none",
+              borderRadius: 18,
+              padding: "10px 16px",
+              fontSize: 13,
+              minHeight: 40,
+              maxHeight: 128,
+              background: "var(--bg-subtle)",
+            }}
           />
 
-          {/* Emoji picker */}
-          <div className="shrink-0" ref={emojiPickerRef}>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="h-9 w-9 rounded-full text-muted-foreground hover:text-foreground"
-              onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-            >
-              <Smile className="h-5 w-5" />
-            </Button>
-          </div>
+          {/* Emoji picker toggle */}
+          <button
+            type="button"
+            onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+            style={{
+              display: "flex",
+              height: 36,
+              width: 36,
+              flexShrink: 0,
+              alignItems: "center",
+              justifyContent: "center",
+              borderRadius: "50%",
+              background: "transparent",
+              border: "none",
+              cursor: "pointer",
+              color: "var(--text-muted)",
+              transition: "color 0.12s",
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = "var(--text-primary)")}
+            onMouseLeave={(e) => (e.currentTarget.style.color = "var(--text-muted)")}
+            aria-label="Emoji"
+          >
+            <IconSvg d={Icons.smile} size={18} />
+          </button>
 
           {/* Send button */}
-          <Button
+          <button
             type="submit"
-            size="icon"
             disabled={!messageText.trim() || sendMessage.isPending}
-            className={cn(
-              "h-9 w-9 shrink-0 rounded-full transition-all duration-200",
-              messageText.trim() ? "scale-100 opacity-100" : "scale-90 opacity-50",
-            )}
+            style={{
+              display: "flex",
+              height: 36,
+              width: 36,
+              flexShrink: 0,
+              alignItems: "center",
+              justifyContent: "center",
+              borderRadius: "50%",
+              background: "var(--accent)",
+              color: "#0a1628",
+              border: "none",
+              cursor: messageText.trim() ? "pointer" : "not-allowed",
+              opacity: messageText.trim() ? 1 : 0.5,
+              transform: messageText.trim() ? "scale(1)" : "scale(0.9)",
+              transition: "all 0.2s",
+            }}
+            aria-label="Enviar"
           >
-            {sendMessage.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-          </Button>
+            {sendMessage.isPending ? <Spinner size={16} /> : <IconSvg d={Icons.send} size={16} />}
+          </button>
         </div>
       </form>
 
@@ -1367,25 +1999,76 @@ export default function MessagesPage() {
     </div>
   ) : (
     /* Empty state */
-    <div className="flex h-full w-full flex-col items-center justify-center bg-muted/10 p-8 text-center">
-      <div className="relative mb-6">
-        <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-primary/10">
-          <MessageCircle className="h-9 w-9 text-primary" />
+    <div
+      style={{
+        display: "flex",
+        height: "100%",
+        width: "100%",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "var(--bg-subtle)",
+        padding: 32,
+        textAlign: "center",
+      }}
+    >
+      <div style={{ position: "relative", marginBottom: 24 }}>
+        <div
+          style={{
+            display: "flex",
+            height: 80,
+            width: 80,
+            alignItems: "center",
+            justifyContent: "center",
+            borderRadius: 16,
+            background: "var(--accent-soft)",
+            color: "var(--accent-strong)",
+          }}
+        >
+          <IconSvg d={Icons.chat} size={36} />
         </div>
-        <div className="absolute -bottom-1 -right-1 flex h-8 w-8 items-center justify-center rounded-full bg-primary shadow-md">
-          <Users className="h-4 w-4 text-primary-foreground" />
+        <div
+          style={{
+            position: "absolute",
+            bottom: -4,
+            right: -4,
+            display: "flex",
+            height: 32,
+            width: 32,
+            alignItems: "center",
+            justifyContent: "center",
+            borderRadius: "50%",
+            background: "var(--accent)",
+            color: "#0a1628",
+            boxShadow: "var(--shadow-md)",
+          }}
+        >
+          <IconSvg d={Icons.users} size={16} />
         </div>
       </div>
-      <p className="text-lg font-semibold text-foreground">Tus mensajes</p>
-      <p className="mt-2 max-w-xs text-sm text-muted-foreground leading-relaxed">
-        Selecciona una conversacion o crea una nueva para empezar a chatear con tu equipo.
+      <p style={{ margin: 0, fontSize: 18, fontWeight: 600, color: "var(--text-primary)" }}>
+        Tus mensajes
       </p>
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogTrigger render={<Button className="mt-6 gap-2 rounded-full px-6" />}>
-          <Plus className="h-4 w-4" />
-          Nueva conversacion
-        </DialogTrigger>
-      </Dialog>
+      <p
+        style={{
+          marginTop: 8,
+          maxWidth: 320,
+          fontSize: 13,
+          color: "var(--text-muted)",
+          lineHeight: 1.5,
+        }}
+      >
+        Selecciona una conversación o crea una nueva para empezar a chatear con tu equipo.
+      </p>
+      <button
+        type="button"
+        className="btn primary"
+        onClick={() => setCreateOpen(true)}
+        style={{ marginTop: 24, borderRadius: 999, padding: "8px 24px" }}
+      >
+        <IconSvg d={Icons.plus} size={14} />
+        Nueva conversación
+      </button>
     </div>
   );
 
@@ -1394,19 +2077,83 @@ export default function MessagesPage() {
   // =========================================================================
 
   return (
-    <div className="-m-4 md:-m-6 flex h-[calc(100vh-4rem)]">
-      {/* Desktop: both panels */}
-      <aside className="hidden md:flex md:flex-col md:w-80 lg:w-[360px] shrink-0 border-r overflow-hidden">
-        {channelListPanel}
-      </aside>
-      <section className="hidden md:flex md:flex-1 flex-col min-w-0 overflow-hidden">
-        {threadPanel}
-      </section>
+    <>
+      <div
+        style={{
+          // Cancel the `.main` parent's `padding: 0 28px 28px` so the
+          // messaging UI sits edge-to-edge inside the content area.
+          margin: "0 -28px -28px",
+          display: "flex",
+          // Topbar is ~52px sticky; leave a tiny buffer so the bottom of
+          // the composer never gets clipped by an off-by-one on smaller
+          // viewports.
+          height: "calc(100vh - 58px)",
+          minHeight: 480,
+          background: "var(--bg)",
+        }}
+      >
+        {/* Desktop: both panels */}
+        <aside
+          className="msgs-aside"
+          style={{
+            display: "none",
+            flexShrink: 0,
+            borderRight: "1px solid var(--border)",
+            overflow: "hidden",
+          }}
+        >
+          {channelListPanel}
+        </aside>
+        <section
+          className="msgs-section"
+          style={{
+            display: "none",
+            flex: 1,
+            flexDirection: "column",
+            minWidth: 0,
+            overflow: "hidden",
+          }}
+        >
+          {threadPanel}
+        </section>
 
-      {/* Mobile: one or the other */}
-      <div className="flex flex-1 flex-col md:hidden">
-        {showMobileThread && selectedChannelId ? threadPanel : channelListPanel}
+        {/* Mobile: one or the other */}
+        <div
+          className="msgs-mobile"
+          style={{
+            display: "flex",
+            flex: 1,
+            flexDirection: "column",
+          }}
+        >
+          {showMobileThread && selectedChannelId ? threadPanel : channelListPanel}
+        </div>
       </div>
-    </div>
+
+      {/* Responsive: show desktop layout at >=768px, hide mobile */}
+      <style jsx>{`
+        @media (min-width: 768px) {
+          .msgs-aside {
+            display: flex !important;
+            flex-direction: column;
+            width: 320px;
+          }
+          .msgs-section {
+            display: flex !important;
+          }
+          .msgs-mobile {
+            display: none !important;
+          }
+        }
+        @media (min-width: 1024px) {
+          .msgs-aside {
+            width: 360px;
+          }
+        }
+      `}</style>
+
+      {/* Create channel sheet (rendered last so overlay is on top) */}
+      {createChannelSheet}
+    </>
   );
 }

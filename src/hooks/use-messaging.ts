@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import type { ChatChannel, ChatMessage } from "@/lib/types/channel";
+import type { ChatChannel, ChatMessage, ReplyInfo } from "@/lib/types/channel";
 
 export function useChannels() {
   return useQuery<{ channels: ChatChannel[] }>({
@@ -70,7 +70,11 @@ export function useMessages(channelId: string | null) {
 export function useSendMessage(channelId: string | null) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (data: { content: string; type?: "text" | "image" | "file" }) => {
+    mutationFn: async (data: {
+      content: string;
+      type?: "text" | "image" | "file";
+      replyTo?: ReplyInfo;
+    }) => {
       if (!channelId) throw new Error("No hay canal seleccionado");
       const res = await fetch(
         `/api/messages/channels/${encodeURIComponent(channelId)}/messages`,

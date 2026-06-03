@@ -1,32 +1,21 @@
 "use client";
 
-import { Suspense, useState, useEffect } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  UserPlus,
-  Loader2,
-  Eye,
-  EyeOff,
-  CheckCircle2,
-  Mail,
-  ArrowLeft,
-  LogIn,
-  AlertTriangle,
-  User,
-  Phone,
-  Lock,
-  AtSign,
-} from "lucide-react";
 import { AuthLayout } from "@/components/auth/AuthLayout";
 import {
   DefaultBrandPanel,
   TenantBrandPanel,
 } from "@/components/auth/BrandPanel";
 import { StepProgress } from "@/components/auth/StepProgress";
+import { IconSvg, Icons } from "@/components/nova/icons";
+import { Spinner } from "@/components/nova/spinner";
+
+/* ============================================================
+   /register — invite signup + email verification
+   Migrated to design CSS: AuthLayout + auth-shell + .form-input + .btn primary.
+   ============================================================ */
 
 type Step = "register" | "confirm" | "success";
 
@@ -217,7 +206,6 @@ function RegisterContent() {
     }
   }
 
-  // Pick which brand panel to show
   const brandPanel = inviteData ? (
     <TenantBrandPanel
       tenantName={inviteData.tenantName}
@@ -233,8 +221,22 @@ function RegisterContent() {
   if (inviteLoading) {
     return (
       <AuthLayout brandPanel={brandPanel}>
-        <div className="flex items-center justify-center py-20">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        <div className="auth-shell">
+          {brandPanel}
+          <div className="auth-pane">
+            <div
+              className="auth-form-wrap"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "var(--text-muted)",
+                minHeight: 200,
+              }}
+            >
+              Validando invitación…
+            </div>
+          </div>
         </div>
       </AuthLayout>
     );
@@ -244,288 +246,367 @@ function RegisterContent() {
 
   return (
     <AuthLayout brandPanel={brandPanel}>
-      <div className="space-y-8">
-        {/* Progress */}
-        <StepProgress steps={STEPS} currentIndex={currentStepIndex} />
-
-        {/* Heading */}
-        <div className="space-y-2">
-          <h1 className="text-3xl font-bold tracking-tight">
-            {step === "register" && (inviteData ? "Crea tu cuenta" : "Crear cuenta")}
-            {step === "confirm" && "Verifica tu correo"}
-            {step === "success" && "¡Todo listo!"}
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            {step === "register" && inviteData && (
-              <>
-                Únete a <strong className="text-foreground">{inviteData.tenantName}</strong> completando el formulario.
-              </>
-            )}
-            {step === "register" && !inviteData &&
-              "Completa tus datos para registrarte."}
-            {step === "confirm" && (
-              <>
-                Enviamos un código de 6 dígitos a{" "}
-                <strong className="text-foreground">{email}</strong>
-              </>
-            )}
-            {step === "success" &&
-              "Tu cuenta fue verificada correctamente. Ya puedes iniciar sesión."}
-          </p>
-        </div>
-
-        {/* Error */}
-        {error && (
-          <div className="flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-            <span>{error}</span>
-          </div>
-        )}
-
-        {/* ── STEP: Register ── */}
-        {step === "register" && (
-          <form onSubmit={handleRegister} className="space-y-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="fullName">Nombre completo</Label>
-              <div className="relative">
-                <User className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  id="fullName"
-                  type="text"
-                  placeholder="Juan Pérez"
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  required
-                  disabled={isLoading}
-                  autoComplete="name"
-                  className="h-11 pl-10"
-                />
-              </div>
-            </div>
-
-            {!inviteData && (
-              <div className="space-y-1.5">
-                <Label htmlFor="nickname">Nickname</Label>
-                <div className="relative">
-                  <AtSign className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input
-                    id="nickname"
-                    type="text"
-                    placeholder="juanp"
-                    value={nickname}
-                    onChange={(e) => setNickname(e.target.value)}
-                    required
-                    disabled={isLoading}
-                    autoComplete="username"
-                    className="h-11 pl-10"
-                  />
-                </div>
-              </div>
-            )}
-
-            <div className="space-y-1.5">
-              <Label htmlFor="reg-email">Correo electrónico</Label>
-              <div className="relative">
-                <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  id="reg-email"
-                  type="email"
-                  placeholder="tu@correo.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                  disabled={isLoading || !!inviteData}
-                  readOnly={!!inviteData}
-                  autoComplete="email"
-                  className={`h-11 pl-10 ${inviteData ? "bg-muted" : ""}`}
-                />
-              </div>
-              {inviteData && (
-                <p className="text-xs text-muted-foreground">
-                  El correo está vinculado a tu invitación
-                </p>
-              )}
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="phoneNumber">Teléfono</Label>
-              <div className="relative">
-                <Phone className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  id="phoneNumber"
-                  type="tel"
-                  placeholder="+51999999999"
-                  value={phoneNumber}
-                  onChange={(e) => setPhoneNumber(e.target.value)}
-                  required
-                  disabled={isLoading}
-                  autoComplete="tel"
-                  className="h-11 pl-10"
-                />
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Formato internacional: +51 seguido del número
-              </p>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="reg-password">Contraseña</Label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  id="reg-password"
-                  type={showPassword ? "text" : "password"}
-                  placeholder="Mín. 8 chars, mayúscula, número, símbolo"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  disabled={isLoading}
-                  autoComplete="new-password"
-                  className="h-11 pl-10 pr-10"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-                  tabIndex={-1}
-                >
-                  {showPassword ? (
-                    <EyeOff className="h-4 w-4" />
-                  ) : (
-                    <Eye className="h-4 w-4" />
-                  )}
-                </button>
-              </div>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="confirmPassword">Confirmar contraseña</Label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  id="confirmPassword"
-                  type={showPassword ? "text" : "password"}
-                  placeholder="Repite tu contraseña"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  required
-                  disabled={isLoading}
-                  autoComplete="new-password"
-                  className="h-11 pl-10"
-                />
-              </div>
-            </div>
-
-            <Button
-              type="submit"
-              disabled={isLoading}
-              className="h-12 w-full text-base font-medium"
-            >
-              {isLoading ? (
-                <>
-                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                  Creando cuenta…
-                </>
-              ) : (
-                <>
-                  <UserPlus className="mr-2 h-5 w-5" />
-                  Crear cuenta
-                </>
-              )}
-            </Button>
-          </form>
-        )}
-
-        {/* ── STEP: Confirm ── */}
-        {step === "confirm" && (
-          <form onSubmit={handleConfirm} className="space-y-5">
-            <div className="flex justify-center">
-              <div className="flex h-20 w-20 items-center justify-center rounded-full bg-primary/10">
-                <Mail className="h-10 w-10 text-primary" />
-              </div>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="code">Código de verificación</Label>
-              <Input
-                id="code"
-                type="text"
-                inputMode="numeric"
-                placeholder="123456"
-                value={code}
-                onChange={(e) =>
-                  setCode(e.target.value.replace(/\D/g, "").slice(0, 6))
-                }
-                required
-                disabled={isLoading}
-                autoComplete="one-time-code"
-                className="h-14 text-center text-3xl tracking-[0.5em] font-mono"
-                maxLength={6}
-              />
-            </div>
-
-            <Button
-              type="submit"
-              disabled={isLoading || code.length !== 6}
-              className="h-12 w-full text-base font-medium"
-            >
-              {isLoading ? (
-                <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-              ) : (
-                <CheckCircle2 className="mr-2 h-5 w-5" />
-              )}
-              Verificar cuenta
-            </Button>
-
-            <div className="text-center">
-              <button
-                type="button"
-                onClick={handleResendCode}
-                disabled={resendCooldown > 0}
-                className="text-sm text-primary hover:underline disabled:text-muted-foreground disabled:no-underline"
-              >
-                {resendCooldown > 0
-                  ? `Reenviar código en ${resendCooldown}s`
-                  : "Reenviar código"}
-              </button>
-            </div>
-          </form>
-        )}
-
-        {/* ── STEP: Success ── */}
-        {step === "success" && (
-          <div className="space-y-5 text-center">
-            <div className="flex justify-center">
-              <div className="flex h-20 w-20 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-950/40">
-                <CheckCircle2 className="h-10 w-10 text-emerald-600 dark:text-emerald-400" />
-              </div>
-            </div>
-
-            <p className="text-sm text-muted-foreground">
-              Ya puedes iniciar sesión y empezar a usar el sistema.
-            </p>
-
-            <Button
-              onClick={() => router.push("/login")}
-              className="h-12 w-full text-base font-medium"
-            >
-              <LogIn className="mr-2 h-5 w-5" /> Ir al login
-            </Button>
-          </div>
-        )}
-
-        {/* Footer link */}
-        {step !== "success" && (
-          <div className="text-center text-sm text-muted-foreground">
+      <div className="auth-shell">
+        {brandPanel}
+        <div className="auth-pane">
+          <div className="auth-form-wrap">
             <Link
               href="/login"
-              className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                fontSize: 12,
+                color: "var(--text-secondary)",
+                textDecoration: "none",
+                marginBottom: 20,
+              }}
             >
-              <ArrowLeft className="h-3.5 w-3.5" />
-              Volver al login
+              <IconSvg d={Icons.arrowLeft ?? Icons.arrow} size={14} /> Volver al login
             </Link>
+
+            <div style={{ marginBottom: 22 }}>
+              <StepProgress steps={STEPS} currentIndex={currentStepIndex} />
+            </div>
+
+            <h2 className="auth-heading">
+              {step === "register" && (inviteData ? "Crea tu cuenta" : "Crear cuenta")}
+              {step === "confirm" && "Verifica tu correo"}
+              {step === "success" && "¡Todo listo!"}
+            </h2>
+            <p className="auth-sub">
+              {step === "register" && inviteData && (
+                <>
+                  Únete a{" "}
+                  <strong style={{ color: "var(--text-primary)" }}>
+                    {inviteData.tenantName}
+                  </strong>{" "}
+                  completando el formulario.
+                </>
+              )}
+              {step === "register" && !inviteData &&
+                "Completa tus datos para registrarte."}
+              {step === "confirm" && (
+                <>
+                  Enviamos un código de 6 dígitos a{" "}
+                  <strong style={{ color: "var(--text-primary)" }}>{email}</strong>
+                </>
+              )}
+              {step === "success" &&
+                "Tu cuenta fue verificada correctamente. Ya puedes iniciar sesión."}
+            </p>
+
+            {error && (
+              <div
+                style={{
+                  padding: "10px 12px",
+                  borderRadius: "var(--r)",
+                  border: "1px solid color-mix(in srgb, var(--danger) 40%, transparent)",
+                  background: "color-mix(in srgb, var(--danger) 10%, transparent)",
+                  color: "var(--danger)",
+                  fontSize: 13,
+                  marginBottom: 14,
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: 8,
+                }}
+              >
+                <IconSvg d={Icons.alert} size={15} />
+                <span>{error}</span>
+              </div>
+            )}
+
+            {/* ── STEP: Register ── */}
+            {step === "register" && (
+              <form onSubmit={handleRegister}>
+                <div className="form-group">
+                  <label className="form-label" htmlFor="fullName">
+                    Nombre completo<span className="req">*</span>
+                  </label>
+                  <input
+                    id="fullName"
+                    className="form-input"
+                    type="text"
+                    placeholder="Juan Pérez"
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    required
+                    disabled={isLoading}
+                    autoComplete="name"
+                  />
+                </div>
+
+                {!inviteData && (
+                  <div className="form-group">
+                    <label className="form-label" htmlFor="nickname">
+                      Nickname<span className="req">*</span>
+                    </label>
+                    <input
+                      id="nickname"
+                      className="form-input"
+                      type="text"
+                      placeholder="juanp"
+                      value={nickname}
+                      onChange={(e) => setNickname(e.target.value)}
+                      required
+                      disabled={isLoading}
+                      autoComplete="username"
+                    />
+                  </div>
+                )}
+
+                <div className="form-group">
+                  <label className="form-label" htmlFor="reg-email">
+                    Correo electrónico<span className="req">*</span>
+                  </label>
+                  <input
+                    id="reg-email"
+                    className="form-input"
+                    type="email"
+                    placeholder="tu@correo.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                    disabled={isLoading || !!inviteData}
+                    readOnly={!!inviteData}
+                    autoComplete="email"
+                    style={inviteData ? { background: "var(--bg-subtle)" } : undefined}
+                  />
+                  {inviteData && (
+                    <span className="form-hint">
+                      El correo está vinculado a tu invitación
+                    </span>
+                  )}
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label" htmlFor="phoneNumber">
+                    Teléfono<span className="req">*</span>
+                  </label>
+                  <input
+                    id="phoneNumber"
+                    className="form-input"
+                    type="tel"
+                    placeholder="+51999999999"
+                    value={phoneNumber}
+                    onChange={(e) => setPhoneNumber(e.target.value)}
+                    required
+                    disabled={isLoading}
+                    autoComplete="tel"
+                  />
+                  <span className="form-hint">
+                    Formato internacional: +51 seguido del número
+                  </span>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label" htmlFor="reg-password">
+                    Contraseña<span className="req">*</span>
+                  </label>
+                  <div style={{ position: "relative" }}>
+                    <input
+                      id="reg-password"
+                      className="form-input"
+                      type={showPassword ? "text" : "password"}
+                      placeholder="Mín. 8 chars, mayúscula, número, símbolo"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      required
+                      disabled={isLoading}
+                      autoComplete="new-password"
+                      style={{ paddingRight: 38 }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((v) => !v)}
+                      tabIndex={-1}
+                      style={{
+                        position: "absolute",
+                        right: 10,
+                        top: "50%",
+                        transform: "translateY(-50%)",
+                        color: "var(--text-muted)",
+                        background: "none",
+                        border: "none",
+                        cursor: "pointer",
+                        padding: 4,
+                      }}
+                      aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
+                      aria-pressed={showPassword}
+                    >
+                      <IconSvg d={showPassword ? Icons.eyeOff : Icons.eye} size={16} />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label" htmlFor="confirmPassword">
+                    Confirmar contraseña<span className="req">*</span>
+                  </label>
+                  <input
+                    id="confirmPassword"
+                    className="form-input"
+                    type={showPassword ? "text" : "password"}
+                    placeholder="Repite tu contraseña"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    required
+                    disabled={isLoading}
+                    autoComplete="new-password"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  className="btn primary btn-lg"
+                  disabled={isLoading}
+                  style={{ width: "100%", justifyContent: "center", gap: 8, marginTop: 6 }}
+                >
+                  {isLoading ? (
+                    <>
+                      <Spinner size={14} /> Creando cuenta…
+                    </>
+                  ) : (
+                    "Crear cuenta"
+                  )}
+                </button>
+              </form>
+            )}
+
+            {/* ── STEP: Confirm ── */}
+            {step === "confirm" && (
+              <form onSubmit={handleConfirm}>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "center",
+                    marginBottom: 18,
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 72,
+                      height: 72,
+                      borderRadius: "50%",
+                      background: "var(--accent-soft)",
+                      color: "var(--accent-strong)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <IconSvg d={Icons.mail ?? Icons.bell} size={32} />
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label" htmlFor="code">
+                    Código de verificación
+                  </label>
+                  <input
+                    id="code"
+                    className="form-input"
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="123456"
+                    value={code}
+                    onChange={(e) =>
+                      setCode(e.target.value.replace(/\D/g, "").slice(0, 6))
+                    }
+                    required
+                    disabled={isLoading}
+                    autoComplete="one-time-code"
+                    maxLength={6}
+                    style={{
+                      textAlign: "center",
+                      fontFamily: "var(--font-mono)",
+                      fontSize: 22,
+                      letterSpacing: "0.4em",
+                      height: 56,
+                    }}
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  className="btn primary btn-lg"
+                  disabled={isLoading || code.length !== 6}
+                  style={{ width: "100%", justifyContent: "center", gap: 8 }}
+                >
+                  {isLoading ? (
+                    <>
+                      <Spinner size={14} /> Verificando…
+                    </>
+                  ) : (
+                    "Verificar cuenta"
+                  )}
+                </button>
+
+                <div style={{ textAlign: "center", marginTop: 14 }}>
+                  <button
+                    type="button"
+                    onClick={handleResendCode}
+                    disabled={resendCooldown > 0}
+                    className="btn ghost"
+                    style={{ fontSize: 12 }}
+                  >
+                    {resendCooldown > 0
+                      ? `Reenviar código en ${resendCooldown}s`
+                      : "Reenviar código"}
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {/* ── STEP: Success ── */}
+            {step === "success" && (
+              <>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "center",
+                    marginBottom: 20,
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 72,
+                      height: 72,
+                      borderRadius: "50%",
+                      background: "color-mix(in srgb, var(--success) 14%, transparent)",
+                      color: "var(--success)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <IconSvg d={Icons.check} size={32} />
+                  </div>
+                </div>
+
+                <p
+                  style={{
+                    fontSize: 13,
+                    color: "var(--text-secondary)",
+                    textAlign: "center",
+                    marginBottom: 22,
+                  }}
+                >
+                  Ya puedes iniciar sesión y empezar a usar el sistema.
+                </p>
+
+                <button
+                  type="button"
+                  onClick={() => router.push("/login")}
+                  className="btn primary btn-lg"
+                  style={{ width: "100%", justifyContent: "center" }}
+                >
+                  Ir al login
+                </button>
+              </>
+            )}
           </div>
-        )}
+        </div>
       </div>
     </AuthLayout>
   );
@@ -535,9 +616,19 @@ export default function RegisterPage() {
   return (
     <Suspense
       fallback={
-        <div className="flex min-h-screen items-center justify-center">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-        </div>
+        <AuthLayout>
+          <div
+            style={{
+              minHeight: "100vh",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: "var(--text-muted)",
+            }}
+          >
+            Cargando…
+          </div>
+        </AuthLayout>
       }
     >
       <RegisterContent />

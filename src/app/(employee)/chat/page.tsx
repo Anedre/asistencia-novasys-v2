@@ -1,27 +1,15 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { cn } from "@/lib/utils";
-import {
-  MessageSquare,
-  Plus,
-  Trash2,
-  Send,
-  Loader2,
-  PanelLeftClose,
-  PanelLeftOpen,
-  Bot,
-  User,
-} from "lucide-react";
+import { IconSvg, Icons } from "@/components/nova/icons";
 import {
   useChatSessions,
   useCreateChatSession,
   useDeleteChatSession,
   useSendMessage,
 } from "@/hooks/use-chat";
-import type { AIChatMessage, ChatSession } from "@/lib/types/chat";
+import type { AIChatMessage } from "@/lib/types/chat";
 import { toast } from "sonner";
 
 export default function ChatPage() {
@@ -110,10 +98,14 @@ export default function ChatPage() {
       const result = await sendMessage.mutateAsync(content);
       // Add assistant message locally
       setLocalMessages((prev) => [...prev, result.message]);
-    } catch {
+    } catch (err) {
       // Remove optimistic user message on error
       setLocalMessages((prev) => prev.slice(0, -1));
-      toast.error("Error al enviar el mensaje. Intenta de nuevo.");
+      toast.error(
+        err instanceof Error
+          ? err.message
+          : "Error al enviar el mensaje. Intenta de nuevo.",
+      );
     } finally {
       setIsSending(false);
     }
@@ -127,183 +119,360 @@ export default function ChatPage() {
   };
 
   return (
-    <div className="flex h-[calc(100vh-4rem)] overflow-hidden">
+    <div
+      style={{
+        display: "flex",
+        height: "calc(100vh - 4rem)",
+        overflow: "hidden",
+        position: "relative",
+      }}
+    >
       {/* Mobile sidebar toggle */}
-      <Button
-        variant="ghost"
-        size="icon"
-        className="absolute left-2 top-2 z-20 md:hidden"
+      <button
+        type="button"
+        className="btn ghost btn-sm chat-mobile-toggle"
+        aria-label={showSidebar ? "Ocultar panel" : "Mostrar panel"}
         onClick={() => setShowSidebar(!showSidebar)}
       >
-        {showSidebar ? (
-          <PanelLeftClose className="h-5 w-5" />
-        ) : (
-          <PanelLeftOpen className="h-5 w-5" />
-        )}
-      </Button>
+        <IconSvg d={Icons.feed} size={18} />
+      </button>
 
       {/* Sessions sidebar */}
       <div
-        className={cn(
-          "flex w-72 flex-col border-r bg-muted/30 transition-all duration-200",
-          showSidebar ? "translate-x-0" : "-translate-x-full absolute md:relative md:translate-x-0",
-          "max-md:absolute max-md:inset-y-0 max-md:left-0 max-md:z-10 max-md:bg-background max-md:shadow-lg"
-        )}
+        className="chat-sidebar"
+        data-open={showSidebar ? "true" : "false"}
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          width: 288,
+          borderRight: "1px solid var(--border)",
+          background: "var(--bg-subtle)",
+          transition: "transform 0.2s",
+        }}
       >
         {/* New conversation button */}
-        <div className="p-3 border-b">
-          <Button
+        <div style={{ padding: 12, borderBottom: "1px solid var(--border)" }}>
+          <button
+            type="button"
             onClick={handleCreateSession}
             disabled={createSession.isPending}
-            className="w-full justify-start gap-2"
-            variant="outline"
+            className="btn outline"
+            style={{ width: "100%", justifyContent: "flex-start" }}
           >
             {createSession.isPending ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
+              <span className="spin" style={{ width: 16, height: 16, borderColor: "var(--text-muted)", borderTopColor: "transparent" }} />
             ) : (
-              <Plus className="h-4 w-4" />
+              <IconSvg d={Icons.plus} size={16} />
             )}
             Nueva conversación
-          </Button>
+          </button>
         </div>
 
         {/* Sessions list */}
-        <div className="flex-1 overflow-y-auto p-2 space-y-1">
+        <div
+          style={{
+            flex: 1,
+            overflowY: "auto",
+            padding: 8,
+            display: "flex",
+            flexDirection: "column",
+            gap: 4,
+          }}
+        >
           {sessionsLoading ? (
             Array.from({ length: 3 }).map((_, i) => (
               <Skeleton key={i} className="h-12 w-full rounded-lg" />
             ))
           ) : sessions.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-8 px-2">
+            <p
+              style={{
+                fontSize: 13,
+                color: "var(--text-muted)",
+                textAlign: "center",
+                padding: "32px 8px",
+              }}
+            >
               No hay conversaciones aún
             </p>
           ) : (
-            sessions.map((session) => (
-              <div
-                key={session.SessionID}
-                className={cn(
-                  "group flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm cursor-pointer transition-colors",
-                  activeSessionId === session.SessionID
-                    ? "bg-primary/10 text-primary font-medium"
-                    : "hover:bg-muted text-foreground/70"
-                )}
-                onClick={() => {
-                  setActiveSessionId(session.SessionID);
-                  // Hide sidebar on mobile after selection
-                  if (window.innerWidth < 768) setShowSidebar(false);
-                }}
-              >
-                <MessageSquare className="h-4 w-4 shrink-0" />
-                <span className="flex-1 truncate">{session.Title}</span>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleDeleteSession(session.SessionID);
+            sessions.map((session) => {
+              const isActive = activeSessionId === session.SessionID;
+              return (
+                <div
+                  key={session.SessionID}
+                  role="button"
+                  tabIndex={0}
+                  aria-pressed={isActive}
+                  aria-label={`Abrir conversación ${session.Title}`}
+                  onClick={() => {
+                    setActiveSessionId(session.SessionID);
+                    if (
+                      typeof window !== "undefined" &&
+                      window.innerWidth < 768
+                    )
+                      setShowSidebar(false);
                   }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      setActiveSessionId(session.SessionID);
+                    }
+                  }}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    borderRadius: "var(--r-sm)",
+                    padding: "10px 12px",
+                    fontSize: 13,
+                    cursor: "pointer",
+                    transition: "background 0.15s",
+                    background: isActive ? "var(--accent-soft)" : "transparent",
+                    color: isActive
+                      ? "var(--accent-strong)"
+                      : "var(--text-secondary)",
+                    fontWeight: isActive ? 600 : 500,
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!isActive)
+                      (e.currentTarget as HTMLDivElement).style.background =
+                        "var(--bg-hover)";
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isActive)
+                      (e.currentTarget as HTMLDivElement).style.background =
+                        "transparent";
+                  }}
+                  className="chat-session-row"
                 >
-                  <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                </Button>
-              </div>
-            ))
+                  <IconSvg d={Icons.chat} size={16} />
+                  <span
+                    style={{
+                      flex: 1,
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                    }}
+                  >
+                    {session.Title}
+                  </span>
+                  <button
+                    type="button"
+                    className="btn ghost btn-sm chat-delete-btn"
+                    style={{ padding: 4, color: "var(--danger)" }}
+                    aria-label="Eliminar conversación"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteSession(session.SessionID);
+                    }}
+                  >
+                    <IconSvg d={Icons.trash} size={14} />
+                  </button>
+                </div>
+              );
+            })
           )}
         </div>
       </div>
 
       {/* Main chat area */}
-      <div className="flex flex-1 flex-col min-w-0">
+      <div
+        style={{
+          flex: 1,
+          display: "flex",
+          flexDirection: "column",
+          minWidth: 0,
+        }}
+      >
         {!activeSessionId ? (
-          /* Empty state */
-          <div className="flex flex-1 flex-col items-center justify-center p-8 text-center">
-            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
-              <Bot className="h-8 w-8 text-primary" />
+          /* Empty state — uses .chat-empty-hero CSS classes from nova-design.css */
+          <div className="chat-empty-hero">
+            <div className="chat-empty-hero-icon">
+              <IconSvg d={Icons.chat} size={32} />
             </div>
-            <h2 className="mt-4 text-xl font-semibold">
-              Asistente de IA
-            </h2>
-            <p className="mt-2 max-w-md text-sm text-muted-foreground">
+            <h2 className="chat-empty-hero-title">Asistente de IA</h2>
+            <p className="chat-empty-hero-sub">
               Inicia una conversación con el asistente de IA. Puede ayudarte con
-              consultas sobre horarios, políticas de la empresa, trámites de RRHH
-              y más.
+              consultas sobre horarios, políticas de la empresa, trámites de
+              RRHH y más.
             </p>
-            <Button
-              onClick={handleCreateSession}
-              disabled={createSession.isPending}
-              className="mt-6 gap-2"
-            >
-              {createSession.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Plus className="h-4 w-4" />
-              )}
-              Nueva conversación
-            </Button>
+            <div className="chat-empty-hero-actions">
+              <button
+                type="button"
+                onClick={handleCreateSession}
+                disabled={createSession.isPending}
+                className="btn primary"
+              >
+                {createSession.isPending ? (
+                  <span
+                    className="spin"
+                    style={{
+                      width: 14,
+                      height: 14,
+                      borderColor: "currentColor",
+                      borderTopColor: "transparent",
+                    }}
+                  />
+                ) : (
+                  <IconSvg d={Icons.plus} size={14} />
+                )}
+                Nueva conversación
+              </button>
+            </div>
           </div>
         ) : (
           <>
             {/* Messages */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            <div
+              style={{
+                flex: 1,
+                overflowY: "auto",
+                padding: 16,
+                display: "flex",
+                flexDirection: "column",
+                gap: 16,
+              }}
+            >
               {localMessages.length === 0 && !isSending && (
-                <div className="flex flex-col items-center justify-center h-full text-center">
-                  <Bot className="h-10 w-10 text-muted-foreground/50" />
-                  <p className="mt-3 text-sm text-muted-foreground">
+                <div
+                  style={{
+                    flex: 1,
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    textAlign: "center",
+                  }}
+                >
+                  <IconSvg d={Icons.chat} size={40} className="opacity-50" />
+                  <p
+                    style={{
+                      marginTop: 12,
+                      fontSize: 13,
+                      color: "var(--text-muted)",
+                    }}
+                  >
                     Escribe un mensaje para comenzar la conversación
                   </p>
                 </div>
               )}
 
-              {localMessages.map((msg, idx) => (
-                <div
-                  key={idx}
-                  className={cn(
-                    "flex gap-3 max-w-[85%]",
-                    msg.role === "user" ? "ml-auto flex-row-reverse" : "mr-auto"
-                  )}
-                >
-                  {/* Avatar */}
+              {localMessages.map((msg, idx) => {
+                const isUser = msg.role === "user";
+                return (
                   <div
-                    className={cn(
-                      "flex h-8 w-8 shrink-0 items-center justify-center rounded-full",
-                      msg.role === "user"
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-muted"
-                    )}
+                    key={idx}
+                    style={{
+                      display: "flex",
+                      gap: 12,
+                      maxWidth: "85%",
+                      marginLeft: isUser ? "auto" : 0,
+                      marginRight: isUser ? 0 : "auto",
+                      flexDirection: isUser ? "row-reverse" : "row",
+                    }}
                   >
-                    {msg.role === "user" ? (
-                      <User className="h-4 w-4" />
-                    ) : (
-                      <Bot className="h-4 w-4" />
-                    )}
-                  </div>
+                    {/* Avatar */}
+                    <div
+                      className={`avatar ${isUser ? "accent" : "plain"}`}
+                      style={{
+                        width: 32,
+                        height: 32,
+                        flexShrink: 0,
+                      }}
+                    >
+                      <IconSvg
+                        d={isUser ? Icons.user : Icons.chat}
+                        size={16}
+                      />
+                    </div>
 
-                  {/* Bubble */}
-                  <div
-                    className={cn(
-                      "rounded-2xl px-4 py-2.5 text-sm leading-relaxed",
-                      msg.role === "user"
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-muted text-foreground"
-                    )}
-                  >
-                    <p className="whitespace-pre-wrap">{msg.content}</p>
+                    {/* Bubble */}
+                    <div
+                      style={{
+                        borderRadius: 18,
+                        padding: "10px 16px",
+                        fontSize: 13,
+                        lineHeight: 1.55,
+                        background: isUser
+                          ? "var(--text-primary)"
+                          : "var(--bg-subtle)",
+                        color: isUser
+                          ? "var(--bg-elevated)"
+                          : "var(--text-primary)",
+                        border: isUser
+                          ? "none"
+                          : "1px solid var(--border)",
+                      }}
+                    >
+                      <p
+                        style={{
+                          margin: 0,
+                          whiteSpace: "pre-wrap",
+                        }}
+                      >
+                        {msg.content}
+                      </p>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
 
               {/* Loading indicator */}
               {isSending && (
-                <div className="flex gap-3 max-w-[85%] mr-auto">
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted">
-                    <Bot className="h-4 w-4" />
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 12,
+                    maxWidth: "85%",
+                    marginRight: "auto",
+                  }}
+                >
+                  <div
+                    className="avatar plain"
+                    style={{ width: 32, height: 32, flexShrink: 0 }}
+                  >
+                    <IconSvg d={Icons.chat} size={16} />
                   </div>
-                  <div className="rounded-2xl bg-muted px-4 py-3">
-                    <div className="flex items-center gap-1.5">
-                      <span className="h-2 w-2 rounded-full bg-foreground/40 animate-bounce [animation-delay:-0.3s]" />
-                      <span className="h-2 w-2 rounded-full bg-foreground/40 animate-bounce [animation-delay:-0.15s]" />
-                      <span className="h-2 w-2 rounded-full bg-foreground/40 animate-bounce" />
-                    </div>
+                  <div
+                    style={{
+                      borderRadius: 18,
+                      padding: "12px 16px",
+                      background: "var(--bg-subtle)",
+                      border: "1px solid var(--border)",
+                      display: "flex",
+                      gap: 6,
+                      alignItems: "center",
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: 8,
+                        height: 8,
+                        borderRadius: "50%",
+                        background: "var(--text-muted)",
+                        animation: "bounce 1.4s infinite",
+                        animationDelay: "-0.3s",
+                      }}
+                    />
+                    <span
+                      style={{
+                        width: 8,
+                        height: 8,
+                        borderRadius: "50%",
+                        background: "var(--text-muted)",
+                        animation: "bounce 1.4s infinite",
+                        animationDelay: "-0.15s",
+                      }}
+                    />
+                    <span
+                      style={{
+                        width: 8,
+                        height: 8,
+                        borderRadius: "50%",
+                        background: "var(--text-muted)",
+                        animation: "bounce 1.4s infinite",
+                      }}
+                    />
                   </div>
                 </div>
               )}
@@ -312,8 +481,21 @@ export default function ChatPage() {
             </div>
 
             {/* Input area */}
-            <div className="border-t p-4">
-              <div className="flex items-end gap-2 max-w-4xl mx-auto">
+            <div
+              style={{
+                borderTop: "1px solid var(--border)",
+                padding: 16,
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "flex-end",
+                  gap: 8,
+                  maxWidth: 960,
+                  margin: "0 auto",
+                }}
+              >
                 <textarea
                   ref={textareaRef}
                   value={inputValue}
@@ -322,28 +504,103 @@ export default function ChatPage() {
                   placeholder="Escribe tu mensaje..."
                   rows={1}
                   disabled={isSending}
-                  className="flex-1 resize-none rounded-xl border bg-background px-4 py-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+                  className="form-textarea"
+                  style={{
+                    flex: 1,
+                    resize: "none",
+                    borderRadius: 12,
+                    padding: "12px 16px",
+                    minHeight: 0,
+                  }}
                 />
-                <Button
+                <button
+                  type="button"
                   onClick={handleSend}
                   disabled={!inputValue.trim() || isSending}
-                  size="icon"
-                  className="h-11 w-11 shrink-0 rounded-xl"
+                  className="btn primary"
+                  aria-label="Enviar mensaje"
+                  style={{
+                    height: 44,
+                    width: 44,
+                    flexShrink: 0,
+                    borderRadius: 12,
+                    padding: 0,
+                    justifyContent: "center",
+                  }}
                 >
                   {isSending ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span
+                      className="spin"
+                      style={{
+                        width: 16,
+                        height: 16,
+                        borderColor: "currentColor",
+                        borderTopColor: "transparent",
+                      }}
+                    />
                   ) : (
-                    <Send className="h-4 w-4" />
+                    <IconSvg d={Icons.send} size={16} />
                   )}
-                </Button>
+                </button>
               </div>
-              <p className="text-xs text-muted-foreground text-center mt-2">
+              <p
+                style={{
+                  fontSize: 11,
+                  color: "var(--text-muted)",
+                  textAlign: "center",
+                  marginTop: 8,
+                }}
+              >
                 Enter para enviar, Shift+Enter para nueva línea
               </p>
             </div>
           </>
         )}
       </div>
+
+      <style jsx>{`
+        @keyframes bounce {
+          0%,
+          80%,
+          100% {
+            transform: scale(0);
+            opacity: 0.4;
+          }
+          40% {
+            transform: scale(1);
+            opacity: 1;
+          }
+        }
+        .chat-mobile-toggle {
+          display: none;
+        }
+        @media (max-width: 768px) {
+          .chat-mobile-toggle {
+            display: inline-flex;
+            position: absolute;
+            top: 8px;
+            left: 8px;
+            z-index: 20;
+          }
+          .chat-sidebar {
+            position: absolute;
+            inset: 0 auto 0 0;
+            z-index: 10;
+            background: var(--bg-elevated) !important;
+            box-shadow: var(--shadow-lg);
+          }
+          .chat-sidebar[data-open="false"] {
+            transform: translateX(-100%);
+          }
+        }
+        .chat-session-row .chat-delete-btn {
+          opacity: 0;
+          transition: opacity 0.15s;
+        }
+        .chat-session-row:hover .chat-delete-btn {
+          opacity: 1;
+        }
+      `}</style>
     </div>
   );
 }

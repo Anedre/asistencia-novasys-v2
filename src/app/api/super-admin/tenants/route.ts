@@ -12,7 +12,7 @@ export const GET = withErrorHandler(async () => {
   const tenantsWithCounts = await Promise.all(
     tenants.map(async (tenant) => {
       try {
-        const employees = await getAllEmployees(tenant.TenantID);
+        const { items: employees } = await getAllEmployees(tenant.TenantID);
         return { ...tenant, employeeCount: employees.length };
       } catch {
         return { ...tenant, employeeCount: 0 };

@@ -1,62 +1,60 @@
 "use client";
 
-/**
- * Settings → Branding
- * Logo upload + primary color picker + live preview.
- *
- * The logo uploads immediately to S3 via /api/admin/tenant/logo and is
- * applied to tenant.branding.logoUrl. Color changes are batched until the
- * admin clicks Save (to avoid spamming the tenant settings endpoint).
- */
-
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Palette, Building2 } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Label } from "@/components/ui/label";
-import { Skeleton } from "@/components/ui/skeleton";
-import { SettingsSection } from "@/components/admin/settings/SettingsSection";
-import { SettingsFooter } from "@/components/admin/settings/SettingsFooter";
-import { ColorPicker } from "@/components/admin/settings/ColorPicker";
-import { LogoUploader } from "@/components/admin/settings/LogoUploader";
-import {
-  useTenantSettings,
-  useSaveTenantSettings,
-} from "@/hooks/use-tenant-settings";
+import { useQueryClient } from "@tanstack/react-query";
+import { useTenantSettings, useSaveTenantSettings } from "@/hooks/use-tenant-settings";
+import { SettingsCard, SaveBar } from "@/components/admin/settings/SettingsCard";
+import { NovaLogo } from "@/components/nova/logo";
+import { IconSvg, Icons } from "@/components/nova/icons";
+
+const PRESET_COLORS = ["#3FBEFF", "#0A1628", "#10B981", "#8B5CF6", "#F59E0B", "#F43F5E"];
 
 export default function BrandingSettingsPage() {
   const { data, isLoading } = useTenantSettings();
   const saveTenantSettings = useSaveTenantSettings();
+  const queryClient = useQueryClient();
   const tenant = data?.tenant;
+  const fileRef = useRef<HTMLInputElement>(null);
 
-  const [primaryColor, setPrimaryColor] = useState("#6366f1");
-  const [savedColor, setSavedColor] = useState("#6366f1");
-  // Logo is managed by the uploader, which talks directly to the upload
-  // endpoint — the state here only mirrors what the server returned so the
-  // preview updates without a full refetch.
-  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [accentColor, setAccentColor] = useState("#3FBEFF");
+  const [tagline, setTagline] = useState("");
+  const [welcomeMessage, setWelcomeMessage] = useState("");
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+
+  const saved = useMemo(
+    () => ({
+      accentColor: tenant?.settings?.accentColor ?? "#3FBEFF",
+      tagline: tenant?.settings?.tagline ?? "",
+      welcomeMessage: tenant?.settings?.welcomeMessage ?? "",
+    }),
+    [tenant]
+  );
 
   useEffect(() => {
-    if (!tenant) return;
-    setPrimaryColor(tenant.branding?.primaryColor ?? "#6366f1");
-    setSavedColor(tenant.branding?.primaryColor ?? "#6366f1");
-    setLogoUrl(tenant.branding?.logoUrl ?? null);
-  }, [tenant]);
+    setAccentColor(saved.accentColor);
+    setTagline(saved.tagline);
+    setWelcomeMessage(saved.welcomeMessage);
+  }, [saved]);
 
-  const dirty = primaryColor !== savedColor;
+  const dirty =
+    accentColor !== saved.accentColor ||
+    tagline !== saved.tagline ||
+    welcomeMessage !== saved.welcomeMessage;
+
+  function discard() {
+    setAccentColor(saved.accentColor);
+    setTagline(saved.tagline);
+    setWelcomeMessage(saved.welcomeMessage);
+  }
 
   async function handleSave() {
     setSaving(true);
     try {
       await saveTenantSettings({
-        branding: {
-          primaryColor,
-          secondaryColor: primaryColor,
-          accentColor: primaryColor,
-        },
+        settings: { accentColor, tagline, welcomeMessage },
       });
-      setSavedColor(primaryColor);
       toast.success("Marca actualizada");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Error al guardar");
@@ -65,117 +63,144 @@ export default function BrandingSettingsPage() {
     }
   }
 
-  if (isLoading || !tenant) return <Skeleton className="h-96 w-full" />;
+  async function handleLogoUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error("Imagen demasiado grande (máx. 2MB)");
+      return;
+    }
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("logo", file);
+      const res = await fetch("/api/admin/tenant/logo", { method: "POST", body: formData });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Error al subir logo");
+      queryClient.invalidateQueries({ queryKey: ["tenant"] });
+      toast.success("Logo actualizado");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Error al subir");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  if (isLoading || !tenant) {
+    return (
+      <div className="panel" style={{ padding: 40, textAlign: "center", color: "var(--text-muted)" }}>
+        Cargando…
+      </div>
+    );
+  }
 
   return (
-    <SettingsSection
-      icon={Palette}
-      title="Marca de la empresa"
-      description="Logo y colores que ven los empleados"
-    >
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Logo</CardTitle>
-          <p className="text-xs text-muted-foreground">
-            Se usa en la barra lateral, los correos de invitación y los reportes
-          </p>
-        </CardHeader>
-        <CardContent>
-          <LogoUploader
-            value={logoUrl}
-            onChange={(v) => {
-              setLogoUrl(v);
-              if (v) {
-                toast.success("Logo actualizado");
-              }
+    <>
+      <SettingsCard title="Logo" subtitle="Tu marca en la interfaz de tus empleados.">
+        <div style={{ display: "flex", gap: 20, alignItems: "center", flexWrap: "wrap" }}>
+          <div
+            style={{
+              width: 120,
+              height: 120,
+              border: "2px dashed var(--border)",
+              borderRadius: "var(--r)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              background: "var(--bg-subtle)",
+              flexShrink: 0,
             }}
+          >
+            {(tenant.branding?.logoUrl ?? tenant.logoUrl) ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={tenant.branding?.logoUrl ?? tenant.logoUrl}
+                alt={tenant.name ?? tenant.tenantName ?? "Logo"}
+                style={{ maxWidth: "85%", maxHeight: "85%", objectFit: "contain" }}
+              />
+            ) : (
+              <NovaLogo size={48} showText={false} />
+            )}
+          </div>
+          <div style={{ flex: 1, minWidth: 200 }}>
+            <input ref={fileRef} type="file" accept="image/*" hidden onChange={handleLogoUpload} />
+            <button
+              type="button"
+              className="btn outline btn-md"
+              onClick={() => fileRef.current?.click()}
+              disabled={uploading}
+            >
+              <IconSvg d={Icons.upload} size={14} /> {uploading ? "Subiendo…" : "Subir logo"}
+            </button>
+            <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 8 }}>
+              PNG o SVG, mínimo 256×256px, máximo 2MB.
+            </p>
+          </div>
+        </div>
+      </SettingsCard>
+
+      <SettingsCard
+        title="Color de marca"
+        subtitle="Acento principal usado en botones y elementos destacados."
+      >
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          {PRESET_COLORS.map((c) => (
+            <button
+              key={c}
+              type="button"
+              onClick={() => setAccentColor(c)}
+              aria-label={`Color ${c}`}
+              style={{
+                width: 40,
+                height: 40,
+                borderRadius: 8,
+                background: c,
+                border: c.toLowerCase() === accentColor.toLowerCase()
+                  ? `3px solid var(--accent)`
+                  : "2px solid var(--border)",
+                cursor: "pointer",
+                padding: 0,
+              }}
+            />
+          ))}
+          <input
+            type="color"
+            value={accentColor}
+            onChange={(e) => setAccentColor(e.target.value)}
+            style={{ width: 56, height: 40, padding: 4, marginLeft: 4, borderRadius: 6, border: "1px solid var(--border)" }}
           />
-        </CardContent>
-      </Card>
+          <input
+            className="form-input"
+            value={accentColor}
+            onChange={(e) => setAccentColor(e.target.value)}
+            style={{ width: 120, marginLeft: 4, fontFamily: "var(--font-mono)" }}
+          />
+        </div>
+      </SettingsCard>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Color principal</CardTitle>
-          <p className="text-xs text-muted-foreground">
-            Se aplica a botones, links y acentos de la interfaz
-          </p>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-1.5">
-            <Label className="text-xs">Elige un color</Label>
-            <ColorPicker value={primaryColor} onChange={setPrimaryColor} />
-          </div>
-        </CardContent>
-      </Card>
+      <SettingsCard title="Cabecera personalizada" subtitle="Mensaje visible en login y bienvenida.">
+        <div className="form-group">
+          <label className="form-label">Frase corporativa</label>
+          <input
+            className="form-input"
+            value={tagline}
+            onChange={(e) => setTagline(e.target.value)}
+            placeholder="Construyendo el futuro del trabajo"
+          />
+        </div>
+        <div className="form-group">
+          <label className="form-label">Mensaje de bienvenida</label>
+          <textarea
+            className="form-textarea"
+            rows={3}
+            value={welcomeMessage}
+            onChange={(e) => setWelcomeMessage(e.target.value)}
+            placeholder="Bienvenido al sistema de asistencia. Cualquier duda, contacta a RRHH."
+          />
+        </div>
+      </SettingsCard>
 
-      {/* Live preview */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Previsualización</CardTitle>
-          <p className="text-xs text-muted-foreground">
-            Así se ve tu marca aplicada a los elementos principales
-          </p>
-        </CardHeader>
-        <CardContent>
-          <div className="rounded-xl border bg-muted/10 p-5">
-            <div className="flex items-center gap-4">
-              <div
-                className="flex h-14 w-14 items-center justify-center rounded-xl text-xl font-bold text-white shadow-sm"
-                style={{ background: primaryColor }}
-              >
-                {logoUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={logoUrl}
-                    alt="Logo"
-                    className="h-11 w-11 rounded-lg object-contain"
-                  />
-                ) : (
-                  <Building2 className="h-6 w-6" />
-                )}
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-base font-semibold">{tenant.name}</p>
-                <p className="text-xs text-muted-foreground">
-                  Botones y enlaces usarán este color
-                </p>
-                <div className="mt-3 flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    className="rounded-md px-3 py-1.5 text-xs font-medium text-white shadow-sm"
-                    style={{ background: primaryColor }}
-                  >
-                    Botón primario
-                  </button>
-                  <button
-                    type="button"
-                    className="rounded-md border px-3 py-1.5 text-xs font-medium"
-                    style={{
-                      borderColor: primaryColor,
-                      color: primaryColor,
-                    }}
-                  >
-                    Botón outline
-                  </button>
-                  <span
-                    className="text-xs font-medium"
-                    style={{ color: primaryColor }}
-                  >
-                    Link ejemplo →
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      <SettingsFooter
-        dirty={dirty}
-        saving={saving}
-        onSave={handleSave}
-        onDiscard={() => setPrimaryColor(savedColor)}
-      />
-    </SettingsSection>
+      <SaveBar dirty={dirty} saving={saving} onSave={handleSave} onDiscard={discard} />
+    </>
   );
 }

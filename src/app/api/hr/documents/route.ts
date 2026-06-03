@@ -19,5 +19,5 @@ export const GET = withErrorHandler(async () => {
     createdAt: d.CreatedAt,
   }));
 
-  return NextResponse.json(documents);
+  return NextResponse.json({ ok: true, documents });
 });

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { cognitoSignUp, getCognitoErrorMessage } from "@/lib/cognito";
-import { createEmployee } from "@/lib/db/employees";
-import { createTenant, getTenantBySlug } from "@/lib/db/tenants";
+import { cognitoDeleteUser, cognitoSignUp, getCognitoErrorMessage } from "@/lib/cognito";
+import { createEmployee, deleteEmployee } from "@/lib/db/employees";
+import { createTenant, deleteTenant, getTenantBySlug } from "@/lib/db/tenants";
 import type { Employee } from "@/lib/types";
 import type { Tenant } from "@/lib/types/tenant";
 
@@ -60,7 +60,17 @@ export async function POST(request: Request) {
       );
     }
 
-    // Check if slug is already taken
+    // ── Saga: create Tenant → Cognito user → Employee, rolling back
+    //    each completed step on failure of the next so we never leave
+    //    orphan Cognito accounts or half-created tenants.
+    //
+    //    Step 1 (create tenant) is conditional on attribute_not_exists,
+    //    which makes the slug claim atomic: two concurrent registrations
+    //    with the same slug — the loser gets ConditionalCheckFailed.
+
+    // Cheap pre-check just to give a 409 with a clear message before we
+    // start spending Cognito quota; the conditional put below is the
+    // real source of truth.
     const existingTenant = await getTenantBySlug(companySlug);
     if (existingTenant) {
       return NextResponse.json(
@@ -69,19 +79,12 @@ export async function POST(request: Request) {
       );
     }
 
-    // 1) Create user in Cognito
-    const cognitoResult = await cognitoSignUp({
-      email,
-      password,
-      fullName,
-      phoneNumber,
-      nickname: nickname || companySlug,
-    });
-
     const now = new Date().toISOString();
     const tenantId = `TENANT#${companySlug}`;
+    const employeeId = `EMP#${email.toLowerCase()}`;
+    let tenantCreated = false;
+    let cognitoUsername: string | null = null;
 
-    // 2) Create Tenant record
     const tenant: Tenant = {
       TenantID: tenantId,
       slug: companySlug,
@@ -108,7 +111,42 @@ export async function POST(request: Request) {
       updatedAt: now,
     };
 
-    await createTenant(tenant);
+    try {
+      // 1) Create Tenant first — conditional on attribute_not_exists,
+      //    so a slug race resolves cleanly at this step.
+      await createTenant(tenant);
+      tenantCreated = true;
+    } catch (err) {
+      if (
+        err &&
+        typeof err === "object" &&
+        "name" in err &&
+        (err as { name: string }).name === "ConditionalCheckFailedException"
+      ) {
+        return NextResponse.json(
+          { error: "Este nombre de empresa ya esta registrado. Elige otro slug." },
+          { status: 409 },
+        );
+      }
+      throw err;
+    }
+
+    let cognitoResult: { userSub: string; username: string };
+    try {
+      // 2) Create user in Cognito
+      cognitoResult = await cognitoSignUp({
+        email,
+        password,
+        fullName,
+        phoneNumber,
+        nickname: nickname || companySlug,
+      });
+      cognitoUsername = cognitoResult.username;
+    } catch (err) {
+      // Roll back the tenant — no admin user => unusable tenant.
+      if (tenantCreated) await deleteTenant(tenantId).catch(() => undefined);
+      throw err;
+    }
 
     // 3) Create Employee record as ADMIN of the new tenant
     const nameParts = fullName.trim().split(/\s+/);
@@ -117,7 +155,7 @@ export async function POST(request: Request) {
 
     const employee: Employee = {
       TenantID: tenantId,
-      EmployeeID: `EMP#${email.toLowerCase()}`,
+      EmployeeID: employeeId,
       Email: email.toLowerCase(),
       DNI: `PENDING-${Date.now()}`,
       FullName: fullName.trim(),
@@ -144,7 +182,12 @@ export async function POST(request: Request) {
     try {
       await createEmployee(employee);
     } catch (dbError) {
-      console.error("[register-company] Error creating employee:", dbError);
+      // Roll back Cognito + Tenant — an orphan Cognito account that
+      // cannot sign in (no employee row) is the worst possible state.
+      if (cognitoUsername)
+        await cognitoDeleteUser(cognitoUsername).catch(() => undefined);
+      if (tenantCreated) await deleteTenant(tenantId).catch(() => undefined);
+      throw dbError;
     }
 
     return NextResponse.json({
@@ -156,7 +199,11 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     const message = getCognitoErrorMessage(error);
-    console.error("[register-company]", error);
+    console.error(
+      "[register-company]",
+      (error as { name?: string })?.name,
+      (error as { message?: string })?.message,
+    );
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }

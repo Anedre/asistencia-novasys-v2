@@ -23,7 +23,7 @@ export const POST = withErrorHandler(async () => {
     TenantID: user.tenantId,
     Title: "Nueva conversación",
     Messages: [],
-    Model: "anthropic.claude-3-haiku-20240307-v1:0",
+    Model: process.env.BEDROCK_MODEL_ID || "us.anthropic.claude-haiku-4-5-20251001-v1:0",
     CreatedAt: now,
     UpdatedAt: now,
   };

@@ -55,6 +55,24 @@ export function errorResponse(error: unknown): NextResponse {
     );
   }
 
+  // Zod validation errors — surface as 400 with the first issue's path so
+  // the client gets a useful hint (instead of a generic 500).
+  if (error instanceof Error && error.name === "ZodError") {
+    interface ZodIssue { message?: string; path?: Array<string | number> }
+    const issues = (error as Error & { issues?: ZodIssue[] }).issues;
+    const first: ZodIssue | undefined = Array.isArray(issues) ? issues[0] : undefined;
+    const field = first?.path?.length ? first.path.join(".") : null;
+    const msg = first?.message ?? "Datos inválidos";
+    return NextResponse.json(
+      {
+        ok: false,
+        error: field ? `${field}: ${msg}` : msg,
+        code: "VALIDATION_ERROR",
+      },
+      { status: 400 },
+    );
+  }
+
   // DynamoDB ConditionalCheckFailedException
   if (
     error instanceof Error &&
@@ -66,7 +84,11 @@ export function errorResponse(error: unknown): NextResponse {
     );
   }
 
-  console.error("Unhandled error:", error);
+  console.error(
+    "Unhandled error:",
+    (error as { name?: string })?.name,
+    (error as { message?: string })?.message,
+  );
   return NextResponse.json(
     { ok: false, error: "Error interno del servidor" },
     { status: 500 }

@@ -1,32 +1,38 @@
 "use client";
 
-/**
- * Settings section layout — sidebar on the left (desktop) or horizontal
- * scroller (mobile) + content pane on the right.
- *
- * The outer admin layout already provides the global sidebar + header,
- * so this layout just organizes the inner split.
- */
-
 import type { ReactNode } from "react";
 import { SettingsSidebar } from "@/components/admin/settings/SettingsSidebar";
 
 export default function SettingsLayout({ children }: { children: ReactNode }) {
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Configuración</h1>
-        <p className="text-sm text-muted-foreground">
-          Administra la información y las preferencias de tu empresa
-        </p>
+    <>
+      <div className="page-header">
+        <div className="page-header-row">
+          <div>
+            <h1 className="page-title">Configuración</h1>
+            <p className="page-sub">Personaliza Novaassistance para tu organización.</p>
+          </div>
+        </div>
       </div>
 
-      {/* Grid: sidebar 260px + main */}
-      <div className="grid gap-6 lg:grid-cols-[260px_1fr]">
+      <div className="settings-layout">
         <SettingsSidebar />
-        <div className="min-w-0">{children}</div>
+        <div style={{ minWidth: 0 }}>{children}</div>
       </div>
-    </div>
+
+      <style jsx>{`
+        .settings-layout {
+          display: grid;
+          grid-template-columns: 220px 1fr;
+          gap: 20px;
+          align-items: start;
+        }
+        @media (max-width: 1000px) {
+          .settings-layout {
+            grid-template-columns: 1fr;
+          }
+        }
+      `}</style>
+    </>
   );
 }

@@ -1,57 +1,92 @@
 "use client";
 
-/**
- * Settings → General
- * Company name (read-only), slug (read-only), timezone (editable), plan info.
- */
-
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Building2, Globe, Hash, CheckCircle2, ShieldCheck } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { SettingsSection } from "@/components/admin/settings/SettingsSection";
-import { SettingsFooter } from "@/components/admin/settings/SettingsFooter";
-import {
-  useTenantSettings,
-  useSaveTenantSettings,
-} from "@/hooks/use-tenant-settings";
+import { useTenantSettings, useSaveTenantSettings } from "@/hooks/use-tenant-settings";
 import { TIMEZONES } from "@/lib/constants/tenant-defaults";
+import { SettingsCard, SaveBar } from "@/components/admin/settings/SettingsCard";
 
 export default function GeneralSettingsPage() {
   const { data, isLoading } = useTenantSettings();
   const saveTenantSettings = useSaveTenantSettings();
-
   const tenant = data?.tenant;
+
   const [timezone, setTimezone] = useState("America/Lima");
-  const [savedTimezone, setSavedTimezone] = useState("America/Lima");
+  const [weekStart, setWeekStart] = useState("MONDAY");
+  const [dateFormat, setDateFormat] = useState("DD/MM/YYYY");
+  const [timeFormat, setTimeFormat] = useState("24h");
+  const [tradeName, setTradeName] = useState("");
+  const [legalName, setLegalName] = useState("");
+  const [ruc, setRuc] = useState("");
+  const [industry, setIndustry] = useState("Tecnología");
+  const [address, setAddress] = useState("");
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    if (tenant?.settings?.timezone) {
-      setTimezone(tenant.settings.timezone);
-      setSavedTimezone(tenant.settings.timezone);
-    }
-  }, [tenant]);
+  const saved = useMemo(
+    () => ({
+      timezone: tenant?.settings?.timezone ?? "America/Lima",
+      weekStart: tenant?.settings?.weekStart ?? "MONDAY",
+      dateFormat: tenant?.settings?.dateFormat ?? "DD/MM/YYYY",
+      timeFormat: tenant?.settings?.timeFormat ?? "24h",
+      tradeName: tenant?.name ?? tenant?.tenantName ?? "",
+      legalName: tenant?.settings?.legalName ?? tenant?.name ?? "",
+      ruc: tenant?.settings?.ruc ?? "",
+      industry: tenant?.settings?.industry ?? "Tecnología",
+      address: tenant?.settings?.address ?? "",
+    }),
+    [tenant]
+  );
 
-  const dirty = timezone !== savedTimezone;
+  useEffect(() => {
+    setTimezone(saved.timezone);
+    setWeekStart(saved.weekStart);
+    setDateFormat(saved.dateFormat);
+    setTimeFormat(saved.timeFormat);
+    setTradeName(saved.tradeName);
+    setLegalName(saved.legalName);
+    setRuc(saved.ruc);
+    setIndustry(saved.industry);
+    setAddress(saved.address);
+  }, [saved]);
+
+  const dirty =
+    timezone !== saved.timezone ||
+    weekStart !== saved.weekStart ||
+    dateFormat !== saved.dateFormat ||
+    timeFormat !== saved.timeFormat ||
+    legalName !== saved.legalName ||
+    ruc !== saved.ruc ||
+    industry !== saved.industry ||
+    address !== saved.address;
+
+  function discard() {
+    setTimezone(saved.timezone);
+    setWeekStart(saved.weekStart);
+    setDateFormat(saved.dateFormat);
+    setTimeFormat(saved.timeFormat);
+    setTradeName(saved.tradeName);
+    setLegalName(saved.legalName);
+    setRuc(saved.ruc);
+    setIndustry(saved.industry);
+    setAddress(saved.address);
+  }
 
   async function handleSave() {
     setSaving(true);
     try {
-      await saveTenantSettings({ settings: { timezone } });
-      setSavedTimezone(timezone);
-      toast.success("Zona horaria actualizada");
+      await saveTenantSettings({
+        settings: {
+          timezone,
+          weekStart,
+          dateFormat,
+          timeFormat,
+          legalName,
+          ruc,
+          industry,
+          address,
+        },
+      });
+      toast.success("Configuración general actualizada");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Error al guardar");
     } finally {
@@ -60,124 +95,125 @@ export default function GeneralSettingsPage() {
   }
 
   if (isLoading || !tenant) {
-    return <Skeleton className="h-96 w-full" />;
+    return (
+      <div className="panel" style={{ padding: 40, textAlign: "center", color: "var(--text-muted)" }}>
+        Cargando…
+      </div>
+    );
   }
 
   return (
-    <SettingsSection
-      icon={Building2}
-      title="Información general"
-      description="Datos básicos de tu empresa y zona horaria"
-      rightSlot={
-        <Badge variant="outline" className="text-[10px] uppercase">
-          Plan {tenant.plan}
-        </Badge>
-      }
-    >
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Identidad</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">
-                <Building2 className="mr-1 inline h-3 w-3" />
-                Nombre de la empresa
-              </Label>
-              <Input
-                value={tenant.name}
-                disabled
-                className="h-10 bg-muted/40"
-              />
-              <p className="text-xs text-muted-foreground">
-                Para cambiarlo, contacta soporte.
-              </p>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">
-                <Hash className="mr-1 inline h-3 w-3" />
-                Identificador público
-              </Label>
-              <Input
-                value={tenant.slug}
-                disabled
-                className="h-10 bg-muted/40 font-mono"
-              />
-              <p className="text-xs text-muted-foreground">
-                Se usa en los enlaces de invitación.
-              </p>
-            </div>
+    <>
+      <SettingsCard
+        title="Información de la empresa"
+        subtitle="Datos legales y de contacto."
+      >
+        <div className="form-row">
+          <div className="form-group">
+            <label className="form-label">Nombre comercial</label>
+            <input
+              className="form-input"
+              value={tradeName}
+              onChange={(e) => setTradeName(e.target.value)}
+              disabled
+            />
           </div>
-        </CardContent>
-      </Card>
+          <div className="form-group">
+            <label className="form-label">Razón social</label>
+            <input
+              className="form-input"
+              value={legalName}
+              onChange={(e) => setLegalName(e.target.value)}
+              placeholder="Tu Empresa SAC"
+            />
+          </div>
+        </div>
+        <div className="form-row">
+          <div className="form-group">
+            <label className="form-label">RUC</label>
+            <input
+              className="form-input"
+              value={ruc}
+              onChange={(e) => setRuc(e.target.value)}
+              placeholder="20512345678"
+            />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Industria</label>
+            <select className="form-select" value={industry} onChange={(e) => setIndustry(e.target.value)}>
+              <option>Tecnología</option>
+              <option>Retail / Comercio</option>
+              <option>Manufactura</option>
+              <option>Servicios profesionales</option>
+              <option>Salud</option>
+              <option>Educación</option>
+              <option>Otro</option>
+            </select>
+          </div>
+        </div>
+        <div className="form-group">
+          <label className="form-label">Dirección fiscal</label>
+          <input
+            className="form-input"
+            value={address}
+            onChange={(e) => setAddress(e.target.value)}
+            placeholder="Av. Javier Prado Este 1234, San Isidro, Lima"
+          />
+        </div>
+      </SettingsCard>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Zona horaria</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-1.5">
-            <Label htmlFor="timezone" className="text-xs text-muted-foreground">
-              <Globe className="mr-1 inline h-3 w-3" />
-              Esta zona se usa para las marcaciones, reportes y feriados.
-            </Label>
-            <Select
-              value={timezone}
-              onValueChange={(v) => {
-                if (v) setTimezone(v);
-              }}
+      <SettingsCard title="Zona horaria y formato" subtitle="Cómo se muestran las fechas y horas.">
+        <div className="form-row">
+          <div className="form-group">
+            <label className="form-label">Zona horaria</label>
+            <select className="form-select" value={timezone} onChange={(e) => setTimezone(e.target.value)}>
+              {TIMEZONES.map((tz) => (
+                <option key={tz} value={tz}>
+                  {tz}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="form-group">
+            <label className="form-label">Inicio de semana</label>
+            <select
+              className="form-select"
+              value={weekStart}
+              onChange={(e) => setWeekStart(e.target.value)}
             >
-              <SelectTrigger className="h-10">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {TIMEZONES.map((tz) => (
-                  <SelectItem key={tz} value={tz}>
-                    {tz}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              <option value="MONDAY">Lunes</option>
+              <option value="SUNDAY">Domingo</option>
+            </select>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+        <div className="form-row">
+          <div className="form-group">
+            <label className="form-label">Formato de fecha</label>
+            <select
+              className="form-select"
+              value={dateFormat}
+              onChange={(e) => setDateFormat(e.target.value)}
+            >
+              <option>DD/MM/YYYY</option>
+              <option>MM/DD/YYYY</option>
+              <option>YYYY-MM-DD</option>
+            </select>
+          </div>
+          <div className="form-group">
+            <label className="form-label">Formato de hora</label>
+            <select
+              className="form-select"
+              value={timeFormat}
+              onChange={(e) => setTimeFormat(e.target.value)}
+            >
+              <option value="24h">24h (18:30)</option>
+              <option value="12h">12h (6:30 PM)</option>
+            </select>
+          </div>
+        </div>
+      </SettingsCard>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Plan y estado</CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-4 sm:grid-cols-3">
-          <div className="rounded-lg border bg-muted/20 p-3">
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <ShieldCheck className="h-3.5 w-3.5" /> Plan actual
-            </div>
-            <p className="mt-1 text-lg font-semibold">{tenant.plan}</p>
-          </div>
-          <div className="rounded-lg border bg-muted/20 p-3">
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <CheckCircle2 className="h-3.5 w-3.5" /> Estado
-            </div>
-            <p className="mt-1 text-lg font-semibold">
-              {tenant.status === "ACTIVE" ? "Activo" : tenant.status}
-            </p>
-          </div>
-          <div className="rounded-lg border bg-muted/20 p-3">
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              Máx. empleados
-            </div>
-            <p className="mt-1 text-lg font-semibold">{tenant.maxEmployees}</p>
-          </div>
-        </CardContent>
-      </Card>
-
-      <SettingsFooter
-        dirty={dirty}
-        saving={saving}
-        onSave={handleSave}
-        onDiscard={() => setTimezone(savedTimezone)}
-      />
-    </SettingsSection>
+      <SaveBar dirty={dirty} saving={saving} onSave={handleSave} onDiscard={discard} />
+    </>
   );
 }

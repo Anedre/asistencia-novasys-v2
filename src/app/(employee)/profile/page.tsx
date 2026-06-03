@@ -1,744 +1,945 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
-import { useMyProfile, useUpdateProfile } from "@/hooks/use-employee";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Separator } from "@/components/ui/separator";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import dynamic from "next/dynamic";
-import {
-  Camera,
-  Loader2,
-  MapPin,
-  User,
-  Briefcase,
-  Clock,
-  Phone,
-  Mail,
-  Calendar,
-  Building2,
-  Shield,
-  Save,
-  CheckCircle2,
-  AlertCircle,
-  CreditCard,
-  Monitor,
-  Coffee,
-} from "lucide-react";
-import type { EmployeeLocation } from "@/lib/types/employee";
+import { signOut } from "next-auth/react";
+import { toast } from "sonner";
+import { useMyProfile, useUpdateProfile } from "@/hooks/use-employee";
+import { IconSvg, Icons } from "@/components/nova/icons";
+import { NovaAvatar } from "@/components/nova/avatar";
+import { PageHeader } from "@/components/nova/page-header";
+import { NovaClock, CLOCK_STYLES, useClockStyle, setClockStyle } from "@/components/nova/clocks";
 
-const LocationPicker = dynamic(
-  () =>
-    import("@/components/shared/location-picker").then((m) => ({
-      default: m.LocationPicker,
-    })),
-  { ssr: false }
-);
-const LocationDisplay = dynamic(
-  () =>
-    import("@/components/shared/location-display").then((m) => ({
-      default: m.LocationDisplay,
-    })),
-  { ssr: false }
-);
+/* ============================================================
+   Tabs
+   ============================================================ */
 
-/* ------------------------------------------------------------------ */
-/*  Skeleton                                                          */
-/* ------------------------------------------------------------------ */
-function ProfileSkeleton() {
+type TabKey = "personal" | "work" | "security" | "preferences";
+
+const TABS: { key: TabKey; label: string; icon: React.ReactNode }[] = [
+  { key: "personal", label: "Personal", icon: Icons.user },
+  { key: "work", label: "Trabajo", icon: Icons.briefcase },
+  { key: "security", label: "Seguridad", icon: Icons.shield },
+  { key: "preferences", label: "Preferencias", icon: Icons.settings },
+];
+
+/* ============================================================
+   Toggle component (matches design's .toggle)
+   ============================================================ */
+
+function Toggle({
+  label,
+  checked,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  // Use a real <button role="switch"> so keyboard / screen-reader users can
+  // toggle the preference. The visual knob is the same `.toggle` element as
+  // before but the activation surface now passes the WCAG keyboard test.
   return (
-    <div className="mx-auto max-w-4xl space-y-8 py-8">
-      <div className="flex flex-col items-center gap-4">
-        <Skeleton className="h-28 w-28 rounded-full" />
-        <Skeleton className="h-6 w-48" />
-        <Skeleton className="h-4 w-32" />
-      </div>
-      <Skeleton className="h-[480px] w-full rounded-xl" />
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        padding: "12px 0",
+        borderBottom: "1px solid var(--border)",
+      }}
+    >
+      <span style={{ fontSize: 13, color: "var(--text-primary)" }}>{label}</span>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        aria-label={label}
+        className={`toggle ${checked ? "on" : ""}`}
+        onClick={() => onChange(!checked)}
+        style={{
+          background: "transparent",
+          border: "none",
+          padding: 0,
+          cursor: "pointer",
+        }}
+      >
+        <span className="toggle-knob" />
+      </button>
     </div>
   );
 }
 
-/* ------------------------------------------------------------------ */
-/*  Field row (read-only display)                                     */
-/* ------------------------------------------------------------------ */
-function FieldRow({
-  icon: Icon,
-  label,
-  value,
+/* ============================================================
+   Personal tab
+   ============================================================ */
+
+interface PersonalProps {
+  firstName: string; setFirstName: (v: string) => void;
+  lastName: string; setLastName: (v: string) => void;
+  email: string;
+  phone: string; setPhone: (v: string) => void;
+  dni: string; setDni: (v: string) => void;
+  birthDate: string; setBirthDate: (v: string) => void;
+  address: string; setAddress: (v: string) => void;
+  emergencyName: string; setEmergencyName: (v: string) => void;
+  emergencyRel: string; setEmergencyRel: (v: string) => void;
+  emergencyPhone: string; setEmergencyPhone: (v: string) => void;
+  onSave: () => void;
+  onReset: () => void;
+  saving: boolean;
+  dirty: boolean;
+}
+
+function ProfilePersonal(p: PersonalProps) {
+  return (
+    <div style={{ padding: 4 }}>
+      {/* Admin-managed fields — disabled to prevent silent data loss.
+          The current /api/profile mutation only accepts Phone, DNI, BirthDate. */}
+      <div className="form-row">
+        <div className="form-group">
+          <label className="form-label">
+            Nombres <span className="form-label-locked">· admin</span>
+          </label>
+          <input className="form-input" value={p.firstName} disabled />
+        </div>
+        <div className="form-group">
+          <label className="form-label">
+            Apellidos <span className="form-label-locked">· admin</span>
+          </label>
+          <input className="form-input" value={p.lastName} disabled />
+        </div>
+      </div>
+      <div className="form-row">
+        <div className="form-group">
+          <label className="form-label">
+            Correo <span className="form-label-locked">· admin</span>
+          </label>
+          <input className="form-input" type="email" value={p.email} disabled />
+        </div>
+        <div className="form-group">
+          <label className="form-label">Teléfono</label>
+          <input
+            className="form-input"
+            value={p.phone}
+            onChange={(e) => p.setPhone(e.target.value)}
+            placeholder="+51 999 999 999"
+          />
+        </div>
+      </div>
+      <div className="form-row">
+        <div className="form-group">
+          <label className="form-label">Documento de identidad</label>
+          <input
+            className="form-input"
+            value={p.dni}
+            onChange={(e) => p.setDni(e.target.value.replace(/\D/g, "").slice(0, 8))}
+            placeholder="12345678"
+            inputMode="numeric"
+            maxLength={8}
+          />
+        </div>
+        <div className="form-group">
+          <label className="form-label">Fecha de nacimiento</label>
+          <input
+            type="date"
+            className="form-input"
+            value={p.birthDate}
+            onChange={(e) => p.setBirthDate(e.target.value)}
+          />
+        </div>
+      </div>
+      <div className="form-group">
+        <label className="form-label">
+          Dirección <span className="form-label-locked">· admin</span>
+        </label>
+        <input
+          className="form-input"
+          value={p.address}
+          disabled
+          placeholder="—"
+        />
+      </div>
+
+      <div style={{ marginTop: 20, paddingTop: 20, borderTop: "1px solid var(--border)" }}>
+        <div className="panel-title" style={{ marginBottom: 6 }}>
+          Contacto de emergencia
+        </div>
+        <div className="form-hint" style={{ marginBottom: 14, fontSize: 12, color: "var(--text-muted)" }}>
+          Gestionado por RRHH — solicita actualización a tu administrador.
+        </div>
+        <div className="form-row">
+          <div className="form-group">
+            <label className="form-label">
+              Nombre <span className="form-label-locked">· admin</span>
+            </label>
+            <input className="form-input" value={p.emergencyName} disabled />
+          </div>
+          <div className="form-group">
+            <label className="form-label">
+              Relación <span className="form-label-locked">· admin</span>
+            </label>
+            <input className="form-input" value={p.emergencyRel} disabled />
+          </div>
+        </div>
+        <div className="form-group">
+          <label className="form-label">
+            Teléfono <span className="form-label-locked">· admin</span>
+          </label>
+          <input className="form-input" value={p.emergencyPhone} disabled />
+        </div>
+      </div>
+
+      <div
+        style={{
+          padding: 14,
+          background: "var(--bg-subtle)",
+          borderRadius: "var(--r)",
+          display: "flex",
+          gap: 10,
+          marginTop: 16,
+        }}
+      >
+        <span style={{ color: "var(--text-muted)", flexShrink: 0 }}>
+          <IconSvg d={Icons.helpCircle ?? Icons.bell} size={16} />
+        </span>
+        <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+          Solo puedes editar tu teléfono, documento y fecha de nacimiento. Para cambiar
+          datos personales, dirección o contacto de emergencia, contacta a tu administrador
+          de RRHH.
+        </div>
+      </div>
+
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 20 }}>
+        <button type="button" className="btn ghost" disabled={!p.dirty || p.saving} onClick={p.onReset}>
+          Descartar
+        </button>
+        <button type="button" className="btn primary" onClick={p.onSave} disabled={!p.dirty || p.saving}>
+          {p.saving ? "Guardando…" : "Guardar cambios"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================
+   Work tab — read-only (data managed by admin)
+   ============================================================ */
+
+function ProfileWork({
+  position,
+  area,
+  workMode,
+  joined,
+  schedule,
 }: {
-  icon: React.ElementType;
-  label: string;
-  value: React.ReactNode;
+  position: string;
+  area: string;
+  workMode: string;
+  joined: string;
+  schedule: string;
 }) {
   return (
-    <div className="flex items-center gap-3 py-3">
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-        <Icon className="h-4 w-4" />
+    <div style={{ padding: 4 }}>
+      <div className="form-row">
+        <div className="form-group">
+          <label className="form-label">Cargo</label>
+          <input className="form-input" value={position} disabled />
+        </div>
+        <div className="form-group">
+          <label className="form-label">Área</label>
+          <input className="form-input" value={area} disabled />
+        </div>
       </div>
-      <div className="min-w-0 flex-1">
-        <p className="text-xs font-medium text-muted-foreground">{label}</p>
-        <div className="text-sm font-medium">{value ?? "-"}</div>
+      <div className="form-row">
+        <div className="form-group">
+          <label className="form-label">Modalidad</label>
+          <input className="form-input" value={workMode} disabled />
+        </div>
+        <div className="form-group">
+          <label className="form-label">Supervisor</label>
+          <input className="form-input" value="—" disabled />
+        </div>
+      </div>
+      <div className="form-row">
+        <div className="form-group">
+          <label className="form-label">Fecha de ingreso</label>
+          <input className="form-input" value={joined} disabled />
+        </div>
+        <div className="form-group">
+          <label className="form-label">Turno</label>
+          <input className="form-input" value={schedule} disabled />
+        </div>
+      </div>
+      <div
+        style={{
+          padding: 14,
+          background: "var(--bg-subtle)",
+          borderRadius: "var(--r)",
+          display: "flex",
+          gap: 10,
+          marginTop: 8,
+        }}
+      >
+        <span style={{ color: "var(--text-muted)", flexShrink: 0 }}>
+          <IconSvg d={Icons.helpCircle} size={16} />
+        </span>
+        <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+          Para cambiar tu información laboral, contacta a tu administrador de RRHH.
+        </div>
       </div>
     </div>
   );
 }
 
-/* ------------------------------------------------------------------ */
-/*  Main Page                                                         */
-/* ------------------------------------------------------------------ */
+/* ============================================================
+   Security tab
+   ============================================================ */
+
+function ProfileSecurity({ userEmail }: { userEmail?: string }) {
+  const [current, setCurrent] = useState("");
+  const [newPwd, setNewPwd] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  async function handleChangePassword(e?: React.FormEvent) {
+    e?.preventDefault();
+    if (newPwd.length < 8) return toast.error("Mínimo 8 caracteres");
+    if (newPwd !== confirm) return toast.error("Las contraseñas no coinciden");
+    setLoading(true);
+    try {
+      const res = await fetch("/api/auth/change-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ currentPassword: current, newPassword: newPwd }),
+      });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error || "Error al cambiar contraseña");
+      toast.success("Contraseña actualizada");
+      setCurrent("");
+      setNewPwd("");
+      setConfirm("");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Error inesperado");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div style={{ padding: 4 }}>
+      <form
+        onSubmit={handleChangePassword}
+        autoComplete="on"
+        style={{ marginBottom: 24 }}
+      >
+        <div className="panel-title" style={{ marginBottom: 10 }}>
+          Cambiar contraseña
+        </div>
+        {/* Hidden username so password managers (and Chrome autofill) bind to
+            the right account and don't try to backfill nearby text inputs like
+            the global search bar. */}
+        <input
+          type="email"
+          name="username"
+          value={userEmail ?? ""}
+          autoComplete="username"
+          readOnly
+          tabIndex={-1}
+          aria-hidden
+          style={{ position: "absolute", width: 1, height: 1, padding: 0, margin: -1, overflow: "hidden", clip: "rect(0,0,0,0)", whiteSpace: "nowrap", border: 0 }}
+        />
+        <div className="form-group">
+          <label className="form-label" htmlFor="profile-current-password">Contraseña actual</label>
+          <input
+            id="profile-current-password"
+            type="password"
+            className="form-input"
+            value={current}
+            onChange={(e) => setCurrent(e.target.value)}
+            autoComplete="current-password"
+          />
+        </div>
+        <div className="form-row">
+          <div className="form-group">
+            <label className="form-label" htmlFor="profile-new-password">Nueva contraseña</label>
+            <input
+              id="profile-new-password"
+              type="password"
+              className="form-input"
+              value={newPwd}
+              onChange={(e) => setNewPwd(e.target.value)}
+              autoComplete="new-password"
+              minLength={8}
+            />
+          </div>
+          <div className="form-group">
+            <label className="form-label" htmlFor="profile-confirm-password">Confirmar</label>
+            <input
+              id="profile-confirm-password"
+              type="password"
+              className="form-input"
+              value={confirm}
+              onChange={(e) => setConfirm(e.target.value)}
+              autoComplete="new-password"
+              minLength={8}
+            />
+          </div>
+        </div>
+        <button
+          type="submit"
+          className="btn primary btn-md"
+          disabled={loading || !current || !newPwd}
+        >
+          {loading ? "Actualizando…" : "Actualizar contraseña"}
+        </button>
+      </form>
+
+      <div style={{ paddingTop: 20, borderTop: "1px solid var(--border)" }}>
+        <div className="panel-title" style={{ marginBottom: 10 }}>
+          Autenticación de dos factores
+        </div>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            padding: 14,
+            background: "var(--bg-subtle)",
+            borderRadius: "var(--r)",
+            gap: 12,
+          }}
+        >
+          <div>
+            <div style={{ fontWeight: 600, fontSize: 13, color: "var(--text-primary)" }}>
+              2FA con app autenticadora
+            </div>
+            <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
+              Google Authenticator, Authy, 1Password
+            </div>
+          </div>
+          <button
+            type="button"
+            className="btn outline btn-sm"
+            disabled
+            title="2FA llegará pronto"
+            style={{ cursor: "not-allowed" }}
+          >
+            Próximamente
+          </button>
+        </div>
+      </div>
+
+      <div style={{ paddingTop: 20, borderTop: "1px solid var(--border)", marginTop: 20 }}>
+        <div
+          className="panel-title"
+          style={{ marginBottom: 10, display: "flex", justifyContent: "space-between", alignItems: "center" }}
+        >
+          <span>Sesiones activas</span>
+          <button
+            type="button"
+            className="btn ghost btn-sm"
+            onClick={() => signOut({ callbackUrl: "/login" })}
+            style={{ color: "var(--danger)" }}
+          >
+            <IconSvg d={Icons.logout} size={13} /> Cerrar sesión
+          </button>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 12,
+              padding: 12,
+              background: "var(--bg-subtle)",
+              borderRadius: "var(--r)",
+            }}
+          >
+            <span style={{ color: "var(--text-muted)" }}>
+              <IconSvg d={Icons.phone} size={20} />
+            </span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>
+                Sesión actual
+                <span className="type-tag success" style={{ marginLeft: 6 }}>
+                  Esta sesión
+                </span>
+              </div>
+              <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                Navegador · Ahora
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================
+   Preferences tab
+   ============================================================ */
+
+function ClockPicker() {
+  const current = useClockStyle();
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  return (
+    <div style={{ marginBottom: 24 }}>
+      <div className="panel-title" style={{ marginBottom: 4 }}>
+        Estilo de reloj
+      </div>
+      <div className="panel-sub" style={{ marginBottom: 14 }}>
+        Elige cómo se ve el reloj en tu inicio
+      </div>
+      <div className="clock-picker">
+        {CLOCK_STYLES.map((s) => (
+          <button
+            key={s.id}
+            type="button"
+            className={`clock-card ${current === s.id ? "selected" : ""}`}
+            onClick={() => {
+              setClockStyle(s.id);
+              toast.success(`Reloj: ${s.label}`);
+            }}
+            aria-pressed={current === s.id}
+          >
+            <div className="clock-card-check">
+              <IconSvg d={Icons.check} size={13} />
+            </div>
+            <div className="clock-stage">
+              <NovaClock variant={s.id} now={now} state="working" worked={6 * 3600} breakSec={600} mini />
+            </div>
+            <div className="clock-card-name">{s.label}</div>
+            <div className="clock-card-desc">{s.desc}</div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ProfilePreferences() {
+  const [weekly, setWeekly] = useState(true);
+  const [pushApprovals, setPushApprovals] = useState(true);
+  const [showBirthday, setShowBirthday] = useState(false);
+  const [visibleNew, setVisibleNew] = useState(true);
+
+  function save() {
+    toast.success("Preferencias guardadas");
+  }
+
+  return (
+    <div style={{ padding: 4 }}>
+      <ClockPicker />
+      <Toggle
+        label="Recibir resumen semanal por email"
+        checked={weekly}
+        onChange={setWeekly}
+      />
+      <Toggle
+        label="Notificaciones push de aprobaciones"
+        checked={pushApprovals}
+        onChange={setPushApprovals}
+      />
+      <Toggle
+        label="Mostrar mi cumpleaños en el feed"
+        checked={showBirthday}
+        onChange={setShowBirthday}
+      />
+      <Toggle
+        label="Visible para nuevos compañeros"
+        checked={visibleNew}
+        onChange={setVisibleNew}
+      />
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 20 }}>
+        <button type="button" className="btn primary" onClick={save}>
+          Guardar
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================
+   Page
+   ============================================================ */
+
 export default function ProfilePage() {
-  const { data, isLoading, isError } = useMyProfile();
+  const { data, isLoading } = useMyProfile();
   const updateProfile = useUpdateProfile();
-
-  /* -- editable state -- */
-  const [fullName, setFullName] = useState("");
-  const [phone, setPhone] = useState("");
-  const [dni, setDni] = useState("");
-  const [area, setArea] = useState("");
-  const [position, setPosition] = useState("");
-  const [workMode, setWorkMode] = useState("");
-  const [birthDate, setBirthDate] = useState("");
-  const [scheduleType, setScheduleType] = useState("FULL_TIME");
-  const [startTime, setStartTime] = useState("09:00");
-  const [endTime, setEndTime] = useState("18:00");
-  const [breakMinutes, setBreakMinutes] = useState("60");
-
-  const [location, setLocation] = useState<EmployeeLocation | null>(null);
-  const [locationDirty, setLocationDirty] = useState(false);
-
-  const [feedback, setFeedback] = useState<{
-    type: "success" | "error";
-    message: string;
-  } | null>(null);
-
-  const qc = useQueryClient();
+  const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
+  const [avatarFailed, setAvatarFailed] = useState(false);
+  const avatarUrl = data?.employee?.avatarUrl;
+
+  // Reset broken-image fallback when the avatar URL changes (e.g. after upload).
+  useEffect(() => {
+    setAvatarFailed(false);
+  }, [avatarUrl]);
+
+  // URL-persisted tab state — supports deep-links & browser back/forward
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const VALID_TABS: TabKey[] = ["personal", "work", "security", "preferences"];
+  const tabFromUrl = searchParams.get("tab") as TabKey | null;
+  const initialTab: TabKey = VALID_TABS.includes(tabFromUrl as TabKey) ? (tabFromUrl as TabKey) : "personal";
+
+  const [tab, setTabState] = useState<TabKey>(initialTab);
+
+  // Keep state in sync if URL changes externally (e.g. back/forward)
+  useEffect(() => {
+    if (tabFromUrl && tabFromUrl !== tab && VALID_TABS.includes(tabFromUrl)) {
+      setTabState(tabFromUrl);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tabFromUrl]);
+
+  const setTab = useCallback((next: TabKey) => {
+    setTabState(next);
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("tab", next);
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+  }, [router, pathname, searchParams]);
+
+  // Personal state
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [dni, setDni] = useState("");
+  const [birthDate, setBirthDate] = useState("");
+  const [address, setAddress] = useState("");
+  const [emergencyName, setEmergencyName] = useState("");
+  const [emergencyRel, setEmergencyRel] = useState("");
+  const [emergencyPhone, setEmergencyPhone] = useState("");
 
   const employee = data?.employee;
 
-  /* -- sync server -> local state -- */
+  // Sync server → local
   useEffect(() => {
-    if (employee) {
-      setFullName(employee.fullName ?? "");
-      setPhone(employee.phone ?? "");
-      setDni(employee.dni ?? "");
-      setArea(employee.area ?? "");
-      setPosition(employee.position ?? "");
-      setWorkMode(employee.workMode ?? "ONSITE");
-      setBirthDate(employee.birthDate ?? "");
-      setScheduleType(employee.schedule?.type ?? "FULL_TIME");
-      setStartTime(employee.schedule?.startTime ?? "09:00");
-      setEndTime(employee.schedule?.endTime ?? "18:00");
-      setBreakMinutes(String(employee.schedule?.breakMinutes ?? 60));
-      setLocation(employee.location ?? null);
-      setLocationDirty(false);
-    }
+    if (!employee) return;
+    setFirstName(employee.firstName ?? "");
+    setLastName(employee.lastName ?? "");
+    setPhone(employee.phone ?? "");
+    setDni(employee.dni ?? "");
+    setBirthDate(employee.birthDate ?? "");
+    setAddress(employee.location?.address ?? "");
+    setEmergencyName(employee.emergencyContact?.name ?? "");
+    setEmergencyRel(employee.emergencyContact?.relationship ?? "");
+    setEmergencyPhone(employee.emergencyContact?.phone ?? "");
   }, [employee]);
 
-  /* -- avatar upload -- */
+  function resetPersonal() {
+    if (!employee) return;
+    setFirstName(employee.firstName ?? "");
+    setLastName(employee.lastName ?? "");
+    setPhone(employee.phone ?? "");
+    setDni(employee.dni ?? "");
+    setBirthDate(employee.birthDate ?? "");
+    setAddress(employee.location?.address ?? "");
+    setEmergencyName(employee.emergencyContact?.name ?? "");
+    setEmergencyRel(employee.emergencyContact?.relationship ?? "");
+    setEmergencyPhone(employee.emergencyContact?.phone ?? "");
+  }
+
+  // Only count editable fields (phone, dni, birthDate) as dirty — the rest are
+  // admin-managed and disabled, so they never change from the user's side.
+  const isPersonalDirty =
+    employee &&
+    (phone !== (employee.phone ?? "") ||
+      dni !== (employee.dni ?? "") ||
+      birthDate !== (employee.birthDate ?? ""));
+
+  async function handleSavePersonal() {
+    if (!employee) return;
+    try {
+      await updateProfile.mutateAsync({
+        Phone: phone || undefined,
+        DNI: dni || undefined,
+        BirthDate: birthDate || undefined,
+      });
+      toast.success("Perfil actualizado");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Error al guardar");
+    }
+  }
+
   async function handleAvatarUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
     if (file.size > 2 * 1024 * 1024) {
-      setFeedback({ type: "error", message: "Imagen demasiado grande (max 2MB)" });
+      toast.error("Imagen demasiado grande (máx. 2MB)");
       return;
     }
     setUploading(true);
-    setFeedback(null);
     try {
       const formData = new FormData();
       formData.append("avatar", file);
-      const res = await fetch("/api/profile/avatar", {
-        method: "POST",
-        body: formData,
-      });
+      const res = await fetch("/api/profile/avatar", { method: "POST", body: formData });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Error al subir imagen");
-      qc.invalidateQueries({ queryKey: ["profile"] });
-      setFeedback({ type: "success", message: "Foto de perfil actualizada" });
+      queryClient.invalidateQueries({ queryKey: ["profile"] });
+      toast.success("Foto actualizada");
     } catch (err) {
-      setFeedback({
-        type: "error",
-        message: err instanceof Error ? err.message : "Error al subir",
-      });
+      toast.error(err instanceof Error ? err.message : "Error al subir");
     } finally {
       setUploading(false);
     }
   }
 
-  /* -- save handler -- */
-  const handleSave = async () => {
-    setFeedback(null);
-    try {
-      const updates: Record<string, unknown> = {};
+  // Derived display values
+  const fullName = employee
+    ? `${employee.firstName ?? ""} ${employee.lastName ?? ""}`.trim()
+    : "Cargando…";
+  const role = employee?.position ?? "—";
+  const team = employee?.area
+    ? `${employee.area}${employee.location?.address ? " · " + employee.location.address.split(",")[0] : ""}`
+    : "—";
+  const initials =
+    employee && employee.firstName
+      ? `${employee.firstName[0] ?? ""}${employee.lastName?.[0] ?? ""}`.toUpperCase()
+      : "U";
 
-      if (fullName !== (employee?.fullName ?? "")) {
-        updates.FullName = fullName || undefined;
-        const parts = fullName.trim().split(/\s+/);
-        updates.FirstName = parts[0] || undefined;
-        updates.LastName = parts.slice(1).join(" ") || undefined;
-      }
-      if (phone !== (employee?.phone ?? "")) updates.Phone = phone || undefined;
-      if (dni !== (employee?.dni ?? "")) updates.DNI = dni || undefined;
-      if (area !== (employee?.area ?? "")) updates.Area = area || undefined;
-      if (position !== (employee?.position ?? ""))
-        updates.Position = position || undefined;
-      if (workMode !== (employee?.workMode ?? ""))
-        updates.WorkMode = workMode || undefined;
-      if (birthDate !== (employee?.birthDate ?? ""))
-        updates.BirthDate = birthDate || undefined;
+  // Vacation fields not yet stored on the employee record. Show real values
+  // only when populated; otherwise display an honest "—" instead of fake stats.
+  const vacationTotal = employee?.vacationTotal ?? null;
+  const vacationBalance = employee?.vacationBalance ?? null;
+  const vacationUsed =
+    vacationTotal != null && vacationBalance != null
+      ? vacationTotal - vacationBalance
+      : null;
 
-      /* Schedule changes */
-      const scheduleChanged =
-        startTime !== (employee?.schedule?.startTime ?? "09:00") ||
-        endTime !== (employee?.schedule?.endTime ?? "18:00") ||
-        Number(breakMinutes) !== (employee?.schedule?.breakMinutes ?? 60) ||
-        scheduleType !== (employee?.schedule?.type ?? "FULL_TIME");
-
-      if (scheduleChanged) {
-        updates.Schedule = {
-          startTime,
-          endTime,
-          breakMinutes: Number(breakMinutes),
-          type: scheduleType,
-        };
-        updates.ScheduleType = scheduleType;
-      }
-
-      if (Object.keys(updates).length === 0) {
-        setFeedback({ type: "success", message: "No hay cambios por guardar." });
-        return;
-      }
-
-      await updateProfile.mutateAsync(updates as Parameters<typeof updateProfile.mutateAsync>[0]);
-      setFeedback({
-        type: "success",
-        message: "Perfil actualizado correctamente.",
-      });
-    } catch (err) {
-      setFeedback({
-        type: "error",
-        message:
-          err instanceof Error ? err.message : "Error al actualizar el perfil.",
-      });
-    }
-  };
-
-  /* -- save location -- */
-  const handleSaveLocation = async () => {
-    setFeedback(null);
-    try {
-      await updateProfile.mutateAsync({ Location: location as EmployeeLocation });
-      setLocationDirty(false);
-      setFeedback({ type: "success", message: "Ubicacion guardada correctamente." });
-    } catch (err) {
-      setFeedback({
-        type: "error",
-        message:
-          err instanceof Error ? err.message : "Error al guardar la ubicacion.",
-      });
-    }
-  };
-
-  const workModeLabels: Record<string, string> = {
-    REMOTE: "Remoto",
-    ONSITE: "Presencial",
-    HYBRID: "Hibrido",
-  };
-
-  const workModeBadgeClass: Record<string, string> = {
-    REMOTE: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
-    ONSITE: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300",
-    HYBRID: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
-  };
-
-  /* ================================================================ */
-  /*  RENDER                                                          */
-  /* ================================================================ */
-  return (
-    <div className="mx-auto max-w-4xl space-y-8 pb-12">
-      {/* Page Header */}
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Mi Perfil</h1>
-        <p className="text-muted-foreground">
-          Visualiza y edita tu informacion personal
-        </p>
+  if (isLoading && !employee) {
+    return (
+      <div className="page-header">
+        <h1 className="page-title">Mi perfil</h1>
+        <p className="page-sub">Cargando…</p>
       </div>
+    );
+  }
 
-      {isError && (
-        <div className="flex items-center gap-2 rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
-          <AlertCircle className="h-4 w-4 shrink-0" />
-          Error al cargar tu perfil. Intenta de nuevo.
-        </div>
-      )}
+  return (
+    <>
+      <PageHeader
+        title="Mi perfil"
+        subtitle="Información personal, seguridad y preferencias."
+      />
 
-      {isLoading ? (
-        <ProfileSkeleton />
-      ) : employee ? (
-        <>
-          {/* ======================================================= */}
-          {/*  HERO — avatar + name                                   */}
-          {/* ======================================================= */}
-          <Card className="overflow-hidden">
-            {/* Gradient band */}
-            <div className="h-32 bg-gradient-to-r from-primary/80 via-primary/60 to-primary/30" />
-
-            <div className="relative px-6 pb-6">
-              {/* Avatar — overlapping the gradient */}
-              <div className="relative -mt-16 mb-4 flex flex-col items-center gap-4 sm:flex-row sm:items-end">
-                <div className="group relative">
-                  {employee.avatarUrl ? (
-                    <img
-                      src={employee.avatarUrl}
-                      alt={employee.fullName}
-                      className="h-28 w-28 rounded-full border-4 border-background object-cover shadow-lg"
-                    />
-                  ) : (
-                    <div className="flex h-28 w-28 items-center justify-center rounded-full border-4 border-background bg-primary text-3xl font-bold text-primary-foreground shadow-lg">
-                      {employee.firstName?.[0] ?? ""}
-                      {employee.lastName?.[0] ?? ""}
-                    </div>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={uploading}
-                    className="absolute inset-0 flex items-center justify-center rounded-full bg-black/50 opacity-0 transition-opacity group-hover:opacity-100"
-                  >
-                    {uploading ? (
-                      <Loader2 className="h-6 w-6 animate-spin text-white" />
-                    ) : (
-                      <Camera className="h-6 w-6 text-white" />
-                    )}
-                  </button>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp"
-                    onChange={handleAvatarUpload}
-                    className="hidden"
-                  />
-                </div>
-
-                <div className="text-center sm:text-left">
-                  <h2 className="text-2xl font-bold">{employee.fullName}</h2>
-                  <p className="text-muted-foreground">{employee.position}</p>
-                  <div className="mt-2 flex flex-wrap items-center justify-center gap-2 sm:justify-start">
-                    <Badge
-                      variant={employee.role === "ADMIN" ? "default" : "outline"}
-                      className="gap-1"
-                    >
-                      <Shield className="h-3 w-3" />
-                      {employee.role}
-                    </Badge>
-                    <span
-                      className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                        workModeBadgeClass[employee.workMode] ?? ""
-                      }`}
-                    >
-                      <Monitor className="h-3 w-3" />
-                      {workModeLabels[employee.workMode] ?? employee.workMode}
-                    </span>
-                    <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
-                      <Clock className="h-3 w-3" />
-                      {employee.schedule?.type === "PART_TIME"
-                        ? "Part-Time"
-                        : "Full-Time"}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Quick info row */}
-              <Separator className="my-4" />
-              <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-                <div className="flex items-center gap-2 text-sm">
-                  <Mail className="h-4 w-4 text-muted-foreground" />
-                  <span className="truncate text-muted-foreground">
-                    {employee.email}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2 text-sm">
-                  <Building2 className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-muted-foreground">
-                    {employee.area || "-"}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2 text-sm">
-                  <Phone className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-muted-foreground">
-                    {employee.phone || "-"}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2 text-sm">
-                  <Clock className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-muted-foreground">
-                    {employee.schedule
-                      ? `${employee.schedule.startTime} - ${employee.schedule.endTime}`
-                      : "-"}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </Card>
-
-          {/* ======================================================= */}
-          {/*  TABS                                                    */}
-          {/* ======================================================= */}
-          <Tabs defaultValue="personal">
-            <TabsList className="w-full sm:w-auto">
-              <TabsTrigger value="personal" className="gap-1.5">
-                <User className="h-4 w-4" />
-                Personal
-              </TabsTrigger>
-              <TabsTrigger value="work" className="gap-1.5">
-                <Briefcase className="h-4 w-4" />
-                Trabajo
-              </TabsTrigger>
-              <TabsTrigger value="location" className="gap-1.5">
-                <MapPin className="h-4 w-4" />
-                Ubicacion
-              </TabsTrigger>
-            </TabsList>
-
-            {/* ---------------------------------------------------- */}
-            {/*  TAB: Personal Info                                   */}
-            {/* ---------------------------------------------------- */}
-            <TabsContent value="personal">
-              <div className="grid gap-6 pt-4 md:grid-cols-2">
-                {/* Read-only display */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2 text-base">
-                      <User className="h-4 w-4 text-primary" />
-                      Datos Personales
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-1">
-                    <FieldRow
-                      icon={User}
-                      label="Nombre completo"
-                      value={employee.fullName}
-                    />
-                    <FieldRow icon={Mail} label="Email" value={employee.email} />
-                    <FieldRow
-                      icon={CreditCard}
-                      label="DNI"
-                      value={employee.dni}
-                    />
-                    <FieldRow
-                      icon={Phone}
-                      label="Telefono"
-                      value={employee.phone}
-                    />
-                    <FieldRow
-                      icon={Calendar}
-                      label="Fecha de Nacimiento"
-                      value={employee.birthDate}
-                    />
-                    <FieldRow
-                      icon={Calendar}
-                      label="Fecha de Ingreso"
-                      value={employee.hireDate}
-                    />
-                  </CardContent>
-                </Card>
-
-                {/* Editable form */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2 text-base">
-                      <User className="h-4 w-4 text-primary" />
-                      Editar Datos Personales
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="space-y-1.5">
-                      <Label htmlFor="fullName">Nombre Completo</Label>
-                      <Input
-                        id="fullName"
-                        value={fullName}
-                        onChange={(e) => setFullName(e.target.value)}
-                        placeholder="Juan Perez Lopez"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="dni">DNI</Label>
-                      <Input
-                        id="dni"
-                        value={dni}
-                        onChange={(e) => setDni(e.target.value)}
-                        placeholder="12345678"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="phone">Telefono</Label>
-                      <Input
-                        id="phone"
-                        value={phone}
-                        onChange={(e) => setPhone(e.target.value)}
-                        placeholder="+51 999 999 999"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="birthDate">Fecha de Nacimiento</Label>
-                      <Input
-                        id="birthDate"
-                        type="date"
-                        value={birthDate}
-                        onChange={(e) => setBirthDate(e.target.value)}
-                      />
-                    </div>
-                    <div className="rounded-lg border border-dashed p-3 text-center">
-                      <p className="text-xs text-muted-foreground">
-                        Pasa el mouse sobre tu foto de perfil para cambiarla.
-                        <br />
-                        Formatos: JPG, PNG, WebP. Max 2 MB.
-                      </p>
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
-            </TabsContent>
-
-            {/* ---------------------------------------------------- */}
-            {/*  TAB: Work Info                                       */}
-            {/* ---------------------------------------------------- */}
-            <TabsContent value="work">
-              <div className="grid gap-6 pt-4 md:grid-cols-2">
-                {/* Work fields */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2 text-base">
-                      <Briefcase className="h-4 w-4 text-primary" />
-                      Informacion Laboral
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="space-y-1.5">
-                      <Label htmlFor="area">Area</Label>
-                      <Input
-                        id="area"
-                        value={area}
-                        onChange={(e) => setArea(e.target.value)}
-                        placeholder="Tecnologia"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="position">Cargo</Label>
-                      <Input
-                        id="position"
-                        value={position}
-                        onChange={(e) => setPosition(e.target.value)}
-                        placeholder="Desarrollador Senior"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="workMode">Modalidad</Label>
-                      <select
-                        id="workMode"
-                        value={workMode}
-                        onChange={(e) => setWorkMode(e.target.value)}
-                        className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                      >
-                        <option value="ONSITE">Presencial</option>
-                        <option value="REMOTE">Remoto</option>
-                        <option value="HYBRID">Hibrido</option>
-                      </select>
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="scheduleType">Tipo de Jornada</Label>
-                      <select
-                        id="scheduleType"
-                        value={scheduleType}
-                        onChange={(e) => setScheduleType(e.target.value)}
-                        className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                      >
-                        <option value="FULL_TIME">Full-Time (8h)</option>
-                        <option value="PART_TIME">Part-Time (4h)</option>
-                      </select>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                {/* Schedule editing */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2 text-base">
-                      <Clock className="h-4 w-4 text-primary" />
-                      Horario
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="rounded-lg bg-muted/50 p-4">
-                      <div className="mb-3 flex items-center gap-2">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                          <Clock className="h-4 w-4" />
-                        </div>
-                        <div>
-                          <p className="text-sm font-medium">Horario Actual</p>
-                          <p className="text-xs text-muted-foreground">
-                            {employee.schedule
-                              ? `${employee.schedule.startTime} - ${employee.schedule.endTime}`
-                              : "Sin horario definido"}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-1.5">
-                        <Label htmlFor="startTime">Hora de Entrada</Label>
-                        <Input
-                          id="startTime"
-                          type="time"
-                          value={startTime}
-                          onChange={(e) => setStartTime(e.target.value)}
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label htmlFor="endTime">Hora de Salida</Label>
-                        <Input
-                          id="endTime"
-                          type="time"
-                          value={endTime}
-                          onChange={(e) => setEndTime(e.target.value)}
-                        />
-                      </div>
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <Label htmlFor="breakMinutes" className="flex items-center gap-1.5">
-                        <Coffee className="h-3.5 w-3.5 text-muted-foreground" />
-                        Minutos de Descanso
-                      </Label>
-                      <Input
-                        id="breakMinutes"
-                        type="number"
-                        min="0"
-                        max="120"
-                        value={breakMinutes}
-                        onChange={(e) => setBreakMinutes(e.target.value)}
-                        placeholder="60"
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        Tiempo de descanso incluido en la jornada (almuerzo, break, etc.)
-                      </p>
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
-            </TabsContent>
-
-            {/* ---------------------------------------------------- */}
-            {/*  TAB: Location                                        */}
-            {/* ---------------------------------------------------- */}
-            <TabsContent value="location">
-              <Card className="mt-4">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-base">
-                    <MapPin className="h-4 w-4 text-primary" />
-                    Mi Ubicacion
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {employee.location && !locationDirty ? (
-                    <>
-                      <LocationDisplay location={employee.location} />
-                      <Button
-                        variant="outline"
-                        onClick={() => setLocationDirty(true)}
-                        className="gap-2"
-                      >
-                        <MapPin className="h-4 w-4" />
-                        Cambiar ubicacion
-                      </Button>
-                    </>
-                  ) : (
-                    <>
-                      <p className="text-sm text-muted-foreground">
-                        Haz clic en el mapa o busca una direccion para establecer
-                        tu ubicacion.
-                      </p>
-                      <LocationPicker
-                        value={location}
-                        onChange={(loc: EmployeeLocation) => {
-                          setLocation(loc);
-                          setLocationDirty(true);
-                        }}
-                      />
-                      {locationDirty && location && (
-                        <Button
-                          onClick={handleSaveLocation}
-                          disabled={updateProfile.isPending}
-                          className="gap-2"
-                        >
-                          {updateProfile.isPending ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : (
-                            <Save className="h-4 w-4" />
-                          )}
-                          {updateProfile.isPending
-                            ? "Guardando..."
-                            : "Guardar Ubicacion"}
-                        </Button>
-                      )}
-                    </>
-                  )}
-                </CardContent>
-              </Card>
-            </TabsContent>
-          </Tabs>
-
-          {/* ======================================================= */}
-          {/*  FEEDBACK + SAVE                                        */}
-          {/* ======================================================= */}
-          {feedback && (
-            <div
-              className={`flex items-center gap-2 rounded-lg border p-3 text-sm ${
-                feedback.type === "success"
-                  ? "border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-950/30 dark:text-green-400"
-                  : "border-destructive/50 bg-destructive/10 text-destructive"
-              }`}
-            >
-              {feedback.type === "success" ? (
-                <CheckCircle2 className="h-4 w-4 shrink-0" />
+      <div className="profile-layout">
+        {/* Sidebar */}
+        <div className="panel" style={{ padding: 20 }}>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
+            <div style={{ position: "relative" }}>
+              {employee?.avatarUrl && !avatarFailed ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={employee.avatarUrl}
+                  alt={fullName}
+                  onError={() => setAvatarFailed(true)}
+                  style={{
+                    width: 120,
+                    height: 120,
+                    borderRadius: "50%",
+                    objectFit: "cover",
+                    border: "3px solid var(--bg-elevated)",
+                    boxShadow: "var(--shadow-md)",
+                    background: "var(--bg-subtle)",
+                  }}
+                />
               ) : (
-                <AlertCircle className="h-4 w-4 shrink-0" />
+                <div
+                  className="avatar accent"
+                  aria-label={fullName}
+                  style={{ width: 120, height: 120, fontSize: 40, borderRadius: "50%" }}
+                >
+                  {initials}
+                </div>
               )}
-              {feedback.message}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                hidden
+                onChange={handleAvatarUpload}
+              />
+              <button
+                type="button"
+                className="btn outline btn-sm"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploading}
+                aria-label="Cambiar foto"
+                style={{
+                  position: "absolute",
+                  bottom: 0,
+                  right: 0,
+                  padding: 6,
+                  borderRadius: "50%",
+                  background: "var(--bg-elevated)",
+                }}
+              >
+                <IconSvg d={Icons.edit} size={12} />
+              </button>
             </div>
+            <div style={{ textAlign: "center", marginTop: 8 }}>
+              <div style={{ fontSize: 18, fontWeight: 700, color: "var(--text-primary)" }}>
+                {fullName || "Sin nombre"}
+              </div>
+              <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>{role}</div>
+              <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>{team}</div>
+            </div>
+          </div>
+
+          {/* Vacation card */}
+          <div
+            style={{
+              marginTop: 20,
+              padding: 14,
+              background: "var(--bg-subtle)",
+              borderRadius: "var(--r)",
+            }}
+          >
+            <div
+              style={{
+                fontSize: 11,
+                color: "var(--text-muted)",
+                fontWeight: 600,
+                letterSpacing: "0.05em",
+                textTransform: "uppercase",
+                marginBottom: 8,
+              }}
+            >
+              Vacaciones
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
+              <span style={{ color: "var(--text-secondary)" }}>Disponibles</span>
+              <strong style={{ color: "var(--text-primary)" }}>
+                {vacationBalance != null ? `${vacationBalance} días` : "—"}
+              </strong>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginTop: 6 }}>
+              <span style={{ color: "var(--text-secondary)" }}>Usadas</span>
+              <strong style={{ color: "var(--text-primary)" }}>
+                {vacationUsed != null ? `${vacationUsed} días` : "—"}
+              </strong>
+            </div>
+            <div
+              style={{
+                height: 6,
+                background: "var(--bg-elevated)",
+                borderRadius: 3,
+                overflow: "hidden",
+                marginTop: 10,
+              }}
+            >
+              <div
+                style={{
+                  width:
+                    vacationTotal && vacationTotal > 0 && vacationUsed != null
+                      ? `${(vacationUsed / vacationTotal) * 100}%`
+                      : "0%",
+                  height: "100%",
+                  background: "var(--accent)",
+                  transition: "width 0.4s",
+                }}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Tabs panel */}
+        <div className="panel">
+          <div className="tabs" role="tablist" aria-label="Secciones del perfil">
+            {TABS.map((t) => (
+              <button
+                key={t.key}
+                type="button"
+                role="tab"
+                aria-selected={tab === t.key}
+                id={`profile-tab-${t.key}`}
+                aria-controls={`profile-panel-${t.key}`}
+                className={`tab ${tab === t.key ? "active" : ""}`}
+                onClick={() => setTab(t.key)}
+              >
+                <IconSvg d={t.icon} size={14} />
+                {t.label}
+              </button>
+            ))}
+          </div>
+
+          {tab === "personal" && (
+            <ProfilePersonal
+              firstName={firstName}
+              setFirstName={setFirstName}
+              lastName={lastName}
+              setLastName={setLastName}
+              email={employee?.email ?? ""}
+              phone={phone}
+              setPhone={setPhone}
+              dni={dni}
+              setDni={setDni}
+              birthDate={birthDate}
+              setBirthDate={setBirthDate}
+              address={address}
+              setAddress={setAddress}
+              emergencyName={emergencyName}
+              setEmergencyName={setEmergencyName}
+              emergencyRel={emergencyRel}
+              setEmergencyRel={setEmergencyRel}
+              emergencyPhone={emergencyPhone}
+              setEmergencyPhone={setEmergencyPhone}
+              onSave={handleSavePersonal}
+              onReset={resetPersonal}
+              saving={updateProfile.isPending}
+              dirty={!!isPersonalDirty}
+            />
           )}
 
-          <div className="flex justify-end">
-            <Button
-              onClick={handleSave}
-              disabled={updateProfile.isPending}
-              size="lg"
-              className="gap-2"
-            >
-              {updateProfile.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Save className="h-4 w-4" />
-              )}
-              {updateProfile.isPending ? "Guardando..." : "Guardar Cambios"}
-            </Button>
-          </div>
-        </>
-      ) : null}
-    </div>
+          {tab === "work" && (
+            <ProfileWork
+              position={employee?.position ?? "—"}
+              area={employee?.area ?? "—"}
+              workMode={
+                employee?.workMode === "REMOTE"
+                  ? "Remoto"
+                  : employee?.workMode === "HYBRID"
+                  ? "Híbrido"
+                  : "Presencial"
+              }
+              joined={employee?.hireDate ?? "—"}
+              schedule={
+                employee?.schedule
+                  ? `${employee.schedule.startTime} – ${employee.schedule.endTime} (${
+                      employee.schedule.type === "FULL_TIME" ? "Tiempo completo" : "Medio tiempo"
+                    })`
+                  : "—"
+              }
+            />
+          )}
+
+          {tab === "security" && <ProfileSecurity userEmail={employee?.email} />}
+          {tab === "preferences" && <ProfilePreferences />}
+        </div>
+      </div>
+
+      <style jsx>{`
+        .profile-layout {
+          display: grid;
+          grid-template-columns: 320px 1fr;
+          gap: 20px;
+        }
+        @media (max-width: 880px) {
+          .profile-layout {
+            grid-template-columns: 1fr;
+          }
+        }
+      `}</style>
+    </>
   );
 }

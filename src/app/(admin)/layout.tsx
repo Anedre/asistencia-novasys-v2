@@ -1,40 +1,19 @@
 "use client";
 
-import { useState } from "react";
 import { useSession } from "next-auth/react";
-import { usePathname } from "next/navigation";
-import { Sidebar } from "@/components/layout/sidebar";
-import { Header } from "@/components/layout/header";
-import { MobileNav } from "@/components/layout/mobile-nav";
-import { Loader2 } from "lucide-react";
 import { Toaster } from "sonner";
+import { Loader2 } from "lucide-react";
+import { NovaSidebar } from "@/components/nova/sidebar";
+import { NovaTopbar } from "@/components/nova/topbar";
+import { PageTransition } from "@/components/nova/page-transition";
+import { ThemeBridge } from "@/components/nova/theme-bridge";
 import { ChatWidget } from "@/components/chat/chat-widget";
 import { MessagingWidget } from "@/components/messaging/messaging-widget";
 import { useHeartbeat } from "@/hooks/use-presence";
 
-/**
- * Routes that render their own inner sub-navigation. On these routes the
- * global admin sidebar collapses to icon-only mode so the two sidebars don't
- * compete for horizontal space.
- */
-const NESTED_SIDEBAR_PREFIXES = ["/admin/settings"];
-
-function hasNestedSidebar(pathname: string | null): boolean {
-  if (!pathname) return false;
-  return NESTED_SIDEBAR_PREFIXES.some((prefix) => pathname.startsWith(prefix));
-}
-
-export default function AdminLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  const { status } = useSession();
-  const pathname = usePathname();
-  const [mobileOpen, setMobileOpen] = useState(false);
+export default function AdminLayout({ children }: { children: React.ReactNode }) {
+  const { status, data: session } = useSession();
   useHeartbeat();
-
-  const sidebarCollapsed = hasNestedSidebar(pathname);
 
   if (status === "loading") {
     return (
@@ -44,32 +23,21 @@ export default function AdminLayout({
     );
   }
 
+  // Employees who are also admin get the view-toggle; pure admins don't need it
+  // (still useful for navigating to employee view).
+  const showViewToggle = session?.user?.role === "ADMIN" || session?.user?.role === "SUPER_ADMIN";
+
   return (
-    <div className="flex h-screen overflow-hidden">
-      {/* Desktop sidebar */}
-      <Sidebar
-        role="ADMIN"
-        isAdmin={true}
-        collapsed={sidebarCollapsed}
-        className="hidden md:flex"
-      />
-
-      {/* Mobile nav */}
-      <MobileNav
-        role="ADMIN"
-        isAdmin={true}
-        open={mobileOpen}
-        onOpenChange={setMobileOpen}
-      />
-
-      {/* Main content */}
-      <div className="flex flex-1 flex-col overflow-hidden">
-        <Header onMenuClick={() => setMobileOpen(true)} />
-        <main className="flex-1 overflow-y-auto p-4 md:p-6">
-          {children}
+    <div className="nva-app" data-theme="light" data-density="comfortable" suppressHydrationWarning>
+      <ThemeBridge />
+      <div className="shell">
+        <NovaSidebar role="ADMIN" />
+        <main className="main">
+          <NovaTopbar activeView="admin" showViewToggle={showViewToggle} />
+          <PageTransition>{children}</PageTransition>
         </main>
       </div>
-      <Toaster position="top-right" richColors />
+      <Toaster position="top-right" richColors closeButton />
       <MessagingWidget />
       <ChatWidget />
     </div>

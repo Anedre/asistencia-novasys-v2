@@ -56,16 +56,25 @@ export const POST = withErrorHandler(async (request: Request) => {
 
   // Load tenant once for the email branding.
   const tenant = await getTenantById(user.tenantId).catch(() => null);
-  const baseUrl = process.env.NEXTAUTH_URL || "http://localhost:3000";
+  const { getAppBaseUrl } = await import("@/lib/utils/app-url");
+  const baseUrl = getAppBaseUrl();
 
   const created: CreatedResult[] = [];
   const failed: FailedResult[] = [];
 
-  for (const raw of list as InviteInput[]) {
+  // Each input is processed independently: validate → create row → send
+  // email. We fan out in chunks of 5 so a 50-row paste doesn't run
+  // serially for ~10s+ (SES round-trip dominates) and risk a Lambda
+  // timeout. SES default send rate is 14/s so 5 in-flight is safe.
+  const CONCURRENCY = 5;
+  const inputs = list as InviteInput[];
+
+  async function processOne(
+    raw: InviteInput,
+  ): Promise<{ created?: CreatedResult; failed?: FailedResult }> {
     const email = (raw.email ?? "").toLowerCase().trim();
     if (!email || !email.includes("@")) {
-      failed.push({ email: raw.email ?? "(vacío)", error: "Email inválido" });
-      continue;
+      return { failed: { email: raw.email ?? "(vacío)", error: "Email inválido" } };
     }
 
     const now = new Date();
@@ -101,27 +110,41 @@ export const POST = withErrorHandler(async (request: Request) => {
         async () => createInvitation(invitation)
       );
     } catch (err) {
-      failed.push({
-        email,
-        error: err instanceof Error ? err.message : "Error al crear",
-      });
-      continue;
+      return {
+        failed: {
+          email,
+          error: err instanceof Error ? err.message : "Error al crear",
+        },
+      };
     }
 
     const inviteLink = `${baseUrl}/register?invite=${token}`;
-
     const emailResult = await sendInvitationEmail({
       invitation,
       tenant,
       inviteLink,
     });
+    return {
+      created: {
+        email,
+        inviteId: invitation.InviteID,
+        inviteLink,
+        emailSent: emailResult.ok,
+      },
+    };
+  }
 
-    created.push({
-      email,
-      inviteId: invitation.InviteID,
-      inviteLink,
-      emailSent: emailResult.ok,
-    });
+  for (let i = 0; i < inputs.length; i += CONCURRENCY) {
+    const chunk = inputs.slice(i, i + CONCURRENCY);
+    const results = await Promise.allSettled(chunk.map((raw) => processOne(raw)));
+    for (const r of results) {
+      if (r.status === "fulfilled") {
+        if (r.value.created) created.push(r.value.created);
+        if (r.value.failed) failed.push(r.value.failed);
+      } else {
+        failed.push({ email: "(desconocido)", error: String(r.reason) });
+      }
+    }
   }
 
   return NextResponse.json({

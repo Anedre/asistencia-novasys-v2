@@ -57,7 +57,10 @@ export function useRSVP() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status }),
       });
-      if (!res.ok) throw new Error("Error al responder");
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || `Error al responder (${res.status})`);
+      }
       return res.json();
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["events"] }),

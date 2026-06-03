@@ -10,7 +10,7 @@
  * Preference is persisted in localStorage under `notif-sound-enabled`.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useSyncExternalStore } from "react";
 import type { NotificationSound, NotificationType } from "@/lib/types/api";
 
 const STORAGE_KEY = "notif-sound-enabled";
@@ -78,6 +78,15 @@ function readPref(): boolean {
   return v === null ? true : v === "true";
 }
 
+function subscribePref(callback: () => void): () => void {
+  if (typeof window === "undefined") return () => undefined;
+  const handler = (e: StorageEvent) => {
+    if (e.key === STORAGE_KEY) callback();
+  };
+  window.addEventListener("storage", handler);
+  return () => window.removeEventListener("storage", handler);
+}
+
 function playPattern(pattern: Tone[]) {
   if (typeof window === "undefined") return;
   const Ctx =
@@ -118,18 +127,19 @@ function playPattern(pattern: Tone[]) {
 }
 
 export function useNotificationSound() {
-  const [enabled, setEnabledState] = useState<boolean>(true);
+  const enabled = useSyncExternalStore(
+    subscribePref,
+    readPref,
+    () => true,
+  );
   const lastPlayedAt = useRef(0);
 
-  // Hydrate from storage on mount (avoids SSR mismatch).
-  useEffect(() => {
-    setEnabledState(readPref());
-  }, []);
-
   const setEnabled = useCallback((value: boolean) => {
-    setEnabledState(value);
     if (typeof window !== "undefined") {
       window.localStorage.setItem(STORAGE_KEY, value ? "true" : "false");
+      window.dispatchEvent(
+        new StorageEvent("storage", { key: STORAGE_KEY, newValue: String(value) }),
+      );
     }
   }, []);
 

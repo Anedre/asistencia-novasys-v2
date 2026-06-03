@@ -1,16 +1,24 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Sora, JetBrains_Mono } from "next/font/google";
 import { Providers } from "@/components/providers";
+import { PremiumIconDefs } from "@/components/nova/premium-icon";
 import "./globals.css";
+import "@/styles/nova-design.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+// ── TYPOGRAPHY — Orbital Control ──
+// Sora: all sans UI, headers, body. JetBrains Mono: numbers, clocks, amounts, IDs.
+// Weights mirror the design handoff's font link exactly.
+const sora = Sora({
+  variable: "--font-sora",
   subsets: ["latin"],
+  weight: ["400", "500", "600", "700", "800"],
+  display: "swap",
 });
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const jetbrainsMono = JetBrains_Mono({
+  variable: "--font-jetbrains-mono",
   subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  display: "swap",
 });
 
 export const metadata: Metadata = {
@@ -30,10 +38,11 @@ export default function RootLayout({
   return (
     <html
       lang="es"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${sora.variable} ${jetbrainsMono.variable} h-full antialiased`}
       suppressHydrationWarning
     >
       <body className="min-h-full flex flex-col">
+        <PremiumIconDefs />
         <Providers>{children}</Providers>
       </body>
     </html>

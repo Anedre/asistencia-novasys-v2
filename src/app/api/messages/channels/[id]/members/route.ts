@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireSession } from "@/lib/auth-helpers";
 import { withErrorHandler } from "@/lib/utils/errors";
 import { getChannelById, addMemberToChannel, deleteChannel } from "@/lib/db/chat-channels";
+import { getEmployeeById } from "@/lib/db/employees";
 import { UpdateCommand } from "@aws-sdk/lib-dynamodb";
 import { docClient } from "@/lib/db/client";
 import { TABLES } from "@/lib/db/tables";
@@ -18,6 +19,10 @@ export const POST = withErrorHandler(async (
   if (!channel || !channel.Members.includes(user.employeeId)) {
     return NextResponse.json({ error: "No autorizado" }, { status: 403 });
   }
+  // Tenant isolation: a channel must live in the same tenant as the caller.
+  if (user.tenantId && channel.TenantID && channel.TenantID !== user.tenantId) {
+    return NextResponse.json({ error: "No autorizado" }, { status: 403 });
+  }
   if (channel.Type === "direct") {
     return NextResponse.json({ error: "No se pueden agregar miembros a un chat directo" }, { status: 400 });
   }
@@ -28,6 +33,16 @@ export const POST = withErrorHandler(async (
   }
   if (channel.Members.includes(memberId)) {
     return NextResponse.json({ error: "El miembro ya está en el grupo" }, { status: 400 });
+  }
+
+  // Verify the target employee exists and belongs to the same tenant — prevents
+  // pulling a cross-tenant user into the conversation.
+  const target = await getEmployeeById(memberId);
+  if (!target) {
+    return NextResponse.json({ error: "Empleado no encontrado" }, { status: 404 });
+  }
+  if (user.tenantId && target.TenantID && target.TenantID !== user.tenantId) {
+    return NextResponse.json({ error: "El empleado no pertenece a esta empresa" }, { status: 403 });
   }
 
   await addMemberToChannel(id, memberId, memberName);
@@ -44,6 +59,9 @@ export const DELETE = withErrorHandler(async (
 
   const channel = await getChannelById(id);
   if (!channel || !channel.Members.includes(user.employeeId)) {
+    return NextResponse.json({ error: "No autorizado" }, { status: 403 });
+  }
+  if (user.tenantId && channel.TenantID && channel.TenantID !== user.tenantId) {
     return NextResponse.json({ error: "No autorizado" }, { status: 403 });
   }
   if (channel.Type === "direct") {

@@ -13,17 +13,23 @@ export async function getMessagesByChannel(
   channelId: string,
   limit = 100
 ): Promise<ChatMessage[]> {
+  // Query DESC to get the N most recent messages, then reverse so the UI still
+  // renders chronologically (oldest first). Previously this used
+  // ScanIndexForward: true with Limit = 100 which returned the FIRST 100
+  // messages ever — once a channel passed that threshold, recent messages
+  // stopped appearing.
   const result = await docClient.send(
     new QueryCommand({
       TableName: TABLES.CHAT_MESSAGES,
       IndexName: INDEXES.CHAT_MESSAGES_BY_CHANNEL,
       KeyConditionExpression: "ChannelID = :cid",
       ExpressionAttributeValues: { ":cid": channelId },
-      ScanIndexForward: true,
+      ScanIndexForward: false,
       Limit: limit,
     })
   );
-  return (result.Items as ChatMessage[]) ?? [];
+  const items = (result.Items as ChatMessage[]) ?? [];
+  return items.reverse();
 }
 
 export async function getMessageById(

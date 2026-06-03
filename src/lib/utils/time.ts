@@ -10,6 +10,18 @@ export function nowUtc(): Date {
   return new Date();
 }
 
+/**
+ * Extract HH:mm from either an ISO 8601 timestamp
+ * (e.g. "2026-04-21T09:00:00-05:00") or an already-formatted "HH:mm[:ss]" string.
+ * Returns "—" when the input is empty.
+ */
+export function fmtClock(s: string | undefined | null): string {
+  if (!s) return "—";
+  const m = s.match(/T(\d{2}:\d{2})/);
+  if (m) return m[1];
+  return s.substring(0, 5);
+}
+
 /** Get current Lima time as Date */
 export function nowLima(): Date {
   return new Date(

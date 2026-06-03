@@ -30,6 +30,24 @@ export const POST = withErrorHandler(async (req: Request) => {
     return NextResponse.json({ error: "Titulo, tipo, visibilidad y fecha son requeridos" }, { status: 400 });
   }
 
+  // Validate coordinates if provided — accept only valid lat/lng ranges.
+  let safeLat: number | undefined;
+  let safeLng: number | undefined;
+  if (locationLat != null) {
+    const n = Number(locationLat);
+    if (!Number.isFinite(n) || n < -90 || n > 90) {
+      return NextResponse.json({ error: "Latitud inválida" }, { status: 400 });
+    }
+    safeLat = n;
+  }
+  if (locationLng != null) {
+    const n = Number(locationLng);
+    if (!Number.isFinite(n) || n < -180 || n > 180) {
+      return NextResponse.json({ error: "Longitud inválida" }, { status: 400 });
+    }
+    safeLng = n;
+  }
+
   const now = new Date().toISOString();
   const event: AppEvent = {
     EventID: `EVT#${crypto.randomUUID()}`,
@@ -42,8 +60,8 @@ export const POST = withErrorHandler(async (req: Request) => {
     StartDate: startDate,
     EndDate: endDate || undefined,
     Location: location || undefined,
-    LocationLat: locationLat != null ? Number(locationLat) : undefined,
-    LocationLng: locationLng != null ? Number(locationLng) : undefined,
+    LocationLat: safeLat,
+    LocationLng: safeLng,
     CreatorID: user.employeeId,
     CreatorName: user.name,
     RSVPs: {},

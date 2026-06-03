@@ -3,18 +3,14 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
 import { useCreateHREvent } from "@/hooks/use-hr";
-import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+import { IconSvg, Icons } from "@/components/nova/icons";
+import { PageHeader } from "@/components/nova/page-header";
+
+/* ============================================================
+   /admin/hr/create — create new HR event
+   Migrated to design CSS (.panel/.form-input/.btn primary)
+   ============================================================ */
 
 const EVENT_TYPES = [
   { value: "ANNOUNCEMENT", label: "Comunicado" },
@@ -55,109 +51,148 @@ export default function CreateHREventPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-4">
-        <Button variant="outline" size="icon" render={<Link href="/admin/hr" />}>
-          <ArrowLeft className="size-4" />
-        </Button>
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Crear Evento RRHH</h1>
-          <p className="text-muted-foreground">Publica un nuevo anuncio o evento</p>
+    <>
+      <PageHeader
+        breadcrumb={[
+          { label: "RRHH", href: "/admin/hr" },
+          { label: "Crear" },
+        ]}
+        title="Crear evento RRHH"
+        subtitle="Publica un nuevo anuncio o evento."
+        actions={
+          <Link href="/admin/hr" className="btn outline btn-sm">
+            <IconSvg d={Icons.arrowLeft} size={14} /> Volver
+          </Link>
+        }
+      />
+
+      <div className="panel" style={{ maxWidth: 720 }}>
+        <div className="panel-title" style={{ marginBottom: 16 }}>
+          Nuevo evento
         </div>
-      </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Nuevo Evento</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {error && (
-              <div className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
-                {error}
-              </div>
-            )}
-
-            <div className="space-y-2">
-              <Label htmlFor="type">Tipo de evento</Label>
-              <select
-                id="type"
-                value={type}
-                onChange={(e) => setType(e.target.value)}
-                className="flex h-8 w-full rounded-lg border border-input bg-background px-3 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                {EVENT_TYPES.map((t) => (
-                  <option key={t.value} value={t.value}>
-                    {t.label}
-                  </option>
-                ))}
-              </select>
+        <form onSubmit={handleSubmit}>
+          {error && (
+            <div
+              style={{
+                padding: "10px 12px",
+                borderRadius: "var(--r)",
+                border: "1px solid color-mix(in srgb, var(--danger) 40%, transparent)",
+                background: "color-mix(in srgb, var(--danger) 10%, transparent)",
+                color: "var(--danger)",
+                fontSize: 13,
+                marginBottom: 14,
+                display: "flex",
+                alignItems: "flex-start",
+                gap: 8,
+              }}
+            >
+              <IconSvg d={Icons.alert} size={15} />
+              <span>{error}</span>
             </div>
+          )}
 
-            <div className="space-y-2">
-              <Label htmlFor="title">Título</Label>
-              <Input
-                id="title"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="Título del evento"
-                required
-              />
-            </div>
+          <div className="form-group">
+            <label className="form-label" htmlFor="type">
+              Tipo de evento
+            </label>
+            <select
+              id="type"
+              className="form-select"
+              value={type}
+              onChange={(e) => setType(e.target.value)}
+            >
+              {EVENT_TYPES.map((t) => (
+                <option key={t.value} value={t.value}>
+                  {t.label}
+                </option>
+              ))}
+            </select>
+          </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="message">Mensaje</Label>
-              <Textarea
-                id="message"
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
-                placeholder="Descripción del evento"
-                rows={4}
-              />
-            </div>
+          <div className="form-group">
+            <label className="form-label" htmlFor="title">
+              Título<span className="req">*</span>
+            </label>
+            <input
+              id="title"
+              className="form-input"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Título del evento"
+              required
+            />
+          </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="eventDate">Fecha del evento</Label>
-              <Input
+          <div className="form-group">
+            <label className="form-label" htmlFor="message">
+              Mensaje
+            </label>
+            <textarea
+              id="message"
+              className="form-textarea"
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              placeholder="Descripción del evento"
+              rows={4}
+            />
+          </div>
+
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label" htmlFor="eventDate">
+                Fecha del evento<span className="req">*</span>
+              </label>
+              <input
                 id="eventDate"
+                className="form-input"
                 type="date"
                 value={eventDate}
                 onChange={(e) => setEventDate(e.target.value)}
                 required
               />
             </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="audience">Audiencia (opcional)</Label>
-              <Input
+            <div className="form-group">
+              <label className="form-label" htmlFor="audience">
+                Audiencia (opcional)
+              </label>
+              <input
                 id="audience"
+                className="form-input"
                 value={audience}
                 onChange={(e) => setAudience(e.target.value)}
                 placeholder="Ej: Todos, Área de TI, etc."
               />
             </div>
+          </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="imageUrl">URL de imagen (opcional)</Label>
-              <Input
-                id="imageUrl"
-                value={imageUrl}
-                onChange={(e) => setImageUrl(e.target.value)}
-                placeholder="https://..."
-              />
-            </div>
+          <div className="form-group">
+            <label className="form-label" htmlFor="imageUrl">
+              URL de imagen (opcional)
+            </label>
+            <input
+              id="imageUrl"
+              className="form-input"
+              value={imageUrl}
+              onChange={(e) => setImageUrl(e.target.value)}
+              placeholder="https://..."
+            />
+          </div>
 
-            <div className="flex items-center gap-3 pt-2">
-              <Button type="submit" disabled={createMutation.isPending}>
-                {createMutation.isPending ? "Creando..." : "Crear Evento"}
-              </Button>
-              <Button variant="outline" render={<Link href="/admin/hr" />}>
-                Volver
-              </Button>
-            </div>
-          </form>
-        </CardContent>
-      </Card>
-    </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
+            <button
+              type="submit"
+              className="btn primary"
+              disabled={createMutation.isPending}
+            >
+              {createMutation.isPending ? "Creando…" : "Crear evento"}
+            </button>
+            <Link href="/admin/hr" className="btn outline">
+              Cancelar
+            </Link>
+          </div>
+        </form>
+      </div>
+    </>
   );
 }

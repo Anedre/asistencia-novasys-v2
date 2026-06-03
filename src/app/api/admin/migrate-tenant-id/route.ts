@@ -9,7 +9,7 @@
  */
 
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/auth-helpers";
+import { requireSuperAdmin } from "@/lib/auth-helpers";
 import { withErrorHandler } from "@/lib/utils/errors";
 import { docClient } from "@/lib/db/client";
 import { TABLES, INDEXES } from "@/lib/db/tables";
@@ -95,14 +95,14 @@ async function runMigration(tenantId: string, dryRun: boolean) {
 
 /** GET = dry run */
 export const GET = withErrorHandler(async () => {
-  const user = await requireAdmin();
+  const user = await requireSuperAdmin();
   const result = await runMigration(user.tenantId, true);
   return NextResponse.json({ ok: true, ...result });
 });
 
 /** POST = execute migration */
 export const POST = withErrorHandler(async () => {
-  const user = await requireAdmin();
+  const user = await requireSuperAdmin();
   const result = await runMigration(user.tenantId, false);
   return NextResponse.json({ ok: true, ...result });
 });

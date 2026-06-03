@@ -48,6 +48,27 @@ export const POST = withErrorHandler(async (req: Request) => {
     );
   }
 
+  // Lock image URLs to the configured S3 bucket so attackers can't paste a
+  // third-party host (tracking pixels / spoofed thumbnails / phishing).
+  if (imageUrl) {
+    const trustedHost =
+      (process.env.REPORT_BUCKET || "novasys-v2-reports") + ".s3.amazonaws.com";
+    try {
+      const parsed = new URL(imageUrl);
+      if (parsed.protocol !== "https:" || parsed.hostname !== trustedHost) {
+        return NextResponse.json(
+          { error: "URL de imagen no permitida" },
+          { status: 400 },
+        );
+      }
+    } catch {
+      return NextResponse.json(
+        { error: "URL de imagen inválida" },
+        { status: 400 },
+      );
+    }
+  }
+
   const now = new Date().toISOString();
   const post: Post = {
     PostID: `POST#${crypto.randomUUID()}`,

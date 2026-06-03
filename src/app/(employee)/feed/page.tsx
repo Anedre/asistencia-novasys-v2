@@ -1,654 +1,432 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Badge } from "@/components/ui/badge";
-import {
-  Globe,
-  Lock,
-  Loader2,
-  Megaphone,
-  Users,
-  ImageIcon,
-  X,
-  Smile,
-  Cake,
-  Trophy,
-  Calendar,
-  Flag,
-  TrendingUp,
-  Hash,
-  Sparkles,
-  Building2,
-  UserCircle,
-  BarChart3,
-  CalendarCheck,
-  Trophy as TrophyIcon,
-} from "lucide-react";
-import {
-  useFeed,
-  useCreatePost,
-} from "@/hooks/use-feed";
-import { useTodayStatus, useWeekSummary } from "@/hooks/use-attendance";
-import { FeedEmbed } from "@/components/feed/feed-embed";
-import type { PostEmbed } from "@/lib/types/post";
-import { PostCard } from "@/components/feed/post-card";
+import { useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
-import { useMyProfile } from "@/hooks/use-employee";
+import { toast } from "sonner";
+import { useFeed, useCreatePost } from "@/hooks/use-feed";
+import { PostCard } from "@/components/feed/post-card";
 import { useHREvents } from "@/hooks/use-hr";
 import { useTenantConfig } from "@/hooks/use-tenant";
 import { useTenantTimezone, todayInTz } from "@/hooks/use-timezone";
-import { toast } from "sonner";
-import { cn } from "@/lib/utils";
-import type { PostVisibility } from "@/lib/types/post";
+import { IconSvg, Icons } from "@/components/nova/icons";
+import { NovaAvatar } from "@/components/nova/avatar";
+import { PageHeader } from "@/components/nova/page-header";
+import type { Post } from "@/lib/types/post";
 import type { BirthdayEntry, AnniversaryEntry } from "@/lib/types";
 
-/* ── Constants ─────────────────────────────────────────────────── */
+/* ============================================================
+   Helpers
+   ============================================================ */
 
-const MAX_CHARS = 500;
+function timeAgo(iso: string): string {
+  const ms = Date.now() - new Date(iso).getTime();
+  const min = Math.floor(ms / 60000);
+  if (min < 1) return "Justo ahora";
+  if (min < 60) return `Hace ${min}m`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return `Hace ${h}h`;
+  const d = Math.floor(h / 24);
+  if (d === 1) return "Ayer";
+  if (d < 7) return `Hace ${d} días`;
+  return new Date(iso).toLocaleDateString("es-PE", { day: "2-digit", month: "short" });
+}
 
-const VISIBILITY_OPTIONS: {
-  value: PostVisibility;
-  label: string;
-  icon: React.ElementType;
-}[] = [
-  { value: "company", label: "Empresa", icon: Globe },
-  { value: "area", label: "Mi Área", icon: Users },
-  { value: "private", label: "Solo yo", icon: Lock },
-];
 
-type FeedTab = "all" | "company" | "area";
 
-/* ── Helpers ───────────────────────────────────────────────────── */
+/* ============================================================
+   Composer
+   ============================================================ */
 
-function ComposerAvatar({ name, src }: { name: string; src?: string }) {
-  if (src) {
-    return <img src={src} alt={name} className="size-10 rounded-full object-cover shrink-0 ring-1 ring-border" />;
+function Composer({ name, userArea }: { name: string; userArea?: string }) {
+  const [open, setOpen] = useState(false);
+  const [content, setContent] = useState("");
+  const [visibility, setVisibility] = useState<"company" | "area" | "private">("company");
+  const create = useCreatePost();
+
+  async function submit() {
+    if (!content.trim()) return;
+    if (visibility === "area" && !userArea) {
+      toast.error("No tienes un área asignada. Pide a RRHH que la configure.");
+      return;
+    }
+    try {
+      await create.mutateAsync({
+        content: content.trim(),
+        visibility,
+        ...(visibility === "area" && userArea && { targetArea: userArea }),
+      });
+      setContent("");
+      setOpen(false);
+      toast.success("Publicación creada");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "No se pudo publicar");
+    }
   }
-  const initials = name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
-  return (
-    <div className="flex size-10 items-center justify-center rounded-full bg-primary/10 text-primary text-sm font-semibold shrink-0 ring-1 ring-primary/20">
-      {initials}
-    </div>
-  );
-}
 
-function getInitials(name: string) {
-  return name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
-}
-
-/* ── Skeletons ─────────────────────────────────────────────────── */
-
-function FeedSkeleton() {
-  return (
-    <div className="divide-y divide-border">
-      {[1, 2, 3].map((i) => (
-        <div key={i} className="flex gap-3 px-4 py-5 animate-pulse">
-          <Skeleton className="size-10 rounded-full shrink-0" />
-          <div className="flex-1 space-y-3">
-            <Skeleton className="h-3.5 w-36" />
-            <Skeleton className="h-4 w-full" />
-            <Skeleton className="h-4 w-4/5" />
-          </div>
+  if (!open) {
+    return (
+      <div className="panel" style={{ padding: 14, marginBottom: 14 }}>
+        <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+          <NovaAvatar name={name} size={36} variant="accent" />
+          <button
+            type="button"
+            onClick={() => setOpen(true)}
+            style={{
+              flex: 1,
+              textAlign: "left",
+              padding: "10px 14px",
+              background: "var(--bg-subtle)",
+              border: "1px solid var(--border)",
+              borderRadius: "var(--r)",
+              color: "var(--text-muted)",
+              fontSize: 13,
+              cursor: "pointer",
+            }}
+          >
+            Comparte algo con el equipo…
+          </button>
         </div>
-      ))}
-    </div>
-  );
-}
+        <div style={{ display: "flex", gap: 6, marginTop: 10, justifyContent: "flex-end" }}>
+          <button type="button" className="btn ghost btn-sm" onClick={() => setOpen(true)}>
+            <IconSvg d={Icons.upload} size={13} /> Foto
+          </button>
+          <button type="button" className="btn ghost btn-sm" onClick={() => setOpen(true)}>
+            <IconSvg d={Icons.party} size={13} /> Reconocimiento
+          </button>
+          <button type="button" className="btn ghost btn-sm" onClick={() => setOpen(true)}>
+            <IconSvg d={Icons.calendar} size={13} /> Evento
+          </button>
+        </div>
+      </div>
+    );
+  }
 
-function SidebarSkeleton() {
   return (
-    <div className="space-y-3 animate-pulse">
-      <Skeleton className="h-4 w-24" />
-      <Skeleton className="h-10 w-full rounded-lg" />
-      <Skeleton className="h-10 w-full rounded-lg" />
-      <Skeleton className="h-10 w-full rounded-lg" />
+    <div className="panel" style={{ padding: 14, marginBottom: 14 }}>
+      <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+        <NovaAvatar name={name} size={36} variant="accent" />
+        <textarea
+          className="form-textarea"
+          autoFocus
+          value={content}
+          onChange={(e) => setContent(e.target.value)}
+          placeholder="Comparte algo con el equipo…"
+          rows={3}
+          maxLength={500}
+          style={{ flex: 1 }}
+        />
+      </div>
+      <div
+        style={{
+          display: "flex",
+          gap: 6,
+          marginTop: 10,
+          alignItems: "center",
+          flexWrap: "wrap",
+        }}
+      >
+        <select
+          className="form-select"
+          value={visibility}
+          onChange={(e) => setVisibility(e.target.value as typeof visibility)}
+          style={{ width: "auto", fontSize: 12, padding: "6px 10px" }}
+        >
+          <option value="company">🌐 Toda la empresa</option>
+          <option value="area">👥 Mi área</option>
+          <option value="private">🔒 Solo yo</option>
+        </select>
+        <span style={{ fontSize: 11, color: "var(--text-muted)", marginLeft: 4 }}>
+          {content.length}/500
+        </span>
+        <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+          <button
+            type="button"
+            className="btn ghost btn-sm"
+            onClick={() => {
+              setOpen(false);
+              setContent("");
+            }}
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            className="btn primary btn-sm"
+            onClick={submit}
+            disabled={create.isPending || !content.trim()}
+          >
+            <IconSvg d={Icons.send} size={13} />
+            {create.isPending ? "Publicando…" : "Publicar"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
 
-/* ── Page ───────────────────────────────────────────────────────── */
+/* ============================================================
+   Right rail panels
+   ============================================================ */
+
+function BirthdaysPanel({
+  birthdays,
+  todayDate,
+}: {
+  birthdays: BirthdayEntry[];
+  todayDate: string;
+}) {
+  const rows = useMemo(() => {
+    const today = new Date(todayDate + "T12:00:00");
+    return birthdays
+      .map((b) => {
+        const month = parseInt(b.eventDate.substring(5, 7), 10) - 1;
+        const day = parseInt(b.eventDate.substring(8, 10), 10);
+        const next = new Date(today.getFullYear(), month, day, 12);
+        if (next < today) next.setFullYear(next.getFullYear() + 1);
+        const days = Math.round((next.getTime() - today.getTime()) / 86400000);
+        return { who: b.employeeName, days, next };
+      })
+      .sort((a, b) => a.days - b.days)
+      .slice(0, 4);
+  }, [birthdays, todayDate]);
+
+  return (
+    <div className="panel" style={{ marginBottom: 14 }}>
+      <div className="panel-head">
+        <div>
+          <div className="panel-title">Próximos cumpleaños</div>
+        </div>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {rows.length === 0 ? (
+          <div style={{ fontSize: 12, color: "var(--text-muted)", textAlign: "center", padding: 8 }}>
+            Sin cumpleaños este mes
+          </div>
+        ) : (
+          rows.map((b, i) => (
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <NovaAvatar name={b.who} size={32} variant="plain" />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)" }}>{b.who}</div>
+                <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                  🎂{" "}
+                  {b.days === 0
+                    ? "Hoy"
+                    : b.days === 1
+                    ? "Mañana"
+                    : b.next.toLocaleDateString("es-PE", { weekday: "short", day: "2-digit", month: "short" })}
+                </div>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+function EventsPanel({
+  holidays,
+  todayDate,
+}: {
+  holidays: { date: string; name: string }[];
+  todayDate: string;
+}) {
+  const upcoming = useMemo(() => {
+    const todayMs = new Date(todayDate + "T12:00:00").getTime();
+    return holidays
+      .map((h) => ({
+        ...h,
+        days: Math.floor((new Date(h.date + "T12:00:00").getTime() - todayMs) / 86400000),
+      }))
+      .filter((h) => h.days >= 0 && h.days <= 60)
+      .sort((a, b) => a.days - b.days)
+      .slice(0, 3);
+  }, [holidays, todayDate]);
+
+  return (
+    <div className="panel" style={{ marginBottom: 14 }}>
+      <div className="panel-head">
+        <div>
+          <div className="panel-title">Eventos</div>
+        </div>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {upcoming.length === 0 ? (
+          <div style={{ fontSize: 12, color: "var(--text-muted)", textAlign: "center", padding: 8 }}>
+            Sin eventos próximos
+          </div>
+        ) : (
+          upcoming.map((e, i) => {
+            const date = new Date(e.date + "T12:00:00");
+            const dateLabel = date.toLocaleDateString("es-PE", { weekday: "short", day: "2-digit", month: "short" });
+            return (
+              <div key={i} className="event-row">
+                <div className="event-icon warn">
+                  <IconSvg d={Icons.beach} size={14} />
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div className="event-title">{e.name}</div>
+                  <div className="event-meta">
+                    {dateLabel} · {e.days === 0 ? "Hoy" : e.days === 1 ? "Mañana" : `Feriado`}
+                  </div>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AnniversariesPanel({ anniversaries }: { anniversaries: AnniversaryEntry[] }) {
+  const rows = anniversaries.slice(0, 4);
+  return (
+    <div className="panel">
+      <div className="panel-head">
+        <div>
+          <div className="panel-title">Aniversarios laborales</div>
+        </div>
+      </div>
+      <div
+        style={{
+          fontSize: 12,
+          color: "var(--text-secondary)",
+          display: "flex",
+          flexDirection: "column",
+          gap: 8,
+        }}
+      >
+        {rows.length === 0 ? (
+          <div style={{ color: "var(--text-muted)", textAlign: "center", padding: 8 }}>
+            Sin aniversarios este mes
+          </div>
+        ) : (
+          rows.map((a, i) => (
+            <div key={i}>
+              <strong style={{ color: "var(--text-primary)" }}>{a.employeeName}</strong>{" "}
+              <span className="muted">cumple {a.years} {a.years === 1 ? "año" : "años"}</span>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================
+   Page
+   ============================================================ */
 
 export default function FeedPage() {
   const { data: session } = useSession();
-  const { data: profileData } = useMyProfile();
-  const { data, isLoading } = useFeed();
-  const createPost = useCreatePost();
-  const { data: tenant } = useTenantConfig();
+  const { data: feedData, isLoading } = useFeed();
   const tz = useTenantTimezone();
   const todayDate = todayInTz(tz);
   const monthStr = todayDate.substring(0, 7);
   const { data: hrData } = useHREvents(monthStr);
+  const { data: tenant } = useTenantConfig();
 
-  /* attendance data for share */
-  const { data: todayStatus } = useTodayStatus();
-  const { data: weekData } = useWeekSummary(0);
-
-  /* state */
-  const [content, setContent] = useState("");
-  const [visibility, setVisibility] = useState<PostVisibility>("company");
-  const [isFocused, setIsFocused] = useState(false);
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<FeedTab>("all");
-  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
-  const emojiRef = useRef<HTMLDivElement>(null);
-  const [pendingEmbed, setPendingEmbed] = useState<PostEmbed | null>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const composerRef = useRef<HTMLDivElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  /* derived */
-  const posts = data?.posts ?? [];
-  const currentUserId = (session?.user as { employeeId?: string })?.employeeId ?? "";
-  const currentArea = (session?.user as { area?: string })?.area ?? "";
-  const isAdmin = (session?.user as { role?: string })?.role === "ADMIN";
-  const userName = (session?.user as { name?: string })?.name ?? "Usuario";
-  const userAvatar = profileData?.PhotoURL ?? (session?.user as { image?: string })?.image ?? undefined;
-
-  const charCount = content.length;
-  const isOverLimit = charCount > MAX_CHARS;
-  const canPublish = (content.trim().length > 0 || imagePreview || pendingEmbed) && !isOverLimit && !createPost.isPending;
-  const showActionBar = isFocused || content.trim().length > 0 || !!imagePreview || !!pendingEmbed;
-
-  /* filtered posts by tab */
-  const filteredPosts = useMemo(() => {
-    let list = posts;
-    if (activeTab === "company") list = list.filter((p) => p.Visibility === "company");
-    if (activeTab === "area") list = list.filter((p) => p.Visibility === "area" && p.TargetArea === currentArea);
-    const pinned = list.filter((p) => p.IsPinned);
-    const regular = list.filter((p) => !p.IsPinned);
-    return [...pinned, ...regular];
-  }, [posts, activeTab, currentArea]);
-
-  /* HR data for sidebar */
-  const todayBirthdays = useMemo(() => {
-    const birthdays: BirthdayEntry[] = hrData?.birthdays ?? [];
-    const dayStr = todayDate.substring(5);
-    return birthdays.filter((b) => b.eventDate.substring(5) === dayStr);
-  }, [hrData, todayDate]);
-
-  const upcomingBirthdays = useMemo(() => {
-    const birthdays: BirthdayEntry[] = hrData?.birthdays ?? [];
-    const dayStr = todayDate.substring(5);
-    return birthdays.filter((b) => b.eventDate.substring(5) !== dayStr).slice(0, 3);
-  }, [hrData, todayDate]);
-
-  const todayAnniversaries = useMemo(() => {
-    const anniversaries: AnniversaryEntry[] = hrData?.anniversaries ?? [];
-    const dayStr = todayDate.substring(5);
-    return anniversaries.filter((a) => a.eventDate.substring(5) === dayStr);
-  }, [hrData, todayDate]);
-
-  const upcomingHolidays = useMemo(() => {
-    const holidays = tenant?.settings?.holidays ?? [];
-    const today = new Date(todayDate + "T12:00:00");
-    return holidays
-      .map((h) => ({ ...h, daysUntil: Math.floor((new Date(h.date + "T12:00:00").getTime() - today.getTime()) / 86400000) }))
-      .filter((h) => h.daysUntil > 0 && h.daysUntil <= 30)
-      .sort((a, b) => a.daysUntil - b.daysUntil)
-      .slice(0, 3);
-  }, [tenant, todayDate]);
-
-  /* trending topics (fake from post content) */
-  const trendingTopics = useMemo(() => {
-    const words = new Map<string, number>();
-    for (const p of posts) {
-      const tokens = p.Content.split(/\s+/).filter((w) => w.length > 4);
-      for (const t of tokens) {
-        const w = t.toLowerCase().replace(/[^a-záéíóúñ]/g, "");
-        if (w.length > 4) words.set(w, (words.get(w) ?? 0) + 1);
-      }
-    }
-    return [...words.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([word, count]) => ({ word, count }));
-  }, [posts]);
-
-  /* auto-grow */
-  const autoGrow = useCallback(() => {
-    const el = textareaRef.current;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${el.scrollHeight}px`;
-  }, []);
-
-  useEffect(() => { autoGrow(); }, [content, autoGrow]);
-
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (composerRef.current && !composerRef.current.contains(e.target as Node) && content.trim().length === 0 && !imagePreview && !pendingEmbed) {
-        setIsFocused(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [content, imagePreview]);
-
-  useEffect(() => {
-    if (!showEmojiPicker) return;
-    function handleClick(e: MouseEvent) {
-      if (emojiRef.current && !emojiRef.current.contains(e.target as Node)) {
-        setShowEmojiPicker(false);
-      }
-    }
-    // Delay so the opening click doesn't immediately close
-    const timer = setTimeout(() => document.addEventListener("mousedown", handleClick), 0);
-    return () => { clearTimeout(timer); document.removeEventListener("mousedown", handleClick); };
-  }, [showEmojiPicker]);
-
-  const insertEmoji = (emoji: string) => {
-    setContent((prev) => prev + emoji);
-    setShowEmojiPicker(false);
-    textareaRef.current?.focus();
-  };
-
-  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (file.size > 5 * 1024 * 1024) { toast.error("La imagen no debe superar 5MB"); return; }
-    const reader = new FileReader();
-    reader.onload = () => setImagePreview(reader.result as string);
-    reader.readAsDataURL(file);
-  };
-
-  const handleShareToday = () => {
-    if (!todayStatus) return;
-    setPendingEmbed({
-      type: "attendance_today",
-      data: {
-        date: todayStatus.date,
-        status: todayStatus.status,
-        firstIn: todayStatus.firstInLocal?.substring(0, 5) ?? "--:--",
-        lastOut: todayStatus.lastOutLocal?.substring(0, 5) ?? "--:--",
-        breakMinutes: todayStatus.breakMinutes,
-        workedMinutes: todayStatus.workedMinutes,
-        workedHHMM: todayStatus.workedHHMM,
-        plannedMinutes: todayStatus.plannedMinutes,
-        deltaMinutes: todayStatus.deltaMinutes,
-      },
-    });
-    if (!content.trim()) setContent("Mi jornada de hoy 📊");
-    setIsFocused(true);
-  };
-
-  const handleShareWeek = () => {
-    if (!weekData) return;
-    setPendingEmbed({
-      type: "week_summary",
-      data: {
-        fromDate: weekData.fromDate,
-        toDate: weekData.toDate,
-        totalWorkedHHMM: weekData.totalWorkedHHMM,
-        totalPlannedMinutes: weekData.totalPlannedMinutes,
-        totalDeltaMinutes: weekData.totalDeltaMinutes,
-        days: weekData.days.map((d) => ({
-          date: d.date,
-          weekday: d.weekday,
-          workedMinutes: d.workedMinutes,
-          status: d.status,
-        })),
-      },
-    });
-    if (!content.trim()) setContent("Mi resumen semanal 📅");
-    setIsFocused(true);
-  };
-
-  const handleShareAchievement = () => {
-    const completed = weekData?.days.filter((d) => ["OK", "CLOSED", "REGULARIZED"].includes(d.status)).length ?? 0;
-    const balance = weekData?.totalDeltaMinutes ?? 0;
-    setPendingEmbed({
-      type: "achievement",
-      data: {
-        title: balance >= 0 ? "¡Semana completa!" : "¡Sigo avanzando!",
-        description: balance >= 0 ? "Balance positivo esta semana" : "Cada día cuenta",
-        stat: `${completed}`,
-        statLabel: "jornadas",
-        icon: balance >= 0 ? "trophy" : "flame",
-      },
-    });
-    if (!content.trim()) setContent(balance >= 0 ? "¡Gran semana! 🏆" : "¡Seguimos adelante! 💪");
-    setIsFocused(true);
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!canPublish) return;
-    try {
-      await createPost.mutateAsync({
-        content: content.trim() || (pendingEmbed ? "Compartió datos de asistencia" : ""),
-        visibility,
-        ...(pendingEmbed && { embed: pendingEmbed }),
-      });
-      setContent("");
-      setVisibility("company");
-      setImagePreview(null);
-      setPendingEmbed(null);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-      setIsFocused(false);
-      toast.success("¡Publicación creada!");
-    } catch { toast.error("Error al crear publicación"); }
-  };
-
-  const currentVis = VISIBILITY_OPTIONS.find((o) => o.value === visibility)!;
-  const VisIcon = currentVis.icon;
+  const posts = feedData?.posts ?? [];
+  const userName = session?.user?.name ?? "Usuario";
+  const birthdays: BirthdayEntry[] = hrData?.birthdays ?? [];
+  const anniversaries: AnniversaryEntry[] = hrData?.anniversaries ?? [];
+  const holidays = tenant?.settings?.holidays ?? [];
 
   return (
-    <div className="mx-auto max-w-5xl flex gap-6">
-      {/* ════════════════════════════════════════════════════════════ */}
-      {/* MAIN FEED COLUMN                                           */}
-      {/* ════════════════════════════════════════════════════════════ */}
-      <div className="flex-1 min-w-0 max-w-xl">
-        {/* Header + Tabs */}
-        <div className="sticky top-0 z-10 bg-background/80 backdrop-blur-sm border-b">
-          <div className="px-4 pt-3 pb-0">
-            <h1 className="text-xl font-bold tracking-tight bg-gradient-to-r from-primary to-violet-500 bg-clip-text text-transparent">Feed</h1>
-          </div>
-          <div className="flex border-b-0 px-1">
-            {([
-              { key: "all" as FeedTab, label: "Para ti", icon: Sparkles },
-              { key: "company" as FeedTab, label: "Empresa", icon: Building2 },
-              { key: "area" as FeedTab, label: "Mi Área", icon: Users },
-            ]).map((tab) => (
-              <button
-                key={tab.key}
-                onClick={() => setActiveTab(tab.key)}
-                className={cn(
-                  "flex-1 flex items-center justify-center gap-1.5 py-3 text-sm font-medium transition-colors relative",
-                  activeTab === tab.key
-                    ? "text-foreground"
-                    : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
-                )}
-              >
-                <tab.icon className="size-4" />
-                {tab.label}
-                {activeTab === tab.key && (
-                  <span className="absolute bottom-0 left-1/4 right-1/4 h-0.5 rounded-full bg-primary" />
-                )}
-              </button>
-            ))}
-          </div>
-        </div>
+    <>
+      {/* Page Header */}
+      <PageHeader
+        title="Feed de la empresa"
+        subtitle="Anuncios, reconocimientos y momentos importantes."
+      />
 
-        {/* Composer */}
-        <div ref={composerRef} className={cn("border-b transition-all duration-200", isFocused ? "bg-card shadow-sm" : "")}>
-          <form onSubmit={handleSubmit} className="px-4 py-4">
-            <div className="flex gap-3">
-              <ComposerAvatar name={userName} src={userAvatar} />
-              <div className="flex-1 min-w-0">
-                <textarea
-                  ref={textareaRef}
-                  value={content}
-                  onChange={(e) => setContent(e.target.value)}
-                  onFocus={() => setIsFocused(true)}
-                  placeholder="¿Qué quieres compartir con tu equipo?"
-                  rows={1}
-                  className={cn(
-                    "w-full resize-none bg-transparent text-[15px] leading-relaxed",
-                    "placeholder:text-muted-foreground/50",
-                    "border-0 outline-none ring-0 focus:ring-0 focus:outline-none",
-                    "py-2 min-h-[44px] transition-[min-height] duration-200",
-                    isFocused && "min-h-[80px]",
-                  )}
-                />
-                {imagePreview && (
-                  <div className="relative mt-2 rounded-xl overflow-hidden border">
-                    <img src={imagePreview} alt="Preview" className="w-full max-h-64 object-cover" />
-                    <button type="button" onClick={() => { setImagePreview(null); if (fileInputRef.current) fileInputRef.current.value = ""; }}
-                      className="absolute top-2 right-2 rounded-full bg-black/60 p-1.5 text-white hover:bg-black/80 transition-colors">
-                      <X className="size-4" />
-                    </button>
-                  </div>
-                )}
-                {/* Embed preview */}
-                {pendingEmbed && (
-                  <div className="relative">
-                    <FeedEmbed embed={pendingEmbed} />
-                    <button type="button" onClick={() => setPendingEmbed(null)}
-                      className="absolute top-1 right-1 rounded-full bg-black/60 p-1 text-white hover:bg-black/80 transition-colors z-10">
-                      <X className="size-3.5" />
-                    </button>
-                  </div>
-                )}
-                <div className={cn(
-                  "flex items-center justify-between gap-3 pt-3 border-t border-border/40 transition-all duration-200 ease-out",
-                  showActionBar ? "opacity-100 max-h-24 mt-2" : "opacity-0 max-h-0 overflow-hidden mt-0 pt-0 border-t-0",
-                )}>
-                  <div className="flex items-center gap-1">
-                    <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageSelect} />
-                    <button type="button" onClick={() => fileInputRef.current?.click()} className="rounded-full p-2 text-primary hover:bg-primary/10 transition-colors" title="Agregar imagen">
-                      <ImageIcon className="size-4" />
-                    </button>
-                    <div className="relative" ref={emojiRef}>
-                      <button type="button" onClick={() => setShowEmojiPicker((p) => !p)}
-                        className={cn("rounded-full p-2 text-primary hover:bg-primary/10 transition-colors", showEmojiPicker && "bg-primary/10")} title="Emoji">
-                        <Smile className="size-4" />
-                      </button>
-                      {showEmojiPicker && (
-                        <div className="absolute left-0 top-full mt-2 z-50 w-[280px] rounded-xl border bg-popover shadow-xl animate-in fade-in zoom-in-95 duration-150">
-                          <div className="p-2 border-b">
-                            <p className="text-[10px] font-semibold text-muted-foreground uppercase px-1">Emojis</p>
-                          </div>
-                          <div className="p-2 max-h-48 overflow-y-auto">
-                            <p className="text-[9px] text-muted-foreground px-1 mb-1">Caras</p>
-                            <div className="grid grid-cols-8 gap-0.5 mb-2">
-                              {["😀","😂","🥲","😍","🤩","😎","🤔","😅","😊","🥳","😤","🫡","🤗","😏","🙃","😴"].map((e) => (
-                                <button key={e} type="button" onClick={() => insertEmoji(e)}
-                                  className="flex size-8 items-center justify-center rounded-lg text-base hover:bg-muted transition-all hover:scale-125">{e}</button>
-                              ))}
-                            </div>
-                            <p className="text-[9px] text-muted-foreground px-1 mb-1">Gestos</p>
-                            <div className="grid grid-cols-8 gap-0.5 mb-2">
-                              {["👍","👏","🔥","💪","🙌","🤝","✌️","🫶","❤️","💯","⭐","✨","🎉","🚀","🎯","💡"].map((e) => (
-                                <button key={e} type="button" onClick={() => insertEmoji(e)}
-                                  className="flex size-8 items-center justify-center rounded-lg text-base hover:bg-muted transition-all hover:scale-125">{e}</button>
-                              ))}
-                            </div>
-                            <p className="text-[9px] text-muted-foreground px-1 mb-1">Trabajo</p>
-                            <div className="grid grid-cols-8 gap-0.5">
-                              {["💼","📊","📅","☕","🏆","✅","❌","⏰","📢","📝","🗓️","💻","📈","🔔","🎓","🏅"].map((e) => (
-                                <button key={e} type="button" onClick={() => insertEmoji(e)}
-                                  className="flex size-8 items-center justify-center rounded-lg text-base hover:bg-muted transition-all hover:scale-125">{e}</button>
-                              ))}
-                            </div>
-                          </div>
-                        </div>
-                      )}
+      <div className="feed-layout">
+        {/* Left: Composer + Posts */}
+        <div className="feed-main">
+          <Composer name={userName} userArea={(session?.user as { area?: string } | undefined)?.area} />
+
+          {isLoading ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              {[1, 2, 3].map((i) => (
+                <div
+                  key={i}
+                  className="panel"
+                  style={{ padding: 20, opacity: 0.5 }}
+                >
+                  <div style={{ display: "flex", gap: 10 }}>
+                    <div style={{ width: 40, height: 40, borderRadius: "50%", background: "var(--bg-subtle)" }} />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ height: 12, width: "30%", background: "var(--bg-subtle)", borderRadius: 4 }} />
+                      <div style={{ height: 10, width: "20%", background: "var(--bg-subtle)", borderRadius: 4, marginTop: 6 }} />
                     </div>
-                    <div className="mx-1 h-5 w-px bg-border" />
-                    <button type="button" onClick={handleShareToday} className="rounded-full p-2 text-blue-500 hover:bg-blue-500/10 transition-colors" title="Compartir mi jornada">
-                      <BarChart3 className="size-4" />
-                    </button>
-                    <button type="button" onClick={handleShareWeek} className="rounded-full p-2 text-violet-500 hover:bg-violet-500/10 transition-colors" title="Compartir mi semana">
-                      <CalendarCheck className="size-4" />
-                    </button>
-                    <button type="button" onClick={handleShareAchievement} className="rounded-full p-2 text-amber-500 hover:bg-amber-500/10 transition-colors" title="Compartir logro">
-                      <TrophyIcon className="size-4" />
-                    </button>
-                    <div className="mx-1 h-5 w-px bg-border" />
-                    <button type="button" onClick={() => { const idx = VISIBILITY_OPTIONS.findIndex((o) => o.value === visibility); setVisibility(VISIBILITY_OPTIONS[(idx + 1) % VISIBILITY_OPTIONS.length].value); }}
-                      className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium text-primary border border-primary/20 bg-primary/5 hover:bg-primary/10 transition-colors">
-                      <VisIcon className="size-3.5" />{currentVis.label}
-                    </button>
                   </div>
-                  <div className="flex items-center gap-3">
-                    {charCount > 0 && (
-                      <>
-                        <div className="relative size-5">
-                          <svg className="size-5 -rotate-90" viewBox="0 0 20 20">
-                            <circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" strokeWidth="2" className="text-muted/30" />
-                            <circle cx="10" cy="10" r="8" fill="none" strokeWidth="2"
-                              strokeDasharray={`${Math.min(1, charCount / MAX_CHARS) * 50.26} 50.26`}
-                              className={cn(isOverLimit ? "stroke-destructive" : charCount > MAX_CHARS * 0.8 ? "stroke-amber-500" : "stroke-primary")} />
-                          </svg>
-                        </div>
-                        <div className="h-5 w-px bg-border" />
-                      </>
-                    )}
-                    <Button type="submit" size="sm" disabled={!canPublish} className="rounded-full px-5 h-8 text-xs font-semibold">
-                      {createPost.isPending ? <Loader2 className="size-3.5 animate-spin" /> : "Publicar"}
-                    </Button>
-                  </div>
+                  <div style={{ height: 14, width: "70%", background: "var(--bg-subtle)", borderRadius: 4, marginTop: 14 }} />
+                  <div style={{ height: 12, width: "90%", background: "var(--bg-subtle)", borderRadius: 4, marginTop: 8 }} />
                 </div>
+              ))}
+            </div>
+          ) : posts.length === 0 ? (
+            <div
+              className="panel"
+              style={{ padding: "60px 24px", textAlign: "center" }}
+            >
+              <div
+                style={{
+                  width: 56,
+                  height: 56,
+                  borderRadius: "50%",
+                  background: "var(--bg-subtle)",
+                  color: "var(--text-secondary)",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  marginBottom: 14,
+                }}
+              >
+                <IconSvg d={Icons.feed} size={22} />
+              </div>
+              <div style={{ fontSize: 15, fontWeight: 600 }}>Sin publicaciones</div>
+              <div style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 4, maxWidth: 320, margin: "4px auto 0" }}>
+                Sé el primero en compartir algo con tu equipo.
               </div>
             </div>
-          </form>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              {posts.map((p) => (
+                <PostCard key={p.PostID} post={p} currentUserId={session?.user?.id} />
+              ))}
+            </div>
+          )}
         </div>
 
-        {/* Posts */}
-        {isLoading ? (
-          <FeedSkeleton />
-        ) : filteredPosts.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 text-center px-4">
-            <div className="flex size-20 items-center justify-center rounded-2xl bg-gradient-to-br from-primary/20 to-violet-500/20">
-              <Megaphone className="size-10 text-primary" />
-            </div>
-            <h3 className="mt-5 text-lg font-semibold bg-gradient-to-r from-primary to-violet-500 bg-clip-text text-transparent">¡Empieza la conversación!</h3>
-            <p className="mt-2 max-w-xs text-sm text-muted-foreground">
-              {activeTab === "all" ? "Sé el primero en compartir algo con tu equipo." : "No hay publicaciones en esta categoría."}
-            </p>
-            <Button className="mt-6 rounded-full px-6" onClick={() => { textareaRef.current?.focus(); setIsFocused(true); }}>
-              Crear publicación
-            </Button>
-          </div>
-        ) : (
-          <div className="divide-y divide-border">
-            {filteredPosts.map((post) => (
-              <PostCard key={post.PostID} post={post} currentUserId={currentUserId} isAdmin={isAdmin} />
-            ))}
-          </div>
-        )}
+        {/* Right rail */}
+        <aside className="feed-rail">
+          <BirthdaysPanel birthdays={birthdays} todayDate={todayDate} />
+          <EventsPanel holidays={holidays} todayDate={todayDate} />
+          <AnniversariesPanel anniversaries={anniversaries} />
+        </aside>
       </div>
 
-      {/* ════════════════════════════════════════════════════════════ */}
-      {/* SIDEBAR (hidden on mobile)                                  */}
-      {/* ════════════════════════════════════════════════════════════ */}
-      <aside className="hidden lg:block w-72 xl:w-80 shrink-0 space-y-4 pt-4">
-        {/* Cumpleaños del día */}
-        {todayBirthdays.length > 0 && (
-          <SidebarCard title="🎂 Cumpleaños hoy" icon={Cake} iconColor="text-pink-500" accent="border-pink-200 dark:border-pink-900/30 bg-gradient-to-br from-pink-50/50 to-card dark:from-pink-950/10">
-            {todayBirthdays.map((b) => (
-              <div key={b.employeeId} className="flex items-center gap-2.5 py-1.5">
-                <div className="flex size-8 items-center justify-center rounded-full bg-pink-100 dark:bg-pink-950/30 text-xs font-semibold text-pink-600">
-                  {getInitials(b.employeeName)}
-                </div>
-                <div className="min-w-0">
-                  <p className="text-sm font-medium truncate">{b.employeeName}</p>
-                  <p className="text-[11px] text-muted-foreground">{b.area}</p>
-                </div>
-              </div>
-            ))}
-          </SidebarCard>
-        )}
-
-        {/* Aniversarios del día */}
-        {todayAnniversaries.length > 0 && (
-          <SidebarCard title="🏆 Aniversarios hoy" icon={Trophy} iconColor="text-amber-500" accent="border-amber-200 dark:border-amber-900/30 bg-gradient-to-br from-amber-50/50 to-card dark:from-amber-950/10">
-            {todayAnniversaries.map((a) => (
-              <div key={a.employeeId} className="flex items-center gap-2.5 py-1.5">
-                <div className="flex size-8 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-950/30 text-xs font-semibold text-amber-600">
-                  {getInitials(a.employeeName)}
-                </div>
-                <div className="min-w-0">
-                  <p className="text-sm font-medium truncate">{a.employeeName}</p>
-                  <p className="text-[11px] text-muted-foreground">{a.years} años en la empresa</p>
-                </div>
-              </div>
-            ))}
-          </SidebarCard>
-        )}
-
-        {/* Próximos cumpleaños */}
-        {upcomingBirthdays.length > 0 && (
-          <SidebarCard title="Próximos cumpleaños" icon={Calendar} iconColor="text-violet-500" accent="border-violet-200 dark:border-violet-900/30">
-            {upcomingBirthdays.map((b) => (
-              <div key={b.employeeId} className="flex items-center justify-between py-1.5">
-                <div className="flex items-center gap-2 min-w-0">
-                  <div className="flex size-7 items-center justify-center rounded-full bg-muted text-[10px] font-semibold">
-                    {getInitials(b.employeeName)}
-                  </div>
-                  <p className="text-sm truncate">{b.employeeName.split(" ")[0]}</p>
-                </div>
-                <span className="text-[11px] text-muted-foreground shrink-0">
-                  {new Date(b.eventDate + "T12:00:00").toLocaleDateString("es-PE", { day: "numeric", month: "short" })}
-                </span>
-              </div>
-            ))}
-          </SidebarCard>
-        )}
-
-        {/* Próximos feriados */}
-        {upcomingHolidays.length > 0 && (
-          <SidebarCard title="Próximos feriados" icon={Flag} iconColor="text-indigo-500" accent="border-indigo-200 dark:border-indigo-900/30">
-            {upcomingHolidays.map((h) => (
-              <div key={h.date} className="flex items-center justify-between py-1.5">
-                <p className="text-sm truncate">{h.name}</p>
-                <Badge variant="secondary" className="text-[10px] shrink-0">
-                  {h.daysUntil === 1 ? "Mañana" : `${h.daysUntil}d`}
-                </Badge>
-              </div>
-            ))}
-          </SidebarCard>
-        )}
-
-        {/* Trending (palabras frecuentes) */}
-        {trendingTopics.length > 0 && (
-          <SidebarCard title="Tendencias" icon={TrendingUp} iconColor="text-emerald-500" accent="border-emerald-200 dark:border-emerald-900/30">
-            {trendingTopics.map((t, i) => (
-              <div key={t.word} className="py-1.5">
-                <p className="text-[11px] text-muted-foreground">Tendencia #{i + 1}</p>
-                <p className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">#{t.word}</p>
-                <p className="text-[11px] text-muted-foreground">{t.count} menciones</p>
-              </div>
-            ))}
-          </SidebarCard>
-        )}
-
-        {/* Stats rápidos */}
-        <SidebarCard title="Actividad" icon={Sparkles} iconColor="text-blue-500" accent="border-blue-200 dark:border-blue-900/30 bg-gradient-to-br from-blue-50/30 to-card dark:from-blue-950/10">
-          <div className="grid grid-cols-2 gap-2">
-            <div className="rounded-lg bg-muted/50 p-2.5 text-center">
-              <p className="text-lg font-bold">{posts.length}</p>
-              <p className="text-[10px] text-muted-foreground">Publicaciones</p>
-            </div>
-            <div className="rounded-lg bg-muted/50 p-2.5 text-center">
-              <p className="text-lg font-bold">{posts.reduce((a, p) => a + (p.Comments?.length ?? 0), 0)}</p>
-              <p className="text-[10px] text-muted-foreground">Comentarios</p>
-            </div>
-          </div>
-        </SidebarCard>
-
-        {/* Footer */}
-        <div className="px-1 pt-2">
-          <p className="text-[11px] text-muted-foreground/50 leading-relaxed">
-            Novasys Asistencia · Feed Social · {new Date().getFullYear()}
-          </p>
-        </div>
-      </aside>
-    </div>
-  );
-}
-
-/* ── Sidebar Card Component ────────────────────────────────────── */
-
-function SidebarCard({
-  title,
-  icon: Icon,
-  iconColor,
-  accent,
-  children,
-}: {
-  title: string;
-  icon: React.ElementType;
-  iconColor: string;
-  accent?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className={cn("rounded-xl border p-4 transition-shadow hover:shadow-sm", accent || "bg-card")}>
-      <div className="flex items-center gap-2 mb-3">
-        <Icon className={cn("size-4", iconColor)} />
-        <h3 className="text-sm font-semibold">{title}</h3>
-      </div>
-      {children}
-    </div>
+      <style jsx>{`
+        .feed-layout {
+          display: grid;
+          grid-template-columns: 1fr 280px;
+          gap: 20px;
+        }
+        @media (max-width: 1100px) {
+          .feed-layout {
+            grid-template-columns: 1fr;
+          }
+        }
+        .feed-main {
+          min-width: 0;
+        }
+        .feed-rail {
+          min-width: 0;
+        }
+      `}</style>
+    </>
   );
 }

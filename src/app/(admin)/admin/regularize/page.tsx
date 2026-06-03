@@ -1,26 +1,44 @@
 "use client";
 
-import { useState, useMemo } from "react";
+/**
+ * Regularizar asistencia — admin page (rediseño completo).
+ *
+ * Layout: 2 columns. Left = form steps (employee → date(s) → details).
+ * Right = sticky summary card with live preview ("qué va a pasar") and
+ * the primary CTA.
+ *
+ * Three modes selected via a top-card switcher:
+ *   • single  — regularize ONE day for one employee
+ *   • range   — regularize a DATE RANGE for one employee (with
+ *               weekday/past-only/overwrite toggles)
+ *   • clean   — DELETE the existing record for a specific day (the
+ *               destructive action, paint red + inline confirm, no
+ *               native confirm() dialog)
+ *
+ * The reason picker is a visual grid of chips with category icons
+ * (medical, vacation, work-trip, training, ...) instead of a plain
+ * <select>. Schedule shows a live preview ("8.0h trabajadas + 1h
+ * break") computed from the time fields.
+ *
+ * Toast notifications via sonner replace the inline success/error
+ * banners that the old version used.
+ *
+ * API contracts are UNCHANGED:
+ *   POST /api/regularization
+ *   POST /api/regularization/range
+ *   DELETE /api/admin/daily-summary/:empId/:date
+ */
+
+import { useEffect, useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { useAdminEmployees } from "@/hooks/use-employee";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Switch } from "@/components/ui/switch";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
-  Tabs,
-  TabsList,
-  TabsTrigger,
-  TabsContent,
-} from "@/components/ui/tabs";
-import { ALL_REASON_OPTIONS } from "@/lib/constants/reason-codes";
-import { Loader2, CheckCircle, XCircle, Search, Users, Trash2, AlertTriangle } from "lucide-react";
+import { REASON_LABELS, ALL_REASON_OPTIONS, ABSENCE_REASONS } from "@/lib/constants/reason-codes";
+import { IconSvg, Icons } from "@/components/nova/icons";
+import { NovaAvatar } from "@/components/nova/avatar";
+import { PageHeader } from "@/components/nova/page-header";
+
+/* -------------------------------------------------------------------- types */
 
 type EmployeeItem = {
   employeeId: string;
@@ -29,80 +47,132 @@ type EmployeeItem = {
   area: string;
 };
 
-interface FormMessage {
-  type: "success" | "error";
-  text: string;
+type Mode = "single" | "range" | "clean";
+
+/* ---------------------------------------------------------- reason metadata */
+// Map each reason to a category icon + intent ("absence" vs "workday").
+
+const REASON_ICON: Record<string, React.ReactNode> = {
+  VACACIONES: Icons.beach,
+  DESCANSO_MEDICO: Icons.heart,
+  DESCANSO_PRENATAL: Icons.heart,
+  DESCANSO_POSTNATAL: Icons.heart,
+  VIAJE_TRABAJO: Icons.briefcase,
+  VISITA_CLIENTE: Icons.users,
+  COMISION_SERVICIO: Icons.briefcase,
+  OLVIDO_MARCACION: Icons.clock,
+  FALLA_SISTEMA: Icons.alert,
+  CAPACITACION: Icons.cake,
+  PERMISO: Icons.calendar,
+  OTRO: Icons.more,
+  CARGA_INICIAL: Icons.upload,
+};
+
+/* ---------------------------------------------------------------- helpers */
+
+function diffMinutes(start: string, end: string): number {
+  if (!start || !end) return 0;
+  const [sh, sm] = start.split(":").map(Number);
+  const [eh, em] = end.split(":").map(Number);
+  if ([sh, sm, eh, em].some((n) => Number.isNaN(n))) return 0;
+  const total = eh * 60 + em - (sh * 60 + sm);
+  return total > 0 ? total : 0;
 }
 
+function fmtHours(min: number): string {
+  if (min <= 0) return "0h";
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return m === 0 ? `${h}h` : `${h}h ${String(m).padStart(2, "0")}m`;
+}
+
+function countDays(from: string, to: string, weekdaysOnly: boolean): number {
+  if (!from || !to) return 0;
+  const f = new Date(from + "T00:00:00");
+  const t = new Date(to + "T00:00:00");
+  if (Number.isNaN(f.getTime()) || Number.isNaN(t.getTime()) || t < f) return 0;
+  let n = 0;
+  const cur = new Date(f);
+  while (cur <= t) {
+    const dow = cur.getDay();
+    if (!weekdaysOnly || (dow !== 0 && dow !== 6)) n++;
+    cur.setDate(cur.getDate() + 1);
+  }
+  return n;
+}
+
+/* ============================================================ Page */
+
 export default function RegularizePage() {
+  const queryClient = useQueryClient();
   const { data, isLoading: loadingEmployees } = useAdminEmployees();
-  const employees = data?.employees ?? [];
+  const employees: EmployeeItem[] = data?.employees ?? [];
+
+  const [mode, setMode] = useState<Mode>("single");
+
+  // Form state — shared across modes when sensible.
+  const [employeeId, setEmployeeId] = useState("");
+  const [employeeName, setEmployeeName] = useState("");
+  const [employeeArea, setEmployeeArea] = useState("");
   const [empSearch, setEmpSearch] = useState("");
 
-  const filteredEmployees = useMemo(() => {
-    if (!empSearch.trim()) return employees;
-    const q = empSearch.toLowerCase();
-    return employees.filter(
-      (e) =>
-        e.fullName.toLowerCase().includes(q) ||
-        e.email.toLowerCase().includes(q) ||
-        e.area.toLowerCase().includes(q)
-    );
-  }, [employees, empSearch]);
-
-  // Single day form state
-  const [singleEmployeeId, setSingleEmployeeId] = useState("");
-  const [singleEmployeeName, setSingleEmployeeName] = useState("");
   const [workDate, setWorkDate] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+
   const [startTime, setStartTime] = useState("09:00");
   const [endTime, setEndTime] = useState("18:00");
   const [breakMinutes, setBreakMinutes] = useState(60);
+
   const [reasonCode, setReasonCode] = useState("");
   const [reasonNote, setReasonNote] = useState("");
-  const [singleLoading, setSingleLoading] = useState(false);
-  const [singleMessage, setSingleMessage] = useState<FormMessage | null>(null);
 
-  // Range form state
-  const [rangeEmployeeId, setRangeEmployeeId] = useState("");
-  const [rangeEmployeeName, setRangeEmployeeName] = useState("");
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
-  const [rangeStartTime, setRangeStartTime] = useState("09:00");
-  const [rangeEndTime, setRangeEndTime] = useState("18:00");
-  const [rangeBreakMinutes, setRangeBreakMinutes] = useState(60);
-  const [rangeReasonCode, setRangeReasonCode] = useState("");
-  const [rangeReasonNote, setRangeReasonNote] = useState("");
   const [weekdaysOnly, setWeekdaysOnly] = useState(true);
   const [pastDatesOnly, setPastDatesOnly] = useState(true);
   const [overwrite, setOverwrite] = useState(false);
-  const [rangeLoading, setRangeLoading] = useState(false);
-  const [rangeMessage, setRangeMessage] = useState<FormMessage | null>(null);
 
-  function selectEmployee(
-    empId: string,
-    empName: string,
-    target: "single" | "range"
-  ) {
-    if (target === "single") {
-      setSingleEmployeeId(empId);
-      setSingleEmployeeName(empName);
-    } else {
-      setRangeEmployeeId(empId);
-      setRangeEmployeeName(empName);
-    }
+  const [submitting, setSubmitting] = useState(false);
+  const [confirmingClean, setConfirmingClean] = useState(false);
+
+  // Reset confirmation when key inputs change.
+  useEffect(() => setConfirmingClean(false), [employeeId, workDate, mode]);
+
+  function invalidateAttendanceCaches(empId?: string) {
+    queryClient.invalidateQueries({ queryKey: ["admin", "attendance"] });
+    queryClient.invalidateQueries({ queryKey: ["admin", "dashboard"] });
+    queryClient.invalidateQueries({ queryKey: ["attendance"] });
+    if (empId) queryClient.invalidateQueries({ queryKey: ["admin", "employee", empId] });
   }
 
-  async function handleSingleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setSingleLoading(true);
-    setSingleMessage(null);
+  /* ------------------------------------------- derived (live preview) */
+  const isAbsence = reasonCode ? ABSENCE_REASONS.has(reasonCode) : false;
+  const grossMin = diffMinutes(startTime, endTime);
+  const workedMin = Math.max(0, grossMin - (breakMinutes || 0));
+  const dayCount =
+    mode === "range"
+      ? countDays(dateFrom, dateTo, weekdaysOnly)
+      : workDate
+      ? 1
+      : 0;
+  const totalWorkedMin = isAbsence ? 0 : workedMin * dayCount;
 
+  /* ----------------------------------- validity for the submit button */
+  const validSingle = !!employeeId && !!workDate && !!reasonCode;
+  const validRange =
+    !!employeeId && !!dateFrom && !!dateTo && !!reasonCode && dayCount > 0;
+  const validClean = !!employeeId && !!workDate;
+  const isValid =
+    mode === "single" ? validSingle : mode === "range" ? validRange : validClean;
+
+  /* ---------------------------------------------- submit handlers */
+  async function submitSingle() {
+    setSubmitting(true);
     try {
       const res = await fetch("/api/regularization", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          employeeId: singleEmployeeId,
+          employeeId,
           workDate,
           startTime,
           endTime,
@@ -111,655 +181,599 @@ export default function RegularizePage() {
           reasonNote,
         }),
       });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error || "Error al regularizar");
-      }
-
-      setSingleMessage({
-        type: "success",
-        text: data.message || "Regularizacion aplicada correctamente",
-      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || "Error al regularizar");
+      toast.success(body.message || "Regularización aplicada");
+      invalidateAttendanceCaches(employeeId);
+      // Soft reset: clear date + note, keep employee & schedule for batch flow
+      setWorkDate("");
+      setReasonNote("");
     } catch (err) {
-      setSingleMessage({
-        type: "error",
-        text: err instanceof Error ? err.message : "Error desconocido",
-      });
+      toast.error(err instanceof Error ? err.message : "Error al regularizar");
     } finally {
-      setSingleLoading(false);
+      setSubmitting(false);
     }
   }
 
-  async function handleRangeSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setRangeLoading(true);
-    setRangeMessage(null);
-
+  async function submitRange() {
+    setSubmitting(true);
     try {
       const res = await fetch("/api/regularization/range", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          employeeId: rangeEmployeeId,
+          employeeId,
           dateFrom,
           dateTo,
-          startTime: rangeStartTime,
-          endTime: rangeEndTime,
-          breakMinutes: rangeBreakMinutes,
-          reasonCode: rangeReasonCode,
-          reasonNote: rangeReasonNote,
+          startTime,
+          endTime,
+          breakMinutes,
+          reasonCode,
+          reasonNote,
           weekdaysOnly,
           pastDatesOnly,
           overwrite,
         }),
       });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error || "Error al regularizar rango");
-      }
-
-      const processedCount =
-        (data.totalCreated ?? 0) + (data.totalOverwritten ?? 0);
-      const parts: string[] = [
-        `Regularización aplicada a ${processedCount} día(s)`,
-      ];
-      if (data.totalIgnoredHolidays) {
-        parts.push(`${data.totalIgnoredHolidays} feriado(s) respetado(s)`);
-      }
-      if (data.totalIgnoredWeekends) {
-        parts.push(`${data.totalIgnoredWeekends} fin(es) de semana omitido(s)`);
-      }
-      if (data.totalSkipped) {
-        parts.push(`${data.totalSkipped} ya existente(s) sin sobrescribir`);
-      }
-      setRangeMessage({
-        type: "success",
-        text: data.message || parts.join(" · "),
-      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || "Error al regularizar rango");
+      const processed = (body.totalCreated ?? 0) + (body.totalOverwritten ?? 0);
+      const parts = [`${processed} día(s) regularizados`];
+      if (body.totalIgnoredHolidays) parts.push(`${body.totalIgnoredHolidays} feriado(s) respetado(s)`);
+      if (body.totalIgnoredWeekends) parts.push(`${body.totalIgnoredWeekends} fin de semana omitido(s)`);
+      if (body.totalSkipped) parts.push(`${body.totalSkipped} ya existente(s) sin sobrescribir`);
+      toast.success(parts.join(" · "));
+      invalidateAttendanceCaches(employeeId);
+      setDateFrom("");
+      setDateTo("");
+      setReasonNote("");
     } catch (err) {
-      setRangeMessage({
-        type: "error",
-        text: err instanceof Error ? err.message : "Error desconocido",
-      });
+      toast.error(err instanceof Error ? err.message : "Error al regularizar rango");
     } finally {
-      setRangeLoading(false);
+      setSubmitting(false);
     }
   }
 
-  function EmployeeSelector({
-    selectedId,
-    selectedName,
-    target,
-  }: {
-    selectedId: string;
-    selectedName: string;
-    target: "single" | "range";
-  }) {
-    return (
-      <div className="space-y-2">
-        <Label>Empleado</Label>
-        {selectedId ? (
-          <div className="flex items-center gap-2">
-            <div className="flex-1 rounded-md border bg-muted/30 px-3 py-2">
-              <p className="text-sm font-medium">{selectedName}</p>
-              <p className="text-xs text-muted-foreground">{selectedId}</p>
-            </div>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => selectEmployee("", "", target)}
-            >
-              Cambiar
-            </Button>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                placeholder="Buscar empleado..."
-                value={empSearch}
-                onChange={(e) => setEmpSearch(e.target.value)}
-                className="pl-9"
-              />
-            </div>
-            {loadingEmployees ? (
-              <p className="text-sm text-muted-foreground">Cargando...</p>
-            ) : (
-              <div className="max-h-48 overflow-y-auto space-y-1 rounded-md border p-2">
-                {filteredEmployees.map((emp) => (
-                  <button
-                    key={emp.employeeId}
-                    type="button"
-                    onClick={() =>
-                      selectEmployee(emp.employeeId, emp.fullName, target)
-                    }
-                    className="w-full flex items-center gap-3 rounded-md px-3 py-2 text-left hover:bg-muted/50 transition-colors"
-                  >
-                    <Users className="h-4 w-4 text-muted-foreground shrink-0" />
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium truncate">
-                        {emp.fullName}
-                      </p>
-                      <p className="text-xs text-muted-foreground truncate">
-                        {emp.email} &middot; {emp.area}
-                      </p>
-                    </div>
-                  </button>
-                ))}
-                {filteredEmployees.length === 0 && (
-                  <p className="text-sm text-muted-foreground text-center py-4">
-                    No se encontraron empleados
-                  </p>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-    );
+  async function submitClean() {
+    setSubmitting(true);
+    try {
+      const url = `/api/admin/daily-summary/${encodeURIComponent(employeeId)}/${encodeURIComponent(workDate)}`;
+      const res = await fetch(url, { method: "DELETE" });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || `Error ${res.status}`);
+      toast.success(
+        body.deleted
+          ? "Registro eliminado. Puedes deshacerlo en Historial."
+          : "No había registro para ese día."
+      );
+      invalidateAttendanceCaches(employeeId);
+      setWorkDate("");
+      setConfirmingClean(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Error al eliminar");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
+  function handleSubmit() {
+    if (mode === "single") return submitSingle();
+    if (mode === "range") return submitRange();
+    // clean — show inline confirmation first
+    if (!confirmingClean) {
+      setConfirmingClean(true);
+      return;
+    }
+    return submitClean();
+  }
+
+  /* ----------------------------------------------------- render */
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">
-          Regularizar Asistencia
-        </h1>
-        <p className="text-muted-foreground">
-          Regularizacion directa de dias individuales o rangos
-        </p>
-      </div>
+    <>
+      <PageHeader
+        title="Regularizar asistencia"
+        subtitle="Aplica una jornada a uno o varios días, o limpia un registro erróneo."
+      />
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Regularizacion</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Tabs defaultValue="single">
-            <TabsList>
-              <TabsTrigger value="single">Dia Individual</TabsTrigger>
-              <TabsTrigger value="range">Rango de Fechas</TabsTrigger>
-              <TabsTrigger value="clean">Limpiar día</TabsTrigger>
-            </TabsList>
+      <div className="rg-layout">
+        {/* ─── Left column — form steps ─── */}
+        <div>
+          <ModeSwitcher mode={mode} onChange={setMode} />
 
-            {/* Single Day Tab */}
-            <TabsContent value="single" className="mt-4">
-              <form onSubmit={handleSingleSubmit} className="space-y-4">
-                <EmployeeSelector
-                  selectedId={singleEmployeeId}
-                  selectedName={singleEmployeeName}
-                  target="single"
-                />
+          {mode === "clean" && (
+            <div className="rg-warn-banner">
+              <IconSvg d={Icons.alert} size={14} />
+              <div>
+                Esta acción elimina por completo el registro del día. Se usa
+                cuando hay un registro erróneo que no debería existir. Todo
+                borrado queda auditado y puedes revertirlo desde{" "}
+                <a href="/admin/audit">Historial</a>. Si sólo necesitas corregir
+                campos puntuales, ve a <strong>Empleados → Asistencia</strong>.
+              </div>
+            </div>
+          )}
 
-                <div className="space-y-1.5">
-                  <Label htmlFor="workDate">Fecha</Label>
-                  <Input
-                    id="workDate"
+          {/* Step 1 — empleado */}
+          <StepBlock num={1} title="Empleado" done={!!employeeId}>
+            {employeeId ? (
+              <div className="rg-emp-selected">
+                <NovaAvatar name={employeeName} size={40} variant="plain" />
+                <div className="rg-emp-selected-main">
+                  <div className="rg-emp-selected-name">{employeeName}</div>
+                  <div className="rg-emp-selected-meta">{employeeArea}</div>
+                </div>
+                <button
+                  type="button"
+                  className="btn outline btn-sm"
+                  onClick={() => {
+                    setEmployeeId("");
+                    setEmployeeName("");
+                    setEmployeeArea("");
+                  }}
+                >
+                  Cambiar
+                </button>
+              </div>
+            ) : (
+              <EmployeeList
+                employees={employees}
+                loading={loadingEmployees}
+                search={empSearch}
+                setSearch={setEmpSearch}
+                onPick={(e) => {
+                  setEmployeeId(e.employeeId);
+                  setEmployeeName(e.fullName);
+                  setEmployeeArea(e.area || "Sin área");
+                }}
+              />
+            )}
+          </StepBlock>
+
+          {/* Step 2 — fechas */}
+          <StepBlock
+            num={2}
+            title={mode === "range" ? "Rango de fechas" : "Fecha"}
+            done={mode === "range" ? !!dateFrom && !!dateTo : !!workDate}
+            hint={mode === "range" && dayCount > 0 ? `${dayCount} día(s)` : undefined}
+          >
+            {mode === "range" ? (
+              <div className="rg-row cols-2">
+                <div className="rg-field">
+                  <label className="rg-label" htmlFor="dateFrom">
+                    Desde<span className="req">*</span>
+                  </label>
+                  <input
+                    id="dateFrom"
                     type="date"
-                    value={workDate}
-                    onChange={(e) => setWorkDate(e.target.value)}
-                    required
-                    className="max-w-xs"
+                    className="rg-input"
+                    value={dateFrom}
+                    onChange={(e) => setDateFrom(e.target.value)}
                   />
                 </div>
-
-                <div className="grid gap-4 sm:grid-cols-3">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="startTime">Hora Entrada</Label>
-                    <Input
-                      id="startTime"
-                      type="time"
-                      value={startTime}
-                      onChange={(e) => setStartTime(e.target.value)}
-                      required
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="endTime">Hora Salida</Label>
-                    <Input
-                      id="endTime"
-                      type="time"
-                      value={endTime}
-                      onChange={(e) => setEndTime(e.target.value)}
-                      required
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="breakMinutes">Break (minutos)</Label>
-                    <Input
-                      id="breakMinutes"
-                      type="number"
-                      min={0}
-                      max={480}
-                      value={breakMinutes}
-                      onChange={(e) =>
-                        setBreakMinutes(Number(e.target.value))
-                      }
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label htmlFor="reasonCode">Motivo</Label>
-                  <select
-                    id="reasonCode"
-                    value={reasonCode}
-                    onChange={(e) => setReasonCode(e.target.value)}
-                    required
-                    className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                  >
-                    <option value="">Seleccionar motivo...</option>
-                    {ALL_REASON_OPTIONS.map((opt) => (
-                      <option key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label htmlFor="reasonNote">Nota adicional</Label>
-                  <Textarea
-                    id="reasonNote"
-                    placeholder="Detalle opcional..."
-                    value={reasonNote}
-                    onChange={(e) => setReasonNote(e.target.value)}
-                    rows={3}
+                <div className="rg-field">
+                  <label className="rg-label" htmlFor="dateTo">
+                    Hasta<span className="req">*</span>
+                  </label>
+                  <input
+                    id="dateTo"
+                    type="date"
+                    className="rg-input"
+                    value={dateTo}
+                    onChange={(e) => setDateTo(e.target.value)}
                   />
                 </div>
-
-                <Button
-                  type="submit"
-                  disabled={singleLoading || !singleEmployeeId}
-                >
-                  {singleLoading && (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  )}
-                  Regularizar Dia
-                </Button>
-
-                {singleMessage && (
-                  <div
-                    className={`flex items-center gap-2 rounded-md p-3 text-sm ${
-                      singleMessage.type === "success"
-                        ? "bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-300"
-                        : "bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300"
-                    }`}
-                  >
-                    {singleMessage.type === "success" ? (
-                      <CheckCircle className="h-4 w-4 shrink-0" />
-                    ) : (
-                      <XCircle className="h-4 w-4 shrink-0" />
-                    )}
-                    {singleMessage.text}
-                  </div>
-                )}
-              </form>
-            </TabsContent>
-
-            {/* Range Tab */}
-            <TabsContent value="range" className="mt-4">
-              <form onSubmit={handleRangeSubmit} className="space-y-4">
-                <EmployeeSelector
-                  selectedId={rangeEmployeeId}
-                  selectedName={rangeEmployeeName}
-                  target="range"
+              </div>
+            ) : (
+              <div className="rg-field" style={{ maxWidth: 280 }}>
+                <label className="rg-label" htmlFor="workDate">
+                  Fecha a {mode === "clean" ? "eliminar" : "regularizar"}
+                  <span className="req">*</span>
+                </label>
+                <input
+                  id="workDate"
+                  type="date"
+                  className="rg-input"
+                  value={workDate}
+                  onChange={(e) => setWorkDate(e.target.value)}
                 />
+              </div>
+            )}
+          </StepBlock>
 
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="dateFrom">Fecha Inicio</Label>
-                    <Input
-                      id="dateFrom"
-                      type="date"
-                      value={dateFrom}
-                      onChange={(e) => setDateFrom(e.target.value)}
-                      required
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="dateTo">Fecha Fin</Label>
-                    <Input
-                      id="dateTo"
-                      type="date"
-                      value={dateTo}
-                      onChange={(e) => setDateTo(e.target.value)}
-                      required
-                    />
-                  </div>
-                </div>
-
-                <div className="grid gap-4 sm:grid-cols-3">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="rangeStartTime">Hora Entrada</Label>
-                    <Input
-                      id="rangeStartTime"
-                      type="time"
-                      value={rangeStartTime}
-                      onChange={(e) => setRangeStartTime(e.target.value)}
-                      required
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="rangeEndTime">Hora Salida</Label>
-                    <Input
-                      id="rangeEndTime"
-                      type="time"
-                      value={rangeEndTime}
-                      onChange={(e) => setRangeEndTime(e.target.value)}
-                      required
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="rangeBreakMinutes">Break (minutos)</Label>
-                    <Input
-                      id="rangeBreakMinutes"
-                      type="number"
-                      min={0}
-                      max={480}
-                      value={rangeBreakMinutes}
-                      onChange={(e) =>
-                        setRangeBreakMinutes(Number(e.target.value))
-                      }
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label htmlFor="rangeReasonCode">Motivo</Label>
-                  <select
-                    id="rangeReasonCode"
-                    value={rangeReasonCode}
-                    onChange={(e) => setRangeReasonCode(e.target.value)}
-                    required
-                    className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                  >
-                    <option value="">Seleccionar motivo...</option>
-                    {ALL_REASON_OPTIONS.map((opt) => (
-                      <option key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label htmlFor="rangeReasonNote">Nota adicional</Label>
-                  <Textarea
-                    id="rangeReasonNote"
-                    placeholder="Detalle opcional..."
-                    value={rangeReasonNote}
-                    onChange={(e) => setRangeReasonNote(e.target.value)}
-                    rows={3}
+          {/* Step 3 — jornada + motivo (no aplica al modo clean) */}
+          {mode !== "clean" && (
+            <StepBlock num={3} title="Jornada y motivo" done={!!reasonCode}>
+              <div className="rg-row cols-3">
+                <div className="rg-field">
+                  <label className="rg-label" htmlFor="startTime">
+                    Entrada<span className="req">*</span>
+                  </label>
+                  <input
+                    id="startTime"
+                    type="time"
+                    className="rg-input"
+                    value={startTime}
+                    onChange={(e) => setStartTime(e.target.value)}
                   />
                 </div>
-
-                {/* Toggle options */}
-                <div className="space-y-3 rounded-md border p-4">
-                  <h3 className="text-sm font-medium">Opciones</h3>
-                  <div className="flex items-center justify-between">
-                    <Label
-                      htmlFor="weekdaysOnly"
-                      className="text-sm font-normal"
-                    >
-                      Solo dias laborales (lun-vie)
-                    </Label>
-                    <Switch
-                      id="weekdaysOnly"
-                      checked={weekdaysOnly}
-                      onCheckedChange={setWeekdaysOnly}
-                    />
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <Label
-                      htmlFor="pastDatesOnly"
-                      className="text-sm font-normal"
-                    >
-                      Solo fechas pasadas
-                    </Label>
-                    <Switch
-                      id="pastDatesOnly"
-                      checked={pastDatesOnly}
-                      onCheckedChange={setPastDatesOnly}
-                    />
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <Label
-                      htmlFor="overwrite"
-                      className="text-sm font-normal"
-                    >
-                      Sobrescribir registros existentes
-                    </Label>
-                    <Switch
-                      id="overwrite"
-                      checked={overwrite}
-                      onCheckedChange={setOverwrite}
-                    />
-                  </div>
+                <div className="rg-field">
+                  <label className="rg-label" htmlFor="endTime">
+                    Salida<span className="req">*</span>
+                  </label>
+                  <input
+                    id="endTime"
+                    type="time"
+                    className="rg-input"
+                    value={endTime}
+                    onChange={(e) => setEndTime(e.target.value)}
+                  />
                 </div>
+                <div className="rg-field">
+                  <label className="rg-label" htmlFor="breakMinutes">
+                    Break (min)
+                  </label>
+                  <input
+                    id="breakMinutes"
+                    type="number"
+                    min={0}
+                    max={480}
+                    className="rg-input"
+                    value={breakMinutes}
+                    onChange={(e) => setBreakMinutes(Number(e.target.value) || 0)}
+                  />
+                </div>
+              </div>
 
-                <Button
-                  type="submit"
-                  disabled={rangeLoading || !rangeEmployeeId}
-                >
-                  {rangeLoading && (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  )}
-                  Regularizar Rango
-                </Button>
-
-                {rangeMessage && (
-                  <div
-                    className={`flex items-center gap-2 rounded-md p-3 text-sm ${
-                      rangeMessage.type === "success"
-                        ? "bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-300"
-                        : "bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300"
-                    }`}
-                  >
-                    {rangeMessage.type === "success" ? (
-                      <CheckCircle className="h-4 w-4 shrink-0" />
-                    ) : (
-                      <XCircle className="h-4 w-4 shrink-0" />
+              <div className="rg-sched-preview">
+                <IconSvg d={Icons.clock} size={14} />
+                {grossMin > 0 ? (
+                  <>
+                    <strong>{fmtHours(workedMin)}</strong> trabajadas
+                    {breakMinutes > 0 ? <> + {breakMinutes}min break</> : null}
+                    {isAbsence && (
+                      <span style={{ marginLeft: 8, color: "var(--text-muted)" }}>
+                        — el motivo seleccionado no descuenta horas
+                      </span>
                     )}
-                    {rangeMessage.text}
-                  </div>
+                  </>
+                ) : (
+                  <span style={{ color: "var(--text-muted)" }}>
+                    Define la hora de entrada y salida
+                  </span>
                 )}
-              </form>
-            </TabsContent>
+              </div>
 
-            {/* Clean day Tab — uses the dedicated editor */}
-            <TabsContent value="clean" className="mt-4">
-              <CleanDayTab employees={employees} />
-            </TabsContent>
-          </Tabs>
-        </CardContent>
-      </Card>
+              <div style={{ marginTop: 16 }}>
+                <label className="rg-label" style={{ display: "block", marginBottom: 8 }}>
+                  Motivo<span className="req">*</span>
+                </label>
+                <div className="rg-reason-grid">
+                  {ALL_REASON_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      className={`rg-reason${reasonCode === opt.value ? " active" : ""}`}
+                      onClick={() => setReasonCode(opt.value)}
+                      aria-pressed={reasonCode === opt.value}
+                    >
+                      <span className="rg-reason-icon">
+                        <IconSvg d={REASON_ICON[opt.value] ?? Icons.more} size={14} />
+                      </span>
+                      <span>{opt.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rg-field" style={{ marginTop: 16 }}>
+                <label className="rg-label" htmlFor="reasonNote">
+                  Nota adicional
+                </label>
+                <textarea
+                  id="reasonNote"
+                  className="rg-textarea"
+                  placeholder="Detalle opcional (visible en el historial)…"
+                  value={reasonNote}
+                  onChange={(e) => setReasonNote(e.target.value)}
+                  rows={3}
+                />
+              </div>
+            </StepBlock>
+          )}
+
+          {/* Step 4 — opciones del rango */}
+          {mode === "range" && (
+            <StepBlock num={4} title="Opciones" optional>
+              <div className="rg-toggles">
+                <ToggleRow
+                  id="weekdaysOnly"
+                  label="Solo días laborales (lun-vie)"
+                  checked={weekdaysOnly}
+                  onChange={setWeekdaysOnly}
+                />
+                <ToggleRow
+                  id="pastDatesOnly"
+                  label="Solo fechas pasadas"
+                  checked={pastDatesOnly}
+                  onChange={setPastDatesOnly}
+                />
+                <ToggleRow
+                  id="overwrite"
+                  label="Sobrescribir registros existentes"
+                  checked={overwrite}
+                  onChange={setOverwrite}
+                />
+              </div>
+            </StepBlock>
+          )}
+        </div>
+
+        {/* ─── Right column — sticky summary ─── */}
+        <aside>
+          <div className="rg-summary">
+            <div className="rg-summary-title">Resumen</div>
+
+            {employeeId ? (
+              <div className="rg-summary-emp">
+                <NovaAvatar name={employeeName} size={36} variant="plain" />
+                <div className="rg-summary-emp-main">
+                  <div className="rg-summary-emp-name">{employeeName}</div>
+                  <div className="rg-summary-emp-area">{employeeArea}</div>
+                </div>
+              </div>
+            ) : (
+              <div className="rg-summary-empty">
+                Selecciona un empleado para empezar
+              </div>
+            )}
+
+            <div className="rg-summary-stats">
+              <div className="rg-stat">
+                <span>Días afectados</span>
+                <span className={`rg-stat-value${dayCount > 0 ? " accent" : ""}`}>
+                  {dayCount}
+                </span>
+              </div>
+              {mode !== "clean" && (
+                <>
+                  <div className="rg-stat">
+                    <span>Horas por día</span>
+                    <span className="rg-stat-value">
+                      {grossMin > 0 ? fmtHours(workedMin) : "—"}
+                    </span>
+                  </div>
+                  <div className="rg-stat">
+                    <span>Horas totales</span>
+                    <span className="rg-stat-value accent">
+                      {isAbsence ? "0h (ausencia)" : fmtHours(totalWorkedMin)}
+                    </span>
+                  </div>
+                  <div className="rg-stat">
+                    <span>Motivo</span>
+                    <span className="rg-stat-value" style={{ fontSize: 12 }}>
+                      {reasonCode ? REASON_LABELS[reasonCode] : "—"}
+                    </span>
+                  </div>
+                </>
+              )}
+              {mode === "range" && weekdaysOnly && (
+                <div className="rg-stat" style={{ fontSize: 11.5, color: "var(--text-muted)" }}>
+                  Fines de semana omitidos automáticamente
+                </div>
+              )}
+              {mode === "clean" && (
+                <div className="rg-stat">
+                  <span>Acción</span>
+                  <span className="rg-stat-value danger" style={{ fontSize: 12 }}>
+                    Eliminar registro
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {confirmingClean ? (
+              <div className="rg-confirm">
+                <div className="rg-confirm-text">
+                  ¿Eliminar el registro de <strong>{employeeName}</strong> del{" "}
+                  <strong>{workDate}</strong>? El día volverá a estar sin registro.
+                </div>
+                <div className="rg-confirm-actions">
+                  <button
+                    type="button"
+                    className="rg-confirm-cancel"
+                    onClick={() => setConfirmingClean(false)}
+                    disabled={submitting}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    className="rg-confirm-yes"
+                    onClick={submitClean}
+                    disabled={submitting}
+                  >
+                    {submitting ? "Eliminando…" : "Sí, eliminar"}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                className={`rg-cta${mode === "clean" ? " danger" : ""}`}
+                onClick={handleSubmit}
+                disabled={!isValid || submitting}
+              >
+                {submitting && mode !== "clean" ? (
+                  "Procesando…"
+                ) : (
+                  <>
+                    <IconSvg
+                      d={mode === "clean" ? Icons.trash : Icons.check}
+                      size={14}
+                    />
+                    {mode === "clean"
+                      ? "Eliminar registro"
+                      : mode === "range"
+                      ? `Regularizar ${dayCount > 0 ? `${dayCount} día(s)` : "rango"}`
+                      : "Aplicar regularización"}
+                  </>
+                )}
+              </button>
+            )}
+          </div>
+        </aside>
+      </div>
+    </>
+  );
+}
+
+/* ============================================================ Pieces */
+
+function ModeSwitcher({ mode, onChange }: { mode: Mode; onChange: (m: Mode) => void }) {
+  const items: { key: Mode; icon: React.ReactNode; title: string; desc: string; danger?: boolean }[] = [
+    { key: "single", icon: Icons.calendar, title: "Día único", desc: "Regularizar un solo día" },
+    { key: "range", icon: Icons.history, title: "Rango", desc: "Aplicar a varios días seguidos" },
+    { key: "clean", icon: Icons.trash, title: "Limpiar día", desc: "Eliminar un registro erróneo", danger: true },
+  ];
+  return (
+    <div className="rg-modes">
+      {items.map((it) => (
+        <button
+          key={it.key}
+          type="button"
+          className={`rg-mode${mode === it.key ? " active" : ""}${it.danger ? " danger" : ""}`}
+          onClick={() => onChange(it.key)}
+          aria-pressed={mode === it.key}
+        >
+          <span className="rg-mode-icon">
+            <IconSvg d={it.icon} size={16} />
+          </span>
+          <span className="rg-mode-title">{it.title}</span>
+          <span className="rg-mode-desc">{it.desc}</span>
+        </button>
+      ))}
     </div>
   );
 }
 
-// ─── CleanDayTab ─────────────────────────────────────────────────────────────
-// Minimal inline UI for wiping a single DailySummary row. Delegates to the
-// audited DELETE endpoint so every cleanup is reversible from /admin/audit.
+function StepBlock({
+  num,
+  title,
+  done,
+  hint,
+  optional,
+  children,
+}: {
+  num: number;
+  title: string;
+  done?: boolean;
+  hint?: string;
+  optional?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="rg-step">
+      <div className="rg-step-head">
+        <span className={`rg-step-num${done ? " done" : ""}`}>
+          {done ? <IconSvg d={Icons.check} size={12} /> : num}
+        </span>
+        <span className="rg-step-title">{title}</span>
+        {hint && <span className="rg-step-hint">{hint}</span>}
+        {optional && <span className="rg-step-hint">opcional</span>}
+      </div>
+      {children}
+    </section>
+  );
+}
 
-function CleanDayTab({ employees }: { employees: EmployeeItem[] }) {
-  const [empSearch, setEmpSearch] = useState("");
-  const [employeeId, setEmployeeId] = useState("");
-  const [employeeName, setEmployeeName] = useState("");
-  const [workDate, setWorkDate] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [msg, setMsg] = useState<FormMessage | null>(null);
-
+function EmployeeList({
+  employees,
+  loading,
+  search,
+  setSearch,
+  onPick,
+}: {
+  employees: EmployeeItem[];
+  loading: boolean;
+  search: string;
+  setSearch: (s: string) => void;
+  onPick: (e: EmployeeItem) => void;
+}) {
   const filtered = useMemo(() => {
-    if (!empSearch.trim()) return employees.slice(0, 20);
-    const q = empSearch.toLowerCase();
-    return employees
-      .filter(
-        (e) =>
-          e.fullName.toLowerCase().includes(q) ||
-          e.email.toLowerCase().includes(q) ||
-          e.area.toLowerCase().includes(q)
-      )
-      .slice(0, 20);
-  }, [employees, empSearch]);
-
-  async function handleClean() {
-    if (!employeeId || !workDate) return;
-    if (
-      !confirm(
-        `¿Eliminar el registro de ${employeeName} del ${workDate}?\n\nEl día volverá a estar sin registro. Esta acción queda auditada y puede revertirse desde Historial.`
-      )
-    )
-      return;
-
-    setLoading(true);
-    setMsg(null);
-    try {
-      const url = `/api/admin/daily-summary/${encodeURIComponent(
-        employeeId
-      )}/${encodeURIComponent(workDate)}`;
-      const res = await fetch(url, { method: "DELETE" });
-      const body = await res.json();
-      if (!res.ok) throw new Error(body.error || `Error ${res.status}`);
-      setMsg({
-        type: "success",
-        text: body.deleted
-          ? "Registro eliminado. Puedes deshacer este cambio en Historial."
-          : "No había registro para ese día.",
-      });
-    } catch (err) {
-      setMsg({
-        type: "error",
-        text: err instanceof Error ? err.message : "Error al eliminar",
-      });
-    } finally {
-      setLoading(false);
-    }
-  }
+    if (!search.trim()) return employees;
+    const q = search.toLowerCase();
+    return employees.filter(
+      (e) =>
+        e.fullName.toLowerCase().includes(q) ||
+        e.email.toLowerCase().includes(q) ||
+        e.area.toLowerCase().includes(q)
+    );
+  }, [employees, search]);
 
   return (
-    <div className="space-y-4">
-      <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-200">
-        <div className="flex items-start gap-2">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-          <div>
-            Esta acción elimina por completo el registro del día. Se usa cuando
-            hay un registro erróneo que no debería existir. Todo borrado queda
-            auditado y puedes revertirlo desde{" "}
-            <a
-              href="/admin/audit"
-              className="underline underline-offset-2 font-medium"
-            >
-              Historial
-            </a>
-            . Si sólo necesitas corregir campos puntuales, ve al detalle del
-            empleado en <span className="font-medium">Empleados</span> y usa la
-            pestaña <span className="font-medium">Asistencia</span>.
-          </div>
-        </div>
-      </div>
-
-      <div className="space-y-2">
-        <Label>Empleado</Label>
-        {employeeId ? (
-          <div className="flex items-center gap-2">
-            <div className="flex-1 rounded-md border bg-muted/30 px-3 py-2">
-              <p className="text-sm font-medium">{employeeName}</p>
-              <p className="text-xs text-muted-foreground">{employeeId}</p>
-            </div>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                setEmployeeId("");
-                setEmployeeName("");
-              }}
-            >
-              Cambiar
-            </Button>
-          </div>
-        ) : (
-          <>
-            <div className="relative">
-              <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Buscar empleado…"
-                value={empSearch}
-                onChange={(e) => setEmpSearch(e.target.value)}
-                className="pl-9"
-              />
-            </div>
-            <div className="max-h-48 overflow-y-auto rounded-md border divide-y">
-              {filtered.length === 0 && (
-                <p className="px-3 py-3 text-sm text-muted-foreground">
-                  Sin resultados.
-                </p>
-              )}
-              {filtered.map((e) => (
-                <button
-                  key={e.employeeId}
-                  type="button"
-                  className="w-full px-3 py-2 text-left text-sm hover:bg-muted/60"
-                  onClick={() => {
-                    setEmployeeId(e.employeeId);
-                    setEmployeeName(e.fullName);
-                  }}
-                >
-                  <p className="font-medium">{e.fullName}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {e.email} · {e.area}
-                  </p>
-                </button>
-              ))}
-            </div>
-          </>
-        )}
-      </div>
-
-      <div className="space-y-1.5">
-        <Label htmlFor="cleanDate">Fecha a limpiar</Label>
-        <Input
-          id="cleanDate"
-          type="date"
-          value={workDate}
-          onChange={(e) => setWorkDate(e.target.value)}
+    <>
+      <div className="rg-emp-search">
+        <IconSvg d={Icons.search} size={14} />
+        <input
+          placeholder="Buscar por nombre, correo o área…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          autoFocus
         />
       </div>
-
-      <Button
-        type="button"
-        variant="destructive"
-        onClick={handleClean}
-        disabled={!employeeId || !workDate || loading}
-      >
-        {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-        <Trash2 className="mr-2 h-4 w-4" />
-        Eliminar registro del día
-      </Button>
-
-      {msg && (
-        <div
-          className={`flex items-start gap-2 rounded-md p-3 text-sm ${
-            msg.type === "success"
-              ? "bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-300"
-              : "bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300"
-          }`}
-        >
-          {msg.type === "success" ? (
-            <CheckCircle className="mt-0.5 h-4 w-4 shrink-0" />
+      {loading ? (
+        <div className="rg-emp-empty">Cargando empleados…</div>
+      ) : (
+        <div className="rg-emp-list">
+          {filtered.length === 0 ? (
+            <div className="rg-emp-empty">No se encontraron empleados</div>
           ) : (
-            <XCircle className="mt-0.5 h-4 w-4 shrink-0" />
+            filtered.map((emp) => (
+              <button
+                key={emp.employeeId}
+                type="button"
+                className="rg-emp-row"
+                onClick={() => onPick(emp)}
+              >
+                <NovaAvatar name={emp.fullName} size={32} variant="plain" />
+                <div className="rg-emp-row-main">
+                  <div className="rg-emp-row-name">{emp.fullName}</div>
+                  <div className="rg-emp-row-meta">{emp.email}</div>
+                </div>
+                {emp.area && <span className="rg-emp-chip">{emp.area}</span>}
+              </button>
+            ))
           )}
-          <span>{msg.text}</span>
         </div>
       )}
-    </div>
+    </>
+  );
+}
+
+function ToggleRow({
+  id,
+  label,
+  checked,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <label htmlFor={id} className="rg-toggle-row">
+      <span>{label}</span>
+      <span
+        id={id}
+        className={`toggle ${checked ? "on" : ""}`}
+        onClick={() => onChange(!checked)}
+        role="switch"
+        aria-checked={checked}
+        tabIndex={0}
+      >
+        <span className="toggle-knob" />
+      </span>
+    </label>
   );
 }
