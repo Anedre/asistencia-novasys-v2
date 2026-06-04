@@ -104,6 +104,7 @@ interface HeroProps {
   liveBreakSec: number;
   shiftStart: string;
   shiftEnd: string;
+  breakMin: number;
   todayHistory: { time: string; label: string; loc: string; kind: string }[];
   onAction: (type: EventType) => Promise<void>;
   pendingAction: EventType | null;
@@ -129,6 +130,7 @@ function CheckInHero({
   liveBreakSec,
   shiftStart,
   shiftEnd,
+  breakMin,
   todayHistory,
   onAction,
   pendingAction,
@@ -242,7 +244,10 @@ function CheckInHero({
   const clockStyle = useClockStyle();
 
   // ── Progress & milestone ──
-  const totalShiftMin = Math.max(1, parseHM(shiftEnd) - parseHM(shiftStart));
+  // Daily goal = laborable hours = shift span minus the (unpaid) break.
+  // worked time already excludes the break, so progress is measured against this.
+  const grossShiftMin = Math.max(1, parseHM(shiftEnd) - parseHM(shiftStart));
+  const totalShiftMin = Math.max(1, grossShiftMin - breakMin);
   const workedMin = liveWorkedSec / 60;
   const progressPct = Math.min(100, Math.round((workedMin / totalShiftMin) * 100));
   const remainingMin = Math.max(0, Math.round(totalShiftMin - workedMin));
@@ -309,13 +314,6 @@ function CheckInHero({
                   <span className="timeline-label">{ev.label}</span>
                 </div>
               ))}
-              {state === "completed" && today?.lastOutLocal && (
-                <div className="timeline-pt out">
-                  <span className="timeline-dot" />
-                  <span className="timeline-time">{today.lastOutLocal.substring(0, 5)}</span>
-                  <span className="timeline-label">Salida</span>
-                </div>
-              )}
             </div>
           </div>
         )}
@@ -356,7 +354,7 @@ function CheckInHero({
                 </span>
               </div>
               <span className="hero-stat-value tabular-nums">{fmtMinutes(totalShiftMin)}</span>
-              <span className="hero-stat-sub">jornada estándar</span>
+              <span className="hero-stat-sub">horas laborables · {fmtMinutes(breakMin)} de break aparte</span>
             </div>
           )}
 
@@ -1006,6 +1004,7 @@ export default function EmployeeDashboardPage() {
 
   const shiftStart = profile?.employee?.schedule?.startTime ?? "09:00";
   const shiftEnd = profile?.employee?.schedule?.endTime ?? "18:00";
+  const breakMin = profile?.employee?.schedule?.breakMinutes ?? 60;
 
   // ── New stats for the hero ──
   const weekDaysData = week?.days ?? [];
@@ -1200,6 +1199,7 @@ export default function EmployeeDashboardPage() {
         liveBreakSec={liveBreakSec}
         shiftStart={shiftStart}
         shiftEnd={shiftEnd}
+        breakMin={breakMin}
         todayHistory={todayHistory}
         onAction={handleAction}
         pendingAction={pendingAction}

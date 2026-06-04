@@ -113,7 +113,9 @@ function SidebarLive() {
 
   const shiftStart = profile?.employee?.schedule?.startTime ?? "09:00";
   const shiftEnd = profile?.employee?.schedule?.endTime ?? "18:00";
-  const totalShiftMin = Math.max(1, parseHM(shiftEnd) - parseHM(shiftStart));
+  const breakMin = profile?.employee?.schedule?.breakMinutes ?? 60;
+  // Goal = laborable hours (shift span minus the unpaid break), matching META DEL DÍA.
+  const totalShiftMin = Math.max(1, parseHM(shiftEnd) - parseHM(shiftStart) - breakMin);
 
   let workedMin = today?.workedMinutes ?? 0;
   if (today?.hasOpenShift && today.firstInLocal) {
