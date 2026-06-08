@@ -6734,3 +6734,51 @@ polygon.chart-area-breath,
 @media (max-width: 420px) {
   .clock-picker { grid-template-columns: 1fr; }
 }
+
+/* ── Opt-in: turn a dense table into stacked cards on phones. Add class
+      "cards" to the <table> and data-label="…" to each <td>. Tables without
+      the modifier keep the horizontal-scroll behaviour above. ── */
+@media (max-width: 640px) {
+  .table.cards { min-width: 0; border: none !important; }
+  .table.cards thead { display: none; }
+  .table.cards, .table.cards tbody, .table.cards tr, .table.cards td { display: block; width: auto; }
+  .table.cards tr {
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    background: var(--bg-elevated);
+    padding: 4px 14px;
+    margin-bottom: 10px;
+  }
+  .table.cards td {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    border: none !important;
+    padding: 9px 0 !important;
+    text-align: right;
+  }
+  .table.cards td::before {
+    content: attr(data-label);
+    flex: 0 0 auto;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    text-align: left;
+  }
+  /* First cell = card header (name + avatar): full width, left aligned, no label. */
+  .table.cards td.card-head {
+    justify-content: flex-start;
+    text-align: left;
+    padding-bottom: 10px !important;
+    border-bottom: 1px solid var(--border) !important;
+  }
+  .table.cards td.card-head::before,
+  .table.cards td.card-actions::before { display: none; }
+  .table.cards td.card-actions { justify-content: flex-end; }
+  /* Full-width cells (loading skeletons, empty state) get no label. */
+  .table.cards td[colspan]::before { display: none; }
+  .table.cards td[colspan] { justify-content: center; }
+}

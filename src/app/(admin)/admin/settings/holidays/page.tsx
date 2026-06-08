@@ -176,7 +176,7 @@ export default function HolidaysSettingsPage() {
         </div>
 
         {/* Holidays table */}
-        <table className="table" style={{ border: "1px solid var(--border)", borderRadius: "var(--r)" }}>
+        <table className="table cards" style={{ border: "1px solid var(--border)", borderRadius: "var(--r)" }}>
           <thead>
             <tr>
               <th style={{ width: 90 }}>Fecha</th>
@@ -195,12 +195,12 @@ export default function HolidaysSettingsPage() {
             ) : (
               filtered.map((h) => (
                 <tr key={h.date}>
-                  <td className="tcell-mono">{formatShortDate(h.date)}</td>
-                  <td className="tcell-strong">{h.name}</td>
-                  <td>
+                  <td className="tcell-mono" data-label="Fecha">{formatShortDate(h.date)}</td>
+                  <td className="tcell-strong" data-label="Nombre">{h.name}</td>
+                  <td data-label="Tipo">
                     <span className={`type-tag ${h.type === "Nacional" ? "accent" : "warn"}`}>{h.type}</span>
                   </td>
-                  <td style={{ textAlign: "right" }}>
+                  <td className="card-actions" style={{ textAlign: "right" }}>
                     <button
                       type="button"
                       className="btn ghost btn-sm"

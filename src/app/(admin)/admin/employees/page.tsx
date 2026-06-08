@@ -255,7 +255,7 @@ export default function AdminEmployeesPage() {
           </div>
         </div>
 
-        <table className="table">
+        <table className="table cards">
           <thead>
             <tr>
               <th>Empleado</th>
@@ -306,7 +306,7 @@ export default function AdminEmployeesPage() {
 
                 return (
                   <tr key={e.employeeId} onClick={() => (window.location.href = `/admin/employees/${encodeURIComponent(e.employeeId)}`)}>
-                    <td>
+                    <td className="card-head">
                       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                         <NovaAvatar name={e.fullName} size={36} variant="plain" />
                         <div>
@@ -315,13 +315,13 @@ export default function AdminEmployeesPage() {
                         </div>
                       </div>
                     </td>
-                    <td>
+                    <td data-label="Área / Modalidad">
                       <div style={{ fontSize: 13, color: "var(--text-primary)" }}>{areaLabel(e.area)}</div>
                       <div className="tcell-muted">
                         {WORK_MODE_LABEL[e.workMode] ?? e.workMode}
                       </div>
                     </td>
-                    <td>
+                    <td data-label="Hoy">
                       <PresenceCell status={presence?.status ?? "NOT_CHECKED_IN"} />
                       {presence?.firstInLocal && (
                         <div className="tcell-muted" style={{ marginTop: 2 }}>
@@ -329,22 +329,22 @@ export default function AdminEmployeesPage() {
                         </div>
                       )}
                     </td>
-                    <td>
+                    <td data-label="Horas hoy">
                       <span className="tcell-mono">
                         {workedMin > 0 ? `${h}h ${String(m).padStart(2, "0")}m` : "—"}
                       </span>
                     </td>
-                    <td>
+                    <td data-label="Rol">
                       <span className={`type-tag ${isAdmin ? "accent" : "muted"}`}>
                         {e.role}
                       </span>
                     </td>
-                    <td>
+                    <td data-label="Estado">
                       <span className={`type-tag ${isActive ? "success" : "danger"}`}>
                         {isActive ? "Activo" : "Inactivo"}
                       </span>
                     </td>
-                    <td onClick={(ev) => ev.stopPropagation()}>
+                    <td className="card-actions" onClick={(ev) => ev.stopPropagation()}>
                       <Link
                         href={`/admin/employees/${encodeURIComponent(e.employeeId)}`}
                         className="btn ghost btn-sm"

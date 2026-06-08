@@ -137,7 +137,7 @@ function AttendanceRow({
 
   return (
     <tr>
-      <td>
+      <td className="card-head">
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <NovaAvatar name={s.fullName} image={s.avatarUrl} size={32} variant="plain" />
           <div style={{ minWidth: 0 }}>
@@ -148,9 +148,9 @@ function AttendanceRow({
           </div>
         </div>
       </td>
-      <td className="tcell-mono">{s.firstInLocal ? fmtTime(s.firstInLocal) : <span className="tcell-muted">—</span>}</td>
-      <td className="tcell-mono">{s.lastOutLocal ? fmtTime(s.lastOutLocal) : <span className="tcell-muted">—</span>}</td>
-      <td className="tcell-mono tcell-muted">
+      <td className="tcell-mono" data-label="Entrada">{s.firstInLocal ? fmtTime(s.firstInLocal) : <span className="tcell-muted">—</span>}</td>
+      <td className="tcell-mono" data-label="Salida">{s.lastOutLocal ? fmtTime(s.lastOutLocal) : <span className="tcell-muted">—</span>}</td>
+      <td className="tcell-mono tcell-muted" data-label="Break">
         {s.hasOpenBreak ? (
           <span style={{ color: "var(--warn)", display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12 }}>
             <span className="pulse small" style={{ background: "var(--warn)" }} />
@@ -162,17 +162,17 @@ function AttendanceRow({
           "—"
         )}
       </td>
-      <td className="tcell-mono tcell-strong">
+      <td className="tcell-mono tcell-strong" data-label="Trabajadas">
         {displayWorked > 0 ? fmtMin(displayWorked) : <span className="tcell-muted">—</span>}
       </td>
-      <td className="tcell-muted">{s.area || "—"}</td>
-      <td>
+      <td className="tcell-muted" data-label="Área">{s.area || "—"}</td>
+      <td data-label="Estado">
         <span className={`type-tag ${statusMeta.cls}`}>
           {isLive && <span className="pulse small" style={{ marginRight: 4, background: "var(--success)" }} />}
           {statusMeta.label}
         </span>
       </td>
-      <td>
+      <td className="card-actions">
         <button type="button" className="btn ghost btn-sm" onClick={onEdit} aria-label="Regularizar">
           <IconSvg d={Icons.edit} size={13} />
         </button>
@@ -407,7 +407,7 @@ export default function AdminAttendancePage() {
           </span>
         </div>
 
-        <table className="table">
+        <table className="table cards">
           <thead>
             <tr>
               <th>Empleado</th>

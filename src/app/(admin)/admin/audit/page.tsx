@@ -597,7 +597,7 @@ function DiffPanel({ diff }: { diff: AuditEntry["diff"] }) {
         border: "1px solid var(--border)",
       }}
     >
-      <table className="table" style={{ fontSize: 12 }}>
+      <table className="table cards" style={{ fontSize: 12 }}>
         <thead>
           <tr>
             <th>Campo</th>
@@ -608,13 +608,13 @@ function DiffPanel({ diff }: { diff: AuditEntry["diff"] }) {
         <tbody>
           {entries.map(([field, change]) => (
             <tr key={field}>
-              <td className="tcell-mono" style={{ fontSize: 11 }}>
+              <td className="tcell-mono" data-label="Campo" style={{ fontSize: 11 }}>
                 {field}
               </td>
-              <td style={{ fontSize: 11, color: "var(--danger)" }}>
+              <td data-label="Antes" style={{ fontSize: 11, color: "var(--danger)" }}>
                 {formatValue(change.from)}
               </td>
-              <td style={{ fontSize: 11, color: "var(--success)" }}>
+              <td data-label="Después" style={{ fontSize: 11, color: "var(--success)" }}>
                 {formatValue(change.to)}
               </td>
             </tr>
