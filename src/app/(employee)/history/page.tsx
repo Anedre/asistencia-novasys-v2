@@ -362,7 +362,7 @@ export default function MyAttendancePage() {
       />
 
       {/* 4 stat-mini KPIs */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 20 }}>
+      <div className="kpi-grid">
         <div className="stat-mini">
           <div className="stat-mini-label">Asistencia mes</div>
           <div className="stat-mini-value">

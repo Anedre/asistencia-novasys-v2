@@ -223,7 +223,7 @@ export function ChatWidget() {
         className={cn(
           "fixed bottom-24 right-6 z-50 flex flex-col overflow-hidden rounded-2xl border bg-background shadow-2xl transition-all duration-300",
           isOpen
-            ? "w-[400px] h-[600px] opacity-100 translate-y-0"
+            ? "w-[400px] max-w-[calc(100vw-2rem)] h-[600px] max-h-[calc(100dvh-7rem)] opacity-100 translate-y-0"
             : "w-0 h-0 opacity-0 translate-y-4 pointer-events-none"
         )}
       >
