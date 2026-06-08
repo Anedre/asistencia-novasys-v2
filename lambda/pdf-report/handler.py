@@ -157,7 +157,7 @@ def build_day(ds, item, current_date):
 # PDF Builder
 # ═══════════════════════════════════════════════════════
 
-def build_pdf(emp_key, emp_info, report_title, period_label, days, start_d, end_d):
+def build_pdf(emp_key, emp_info, report_title, period_label, days, start_d, end_d, company_name="Novasys", company_ruc=""):
     buf = BytesIO()
     c = canvas.Canvas(buf, pagesize=A4)
     W, H = A4
@@ -203,18 +203,25 @@ def build_pdf(emp_key, emp_info, report_title, period_label, days, start_d, end_
         y -= 2.5
 
         # ─── Title row ───
+        # Left: company legal name + RUC.  Right: report kind.
         y -= 20
         c.setFillColor(BRAND_DARK)
         c.setFont("Helvetica-Bold", 12)
-        c.drawString(LM, y, "Novasys")
+        company_str = (company_name or "Novasys").upper()
+        c.drawString(LM, y, company_str)
 
-        c.setFillColor(TXT2)
-        c.setFont("Helvetica", 11)
-        c.drawString(LM + c.stringWidth("Novasys", "Helvetica-Bold", 12) + 4, y, f"— Reporte de Asistencia ({work_mode})")
+        if company_ruc:
+            c.setFillColor(TXT2)
+            c.setFont("Helvetica", 10)
+            c.drawString(
+                LM + c.stringWidth(company_str, "Helvetica-Bold", 12) + 6,
+                y,
+                f"- RUC: {company_ruc}",
+            )
 
         c.setFillColor(BRAND)
-        c.setFont("Helvetica-Bold", 8.5)
-        c.drawRightString(RM, y + 1, f"Reporte {report_title}")
+        c.setFont("Helvetica-Bold", 10)
+        c.drawRightString(RM, y + 1, f"Reporte de Asistencia ({work_mode})")
 
         # ─── Separator ───
         y -= 8
@@ -497,6 +504,10 @@ def handler(event, context):
 
         employee_id = employee_key if employee_key.startswith("EMP#") else f"EMP#{employee_key}"
         emp_info = get_employee_info(employee_id)
+        # Company legal name + RUC are resolved by the Next.js backend (which owns
+        # the tenant table) and passed in — keeps this Lambda's IAM scope minimal.
+        company_name = (qs.get("companyName") or "Novasys").strip()
+        company_ruc = (qs.get("companyRuc") or "").strip()
 
         if week:
             start_d, end_d = parse_iso_week(week)
@@ -525,7 +536,7 @@ def handler(event, context):
             days.append(build_day(ds, by_date.get(ds, {}), d))
             d = date.fromordinal(d.toordinal() + 1)
 
-        pdf_bytes = build_pdf(employee_key, emp_info, report_title, period_label, days, start_d, end_d)
+        pdf_bytes = build_pdf(employee_key, emp_info, report_title, period_label, days, start_d, end_d, company_name, company_ruc)
 
         rtype = "weekly" if week else "monthly"
         safe = employee_key.replace("@", "_at_").replace("#", "_")

@@ -4,6 +4,7 @@
  */
 
 import { LambdaClient, InvokeCommand } from "@aws-sdk/client-lambda";
+import { getTenantById } from "@/lib/db/tenants";
 
 const lambda = new LambdaClient({
   region: process.env.CUSTOM_AWS_REGION || process.env.AWS_REGION || "us-east-1",
@@ -41,12 +42,29 @@ export async function generateReport(
 
   const employeeKey = params.employeeId.replace("EMP#", "");
 
+  // Resolve the company's legal name + RUC from tenant config for the PDF header.
+  // Done here (not in the Lambda) so the Lambda keeps a minimal IAM scope.
+  let companyName = "";
+  let companyRuc = "";
+  if (params.tenantId) {
+    const tid = params.tenantId.startsWith("TENANT#") ? params.tenantId : `TENANT#${params.tenantId}`;
+    try {
+      const tenant = await getTenantById(tid);
+      companyName = tenant?.settings?.legalName || tenant?.name || tenant?.tenantName || "";
+      companyRuc = tenant?.settings?.ruc || "";
+    } catch {
+      /* fall back to defaults in the Lambda */
+    }
+  }
+
   const payload = {
     queryStringParameters: {
       employeeKey,
       ...(params.week && { week: params.week }),
       ...(params.month && { month: params.month }),
       ...(params.tenantId && { tenantId: params.tenantId }),
+      ...(companyName && { companyName }),
+      ...(companyRuc && { companyRuc }),
     },
   };
 

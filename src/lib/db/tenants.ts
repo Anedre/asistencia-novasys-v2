@@ -190,6 +190,37 @@ export async function updateTenantSettings(
     updates.push("settings.onboardingCompleted = :oc");
     values[":oc"] = settings.onboardingCompleted;
   }
+  // General-settings extended fields (legal data + display prefs). These are
+  // sent by the Settings → General form and are also read by the PDF report
+  // Lambda for the header (company legal name + RUC).
+  if (settings.legalName !== undefined) {
+    updates.push("settings.legalName = :ln");
+    values[":ln"] = settings.legalName;
+  }
+  if (settings.ruc !== undefined) {
+    updates.push("settings.ruc = :ruc");
+    values[":ruc"] = settings.ruc;
+  }
+  if (settings.industry !== undefined) {
+    updates.push("settings.industry = :ind");
+    values[":ind"] = settings.industry;
+  }
+  if (settings.address !== undefined) {
+    updates.push("settings.address = :addr");
+    values[":addr"] = settings.address;
+  }
+  if (settings.weekStart !== undefined) {
+    updates.push("settings.weekStart = :ws");
+    values[":ws"] = settings.weekStart;
+  }
+  if (settings.dateFormat !== undefined) {
+    updates.push("settings.dateFormat = :df");
+    values[":df"] = settings.dateFormat;
+  }
+  if (settings.timeFormat !== undefined) {
+    updates.push("settings.timeFormat = :tf");
+    values[":tf"] = settings.timeFormat;
+  }
 
   if (updates.length === 0) return;
 
