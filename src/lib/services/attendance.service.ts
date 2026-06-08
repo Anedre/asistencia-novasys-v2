@@ -14,6 +14,7 @@ import {
 } from "@/lib/db/daily-summary";
 import { putAttendanceEvent, getEventsByEmployeeAndDate } from "@/lib/db/attendance";
 import { getEmployeeById } from "@/lib/db/employees";
+import { getTenantById } from "@/lib/db/tenants";
 import { isoUtc, isoLima, clockLima, workDateLima, buildLocalIso } from "@/lib/utils/time";
 import { ALLOWED_EVENT_TYPES } from "@/lib/constants/event-types";
 import { ConflictError, ValidationError } from "@/lib/utils/errors";
@@ -50,13 +51,26 @@ export async function recordEvent(params: RecordEventParams) {
   const now = new Date();
   const workDate = workDateLima(now);
 
-  // If customTime provided (HH:MM) for START, use that instead of server time
+  // If customTime provided (HH:MM) for START, use that instead of server time.
+  // Guarded: only honored when the tenant explicitly enabled it (the UI toggle
+  // is not enough — a crafted request could send customTime otherwise) and the
+  // time is well-formed and not in the future (you can't start "later" than now).
   let serverTsUtc: string;
   let serverTsLocal: string;
   let serverClockLocal: string;
   let eventSource: "WEB" | "CUSTOM_TIME" = "WEB";
 
+  let customTimeAllowed = false;
   if (customTime && eventType === "START") {
+    const validFormat = /^([01]\d|2[0-3]):[0-5]\d$/.test(customTime);
+    const notFuture = customTime <= clockLima(now).slice(0, 5); // HH:MM <= now (Lima)
+    if (validFormat && notFuture) {
+      const tenant = await getTenantById(tenantId ?? "");
+      customTimeAllowed = tenant?.settings?.workSchedule?.allowCustomStartTime ?? false;
+    }
+  }
+
+  if (customTime && eventType === "START" && customTimeAllowed) {
     // Build Lima local ISO from today's date + custom time
     serverTsLocal = buildLocalIso(workDate, customTime);
     serverTsUtc = new Date(serverTsLocal).toISOString();

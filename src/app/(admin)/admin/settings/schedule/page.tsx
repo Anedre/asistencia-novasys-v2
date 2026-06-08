@@ -62,6 +62,7 @@ export default function ScheduleSettingsPage() {
   const [requirePhoto, setRequirePhoto] = useState(false);
   const [autoCloseShifts, setAutoCloseShifts] = useState(true);
   const [autoCloseAtGoal, setAutoCloseAtGoal] = useState(false);
+  const [allowCustomStartTime, setAllowCustomStartTime] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const saved = useMemo(
@@ -76,6 +77,7 @@ export default function ScheduleSettingsPage() {
       requirePhoto: tenant?.settings?.workSchedule?.requirePhoto ?? false,
       autoCloseShifts: tenant?.settings?.workSchedule?.autoCloseShifts ?? true,
       autoCloseAtGoal: tenant?.settings?.workSchedule?.autoCloseAtGoal ?? false,
+      allowCustomStartTime: tenant?.settings?.workSchedule?.allowCustomStartTime ?? false,
     }),
     [tenant]
   );
@@ -91,6 +93,7 @@ export default function ScheduleSettingsPage() {
     setRequirePhoto(saved.requirePhoto);
     setAutoCloseShifts(saved.autoCloseShifts);
     setAutoCloseAtGoal(saved.autoCloseAtGoal);
+    setAllowCustomStartTime(saved.allowCustomStartTime);
   }, [saved]);
 
   const dirty =
@@ -103,7 +106,8 @@ export default function ScheduleSettingsPage() {
     requireGps !== saved.requireGps ||
     requirePhoto !== saved.requirePhoto ||
     autoCloseShifts !== saved.autoCloseShifts ||
-    autoCloseAtGoal !== saved.autoCloseAtGoal;
+    autoCloseAtGoal !== saved.autoCloseAtGoal ||
+    allowCustomStartTime !== saved.allowCustomStartTime;
 
   function discard() {
     setStartTime(saved.startTime);
@@ -116,6 +120,7 @@ export default function ScheduleSettingsPage() {
     setRequirePhoto(saved.requirePhoto);
     setAutoCloseShifts(saved.autoCloseShifts);
     setAutoCloseAtGoal(saved.autoCloseAtGoal);
+    setAllowCustomStartTime(saved.allowCustomStartTime);
   }
 
   async function handleSave() {
@@ -134,6 +139,7 @@ export default function ScheduleSettingsPage() {
             requirePhoto,
             autoCloseShifts,
             autoCloseAtGoal,
+            allowCustomStartTime,
           },
         },
       });
@@ -260,6 +266,18 @@ export default function ScheduleSettingsPage() {
               Marca la salida sola cuando el empleado acumula sus horas laborables
               ({Math.max(0, (parseInt(endTime) - parseInt(startTime)) || 9)}h de turno
               − {Math.round(breakMinutes / 60)}h de break). Se revisa cada ~10 minutos.
+            </p>
+          )}
+          <Toggle
+            label="Permitir marcar entrada con hora personalizada"
+            checked={allowCustomStartTime}
+            onChange={setAllowCustomStartTime}
+          />
+          {allowCustomStartTime && (
+            <p className="form-hint" style={{ marginTop: 8 }}>
+              El empleado podrá elegir su hora de entrada (p. ej. {startTime}) al marcar,
+              en vez de usar la hora real. Útil para jornadas flexibles; el registro queda
+              marcado como “hora personalizada”.
             </p>
           )}
         </div>

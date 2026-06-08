@@ -126,8 +126,9 @@ interface HeroProps {
   shiftEnd: string;
   breakMin: number;
   todayHistory: { time: string; label: string; loc: string; kind: string }[];
-  onAction: (type: EventType) => Promise<void>;
+  onAction: (type: EventType, customTime?: string) => Promise<void>;
   pendingAction: EventType | null;
+  allowCustomStart: boolean;
   weekTotalMin: number;
   weekAvgMin: number;
   weekBestMin: number;
@@ -154,6 +155,7 @@ function CheckInHero({
   todayHistory,
   onAction,
   pendingAction,
+  allowCustomStart,
   weekTotalMin,
   weekAvgMin,
   weekBestMin,
@@ -262,6 +264,13 @@ function CheckInHero({
 
   const meta = stateMeta[state];
   const clockStyle = useClockStyle();
+
+  // Optional "custom start time" picker (only when the admin enabled it and
+  // the next action is the day's first check-in).
+  const [startPickerOpen, setStartPickerOpen] = useState(false);
+  const [customStart, setCustomStart] = useState(shiftStart);
+  const canCustomStart = allowCustomStart && meta.primaryAction === "START";
+  const openStartPicker = () => { setCustomStart(shiftStart); setStartPickerOpen(true); };
 
   // ── Progress & milestone ──
   // Daily goal = laborable hours = shift span minus the (unpaid) break.
@@ -461,7 +470,11 @@ function CheckInHero({
           <button
             className={`btn-action ${meta.pillCls} ${isLive ? "is-live" : ""}`}
             disabled={isLoading || pendingAction !== null || !meta.primaryAction}
-            onClick={() => meta.primaryAction && onAction(meta.primaryAction)}
+            onClick={() => {
+              if (!meta.primaryAction) return;
+              if (canCustomStart) openStartPicker();
+              else onAction(meta.primaryAction);
+            }}
           >
             {pendingAction === meta.primaryAction ? (
               <span style={{
@@ -497,6 +510,45 @@ function CheckInHero({
             <span className="meta-val">{meta.subVal}</span>
           </div>
         </div>
+
+        {/* Custom start-time picker (admin-enabled): pick the hour you started */}
+        {startPickerOpen && canCustomStart && (
+          <div className="start-picker">
+            <span className="start-picker-title">¿A qué hora entraste?</span>
+            <div className="start-picker-row">
+              <input
+                type="time"
+                className="start-picker-input"
+                value={customStart}
+                onChange={(e) => setCustomStart(e.target.value)}
+              />
+              <button
+                className="btn-action accent"
+                disabled={pendingAction !== null || !customStart}
+                onClick={() => { setStartPickerOpen(false); onAction("START", customStart); }}
+              >
+                Marcar a las {customStart}
+              </button>
+            </div>
+            <div className="start-picker-sub">
+              <button
+                type="button"
+                className="start-picker-link"
+                disabled={pendingAction !== null}
+                onClick={() => { setStartPickerOpen(false); onAction("START"); }}
+              >
+                o marcar con la hora actual
+              </button>
+              <button
+                type="button"
+                className="start-picker-link muted"
+                onClick={() => setStartPickerOpen(false)}
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* RIGHT: clock — Chrono Cockpit by default, or the employee's chosen style */}
@@ -1037,6 +1089,7 @@ export default function EmployeeDashboardPage() {
   const shiftStart = profile?.employee?.schedule?.startTime ?? "09:00";
   const shiftEnd = profile?.employee?.schedule?.endTime ?? "18:00";
   const breakMin = profile?.employee?.schedule?.breakMinutes ?? 60;
+  const allowCustomStart = tenant?.settings?.workSchedule?.allowCustomStartTime ?? false;
 
   // ── New stats for the hero ──
   const weekDaysData = week?.days ?? [];
@@ -1105,10 +1158,10 @@ export default function EmployeeDashboardPage() {
     return hist;
   }, [today, siteName]);
 
-  async function handleAction(eventType: EventType) {
+  async function handleAction(eventType: EventType, customTime?: string) {
     setPendingAction(eventType);
     try {
-      const result = await recordEvent.mutateAsync({ eventType });
+      const result = await recordEvent.mutateAsync({ eventType, customTime });
       toast.success(result.message ?? "¡Registro exitoso!");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "No se pudo registrar");
@@ -1236,6 +1289,7 @@ export default function EmployeeDashboardPage() {
         todayHistory={todayHistory}
         onAction={handleAction}
         pendingAction={pendingAction}
+        allowCustomStart={allowCustomStart}
         weekTotalMin={weekTotalMin}
         weekAvgMin={weekAvgMin}
         weekBestMin={weekBestMin}

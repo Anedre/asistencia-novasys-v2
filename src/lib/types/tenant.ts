@@ -48,6 +48,8 @@ export interface TenantSettings {
     autoCloseShifts?: boolean;
     /** Real-time close once an employee reaches their laborable hours (auto-close Lambda, ~10min). */
     autoCloseAtGoal?: boolean;
+    /** Let employees set their check-in time (e.g. 09:00) instead of the real clock. */
+    allowCustomStartTime?: boolean;
   };
 }
 

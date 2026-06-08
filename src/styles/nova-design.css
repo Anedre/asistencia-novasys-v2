@@ -1908,6 +1908,46 @@
 
 /* CTA */
 .checkin-cta { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+
+/* Custom start-time picker (shown under the CTA when admin enables it) */
+.start-picker {
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--bg-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 420px;
+}
+.start-picker-title { font-size: 12px; font-weight: 600; color: var(--text-muted); }
+.start-picker-row { display: flex; gap: 10px; align-items: stretch; flex-wrap: wrap; }
+.start-picker-input {
+  flex: 0 0 auto;
+  font-size: 18px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  padding: 8px 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+}
+.start-picker-row .btn-action { flex: 1; min-width: 150px; justify-content: center; }
+.start-picker-sub { display: flex; justify-content: space-between; gap: 12px; }
+.start-picker-link {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+}
+.start-picker-link.muted { color: var(--text-muted); }
+.start-picker-link:disabled { opacity: .5; cursor: default; }
 .btn-action {
   display: inline-flex;
   align-items: center;
