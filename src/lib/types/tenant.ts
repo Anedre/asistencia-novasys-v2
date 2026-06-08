@@ -44,7 +44,10 @@ export interface TenantSettings {
     allowOffHours?: boolean;
     requireGps?: boolean;
     requirePhoto?: boolean;
+    /** Nightly close of shifts left open at end of day (shift-closer Lambda). */
     autoCloseShifts?: boolean;
+    /** Real-time close once an employee reaches their laborable hours (auto-close Lambda, ~10min). */
+    autoCloseAtGoal?: boolean;
   };
 }
 

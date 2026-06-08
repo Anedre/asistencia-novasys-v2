@@ -1,0 +1,11 @@
+{
+  "name": "novasys-shift-autoclose",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Every-10-min Lambda that closes attendance shifts once the employee reaches their laborable hours (tenant.settings.workSchedule.autoCloseAtGoal).",
+  "main": "index.js",
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.700.0",
+    "@aws-sdk/lib-dynamodb": "^3.700.0"
+  }
+}

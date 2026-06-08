@@ -174,6 +174,10 @@ export async function updateTenantSettings(
     updates.push("settings.defaultSchedule = :ds");
     values[":ds"] = settings.defaultSchedule;
   }
+  if (settings.workSchedule !== undefined) {
+    updates.push("settings.workSchedule = :wsch");
+    values[":wsch"] = settings.workSchedule;
+  }
   if (settings.holidays !== undefined) {
     updates.push("settings.holidays = :hol");
     values[":hol"] = settings.holidays;
