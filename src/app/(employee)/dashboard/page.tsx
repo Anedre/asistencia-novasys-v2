@@ -62,6 +62,26 @@ function parseHM(s: string): number {
   return h * 60 + (m || 0);
 }
 
+/**
+ * The backend clears breakStartLocal once BREAK_END is recorded (it keeps only
+ * breakEndLocal + breakMinutes). To still show "Inicio break" in the timeline of
+ * a finished day, derive it as breakEnd − breakMinutes.
+ */
+function deriveBreakStartLocal(
+  breakStartLocal: string | null | undefined,
+  breakEndLocal: string | null | undefined,
+  breakMinutes: number | undefined
+): string | null {
+  if (breakStartLocal) return breakStartLocal;
+  if (!breakEndLocal || !breakMinutes) return null;
+  const [h, m, s] = breakEndLocal.split(":").map(Number);
+  let total = h * 60 + (m || 0) - breakMinutes;
+  if (total < 0) total = 0;
+  const hh = Math.floor(total / 60);
+  const mm = total % 60;
+  return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}:${String(s || 0).padStart(2, "0")}`;
+}
+
 type CheckinState = "before" | "working" | "break" | "completed" | "offhours" | "vacation" | "holiday";
 
 interface TodayLike {
@@ -489,7 +509,19 @@ function CheckInHero({
             breakSec={liveBreakSec}
             shiftStart={shiftStart}
             shiftEnd={shiftEnd}
-            today={today}
+            breakMin={breakMin}
+            today={
+              today
+                ? {
+                    ...today,
+                    breakStartLocal: deriveBreakStartLocal(
+                      today.breakStartLocal,
+                      today.breakEndLocal,
+                      today.breakMinutes
+                    ),
+                  }
+                : today
+            }
           />
         ) : (
           <NovaClock
@@ -1065,8 +1097,9 @@ export default function EmployeeDashboardPage() {
 
   const todayHistory = useMemo(() => {
     const hist: { time: string; label: string; loc: string; kind: string }[] = [];
+    const breakStart = deriveBreakStartLocal(today?.breakStartLocal, today?.breakEndLocal, today?.breakMinutes);
     if (today?.firstInLocal) hist.push({ time: fmtClock(today.firstInLocal), label: "Entrada", loc: siteName, kind: "in" });
-    if (today?.breakStartLocal) hist.push({ time: fmtClock(today.breakStartLocal), label: "Inicio break", loc: "Almuerzo", kind: "break-start" });
+    if (breakStart) hist.push({ time: fmtClock(breakStart), label: "Inicio break", loc: "Almuerzo", kind: "break-start" });
     if (today?.breakEndLocal) hist.push({ time: fmtClock(today.breakEndLocal), label: "Fin break", loc: "Reanudó jornada", kind: "break-end" });
     if (today?.lastOutLocal) hist.push({ time: fmtClock(today.lastOutLocal), label: "Salida", loc: siteName, kind: "out" });
     return hist;

@@ -13,6 +13,8 @@ interface Props {
   breakSec: number;
   shiftStart: string;
   shiftEnd: string;
+  /** Planned (paid) break in minutes — used to compute laborable goal & BRK dial. Default 60. */
+  breakMin?: number;
   today?: {
     firstInLocal?: string | null;
     breakStartLocal?: string | null;
@@ -155,6 +157,7 @@ export function CheckInOrbital({
   breakSec,
   shiftStart,
   shiftEnd,
+  breakMin = 60,
   today,
 }: Props) {
   const accent = ACCENT_BY_STATE[state];
@@ -168,7 +171,12 @@ export function CheckInOrbital({
   const hours12 = (now.getHours() % 12) + minutes / 60;
 
   const totalShiftSec = (endH - startH) * 3600;
-  const workPct = totalShiftSec > 0 ? Math.round((Math.min(workedSec, totalShiftSec) / totalShiftSec) * 100) : 0;
+  // WORK dial = laborable goal (shift minus the unpaid break), so a full
+  // laborable day reads 100%. BRK dial = consumed break vs the planned break.
+  const breakPlannedSec = Math.max(1, breakMin * 60);
+  const goalSec = Math.max(1, totalShiftSec - breakPlannedSec);
+  const workPct = Math.round((Math.min(workedSec, goalSec) / goalSec) * 100);
+  const breakPct = Math.min(100, Math.round((breakSec / breakPlannedSec) * 100));
 
   const shiftStartAngle = angle24(startH);
   const shiftEndAngle = angle24(endH);
@@ -337,9 +345,9 @@ export function CheckInOrbital({
         {brStartH != null && <CockpitMark hour24={brStartH} r={94} color="#F59E0B" label="BR" />}
         {brEndH != null && <CockpitMark hour24={brEndH} r={94} color="#10B981" label="↩" />}
 
-        {/* Sub-dials */}
+        {/* Sub-dials — WORK over laborable goal, BRK over planned break */}
         <SubDial x={cx - 50} y={cy + 30} value={workPct} color="#10B981" label="WORK" />
-        <SubDial x={cx + 50} y={cy + 30} value={(breakSec / 3600) * 100} color="#F59E0B" label="BRK" />
+        <SubDial x={cx + 50} y={cy + 30} value={breakPct} color="#F59E0B" label="BRK" />
 
         {/* 12h hands */}
         <g
