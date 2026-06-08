@@ -3,9 +3,7 @@
 import { useSession } from "next-auth/react";
 import { Toaster } from "sonner";
 import { Loader2 } from "lucide-react";
-import { NovaSidebar } from "@/components/nova/sidebar";
-import { NovaTopbar } from "@/components/nova/topbar";
-import { PageTransition } from "@/components/nova/page-transition";
+import { AppShell } from "@/components/nova/app-shell";
 import { ThemeBridge } from "@/components/nova/theme-bridge";
 import { ChatWidget } from "@/components/chat/chat-widget";
 import { MessagingWidget } from "@/components/messaging/messaging-widget";
@@ -29,13 +27,9 @@ export default function EmployeeLayout({ children }: { children: React.ReactNode
   return (
     <div className="nva-app" data-theme="light" data-density="comfortable" suppressHydrationWarning>
       <ThemeBridge />
-      <div className="shell">
-        <NovaSidebar role="EMPLOYEE" />
-        <main className="main">
-          <NovaTopbar activeView="employee" showViewToggle={isAdmin} />
-          <PageTransition>{children}</PageTransition>
-        </main>
-      </div>
+      <AppShell role="EMPLOYEE" activeView="employee" showViewToggle={isAdmin}>
+        {children}
+      </AppShell>
       <Toaster position="top-right" richColors closeButton />
       <MessagingWidget />
       <ChatWidget />

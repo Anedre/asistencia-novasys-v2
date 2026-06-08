@@ -1,7 +1,8 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Sora, JetBrains_Mono } from "next/font/google";
 import { Providers } from "@/components/providers";
 import { PremiumIconDefs } from "@/components/nova/premium-icon";
+import { ServiceWorkerRegister } from "@/components/nova/service-worker-register";
 import "./globals.css";
 import "@/styles/nova-design.css";
 
@@ -28,6 +29,22 @@ export const metadata: Metadata = {
   },
   description: "Sistema de control de asistencia de personal - Novasys",
   manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "Asistencia",
+  },
+  icons: {
+    icon: "/favicon.ico",
+    apple: "/icon-192.png",
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#0A1628",
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({
@@ -43,6 +60,7 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col">
         <PremiumIconDefs />
+        <ServiceWorkerRegister />
         <Providers>{children}</Providers>
       </body>
     </html>

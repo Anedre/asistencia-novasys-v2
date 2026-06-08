@@ -16,9 +16,11 @@ interface TopbarProps {
   activeView: "admin" | "employee";
   /** If true, hide the view-toggle (when user only has one role). */
   showViewToggle?: boolean;
+  /** Opens/closes the mobile sidebar drawer (shown only on small screens). */
+  onMenuToggle?: () => void;
 }
 
-export function NovaTopbar({ activeView, showViewToggle = true }: TopbarProps) {
+export function NovaTopbar({ activeView, showViewToggle = true, onMenuToggle }: TopbarProps) {
   const { data: session } = useSession();
   const [themeMounted, setThemeMounted] = useState(false);
   const { resolvedTheme, setTheme } = useTheme();
@@ -39,6 +41,16 @@ export function NovaTopbar({ activeView, showViewToggle = true }: TopbarProps) {
 
   return (
     <header className="topbar">
+      {/* Mobile-only hamburger to open the sidebar drawer */}
+      <button
+        type="button"
+        className="nav-burger"
+        onClick={onMenuToggle}
+        aria-label="Abrir menú"
+      >
+        <IconSvg d="M3 6h18M3 12h18M3 18h18" size={20} />
+      </button>
+
       {showViewToggle && (
         <div
           className="view-toggle"
@@ -140,7 +152,7 @@ export function NovaTopbar({ activeView, showViewToggle = true }: TopbarProps) {
           trigger={
             <div className="user-chip" aria-haspopup="menu">
               <NovaAvatar name={name} size={32} variant="accent" />
-              <div aria-hidden style={{ lineHeight: 1.2, textAlign: "left" }}>
+              <div aria-hidden className="user-chip-meta" style={{ lineHeight: 1.2, textAlign: "left" }}>
                 <div style={{ fontWeight: 600, fontSize: 13, color: "var(--text-primary)" }}>{name}</div>
                 <div style={{ fontSize: 11, color: "var(--text-secondary)" }}>{role}</div>
               </div>
