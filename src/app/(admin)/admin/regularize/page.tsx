@@ -38,6 +38,7 @@ import { IconSvg, Icons } from "@/components/nova/icons";
 import { NovaAvatar } from "@/components/nova/avatar";
 import { PageHeader } from "@/components/nova/page-header";
 import { NovaDatePicker, todayISO } from "@/components/nova/date-picker";
+import { NovaDateRangePicker } from "@/components/nova/date-range-picker";
 
 /* -------------------------------------------------------------------- types */
 
@@ -347,29 +348,15 @@ export default function RegularizePage() {
             hint={mode === "range" && dayCount > 0 ? `${dayCount} día(s)` : undefined}
           >
             {mode === "range" ? (
-              <div className="rg-row">
-                <div className="rg-field">
-                  <label className="rg-label" htmlFor="dateFrom">
-                    Desde<span className="req">*</span>
-                  </label>
-                  <NovaDatePicker
-                    id="dateFrom"
-                    value={dateFrom}
-                    onChange={setDateFrom}
-                    max={dateTo || undefined}
-                  />
-                </div>
-                <div className="rg-field">
-                  <label className="rg-label" htmlFor="dateTo">
-                    Hasta<span className="req">*</span>
-                  </label>
-                  <NovaDatePicker
-                    id="dateTo"
-                    value={dateTo}
-                    onChange={setDateTo}
-                    min={dateFrom || undefined}
-                  />
-                </div>
+              <div className="rg-field">
+                <label className="rg-label">
+                  Rango de fechas<span className="req">*</span>
+                </label>
+                <NovaDateRangePicker
+                  from={dateFrom}
+                  to={dateTo}
+                  onChange={(f, t) => { setDateFrom(f); setDateTo(t); }}
+                />
               </div>
             ) : (
               <div className="rg-field">

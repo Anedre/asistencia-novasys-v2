@@ -7037,4 +7037,9 @@ polygon.chart-area-breath,
   font-size: 12.5px; font-weight: 600; cursor: pointer; font-family: inherit; transition: all .15s;
 }
 .nva-app .ndp-today-btn:hover { border-color: var(--accent); color: var(--accent); }
+/* Range selection (NovaDateRangePicker) */
+.nva-app .ndp-cell.in-range { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--text-primary); opacity: 1; border-radius: 4px; }
+.nva-app .ndp-cell.range-start, .nva-app .ndp-cell.range-end { background: var(--accent); color: #fff; font-weight: 600; opacity: 1; }
+.nva-app .ndp-foot-range { justify-content: space-between; align-items: center; }
+.nva-app .ndp-range-hint { font-size: 11.5px; color: var(--text-muted); }
 @media (prefers-reduced-motion: reduce) { .nva-app .ndp-pop { animation: none; } }
