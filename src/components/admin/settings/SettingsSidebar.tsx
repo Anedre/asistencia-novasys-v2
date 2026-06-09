@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { IconSvg, Icons } from "@/components/nova/icons";
@@ -50,10 +51,21 @@ interface Props {
 export function SettingsSidebar({ dirty }: Props) {
   const pathname = usePathname() ?? "";
 
+  // Keep the active pill in view when the strip scrolls horizontally.
+  const mobileNavRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const container = mobileNavRef.current;
+    if (!container) return;
+    const active = container.querySelector<HTMLElement>(".chip.active");
+    if (!active) return;
+    const target = active.offsetLeft - (container.clientWidth - active.clientWidth) / 2;
+    container.scrollTo({ left: Math.max(0, target), behavior: "auto" });
+  }, [pathname]);
+
   return (
     <>
-      {/* ── Mobile: horizontal scroll of pills ── */}
-      <div className="settings-aside-mobile">
+      {/* ── Mobile: a single swipeable, horizontally-scrolling row of pills ── */}
+      <div className="settings-aside-mobile" ref={mobileNavRef}>
         {GROUPS.flatMap((g) => g.items).map((it) => {
           const active = pathname.startsWith(it.href);
           return (
@@ -61,7 +73,7 @@ export function SettingsSidebar({ dirty }: Props) {
               key={it.href}
               href={it.href}
               className={`chip ${active ? "active" : ""}`}
-              style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 14px", whiteSpace: "nowrap" }}
+              style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 14px", whiteSpace: "nowrap", flexShrink: 0, scrollSnapAlign: "start" }}
             >
               <IconSvg d={it.icon} size={13} />
               {it.label}
@@ -121,13 +133,22 @@ export function SettingsSidebar({ dirty }: Props) {
       <style jsx>{`
         .settings-aside-mobile {
           display: none;
-          flex-wrap: wrap;
           gap: 8px;
           margin-bottom: 20px;
         }
         @media (max-width: 1000px) {
           .settings-aside-mobile {
             display: flex;
+            flex-wrap: nowrap;
+            overflow-x: auto;
+            overflow-y: hidden;
+            -webkit-overflow-scrolling: touch;
+            scrollbar-width: none;
+            scroll-snap-type: x proximity;
+            padding-bottom: 2px;
+          }
+          .settings-aside-mobile::-webkit-scrollbar {
+            display: none;
           }
           .settings-aside-desktop {
             display: none;
