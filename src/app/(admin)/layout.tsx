@@ -26,7 +26,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const showViewToggle = session?.user?.role === "ADMIN" || session?.user?.role === "SUPER_ADMIN";
 
   return (
-    <div className="nva-app" data-theme="light" data-density="comfortable" suppressHydrationWarning>
+    <div className="nva-app" data-theme="light" data-density="compact" suppressHydrationWarning>
       <ThemeBridge />
       <AppShell role="ADMIN" activeView="admin" showViewToggle={showViewToggle}>
         {children}

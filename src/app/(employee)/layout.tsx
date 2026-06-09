@@ -25,7 +25,7 @@ export default function EmployeeLayout({ children }: { children: React.ReactNode
     session?.user?.role === "ADMIN" || session?.user?.role === "SUPER_ADMIN";
 
   return (
-    <div className="nva-app" data-theme="light" data-density="comfortable" suppressHydrationWarning>
+    <div className="nva-app" data-theme="light" data-density="compact" suppressHydrationWarning>
       <ThemeBridge />
       <AppShell role="EMPLOYEE" activeView="employee" showViewToggle={isAdmin}>
         {children}
