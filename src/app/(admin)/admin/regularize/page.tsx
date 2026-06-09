@@ -643,8 +643,10 @@ function ModeSwitcher({ mode, onChange }: { mode: Mode; onChange: (m: Mode) => v
           <span className="rg-mode-icon">
             <IconSvg d={it.icon} size={16} />
           </span>
-          <span className="rg-mode-title">{it.title}</span>
-          <span className="rg-mode-desc">{it.desc}</span>
+          <span className="rg-mode-text">
+            <span className="rg-mode-title">{it.title}</span>
+            <span className="rg-mode-desc">{it.desc}</span>
+          </span>
         </button>
       ))}
     </div>

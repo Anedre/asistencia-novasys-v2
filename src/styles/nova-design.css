@@ -6313,8 +6313,8 @@ polygon.chart-area-breath,
 
 /* Reason grid — visual chips with icons per category */
 .rg-reason-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
 .rg-reason {
@@ -6492,7 +6492,7 @@ polygon.chart-area-breath,
 
 /* Schedule preview line */
 .rg-sched-preview {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 10px;
   margin-top: 10px;
@@ -7043,3 +7043,20 @@ polygon.chart-area-breath,
 .nva-app .ndp-foot-range { justify-content: space-between; align-items: center; }
 .nva-app .ndp-range-hint { font-size: 11.5px; color: var(--text-muted); }
 @media (prefers-reduced-motion: reduce) { .nva-app .ndp-pop { animation: none; } }
+
+/* ============================================================
+   De-elongate: regularize mode cards were stretched full-width (3×1fr) and
+   tall. Make them a left-aligned row of compact, content-sized horizontal
+   cards (icon + stacked text) so there's no wasted horizontal space.
+   ============================================================ */
+.nva-app .rg-modes { display: flex; flex-wrap: wrap; gap: 10px; }
+.nva-app .rg-mode {
+  flex: 0 1 auto;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  max-width: 300px;
+  padding: 12px 16px;
+}
+.nva-app .rg-mode-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.nva-app .rg-mode-desc { line-height: 1.3; }
