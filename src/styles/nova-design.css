@@ -6895,7 +6895,8 @@ polygon.chart-area-breath,
    give each a clear, clickable surface.
    ============================================================ */
 
-/* Mode selector — three obviously-clickable cards */
+/* Mode selector — three obviously-clickable cards, each with its own tone
+   (--mtone set per card in the component; falls back to the brand accent). */
 .nva-app .rg-mode {
   background: var(--bg-elevated);
   border: 1.5px solid var(--border-strong);
@@ -6903,17 +6904,22 @@ polygon.chart-area-breath,
   box-shadow: var(--shadow-xs);
 }
 .nva-app .rg-mode:hover {
-  border-color: var(--accent);
+  border-color: var(--mtone, var(--accent));
   box-shadow: var(--shadow-sm);
   transform: translateY(-2px);
 }
 .nva-app .rg-mode.active {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent), var(--shadow-sm);
+  border-color: var(--mtone, var(--accent));
+  background: color-mix(in srgb, var(--mtone, var(--accent)) 7%, var(--bg-elevated));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--mtone, var(--accent)) 22%, transparent), var(--shadow-sm);
 }
-.nva-app .rg-mode.active.danger {
-  border-color: var(--danger);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 20%, transparent), var(--shadow-sm);
+.nva-app .rg-mode-icon {
+  background: color-mix(in srgb, var(--mtone, var(--accent)) 13%, transparent);
+  color: var(--mtone, var(--accent));
+}
+.nva-app .rg-mode.active .rg-mode-icon {
+  background: var(--mtone, var(--accent));
+  color: #fff;
 }
 
 /* Reason chips — visible edge + lift so they read as selectable */

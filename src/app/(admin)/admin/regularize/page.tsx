@@ -37,6 +37,7 @@ import { REASON_LABELS, ALL_REASON_OPTIONS, ABSENCE_REASONS } from "@/lib/consta
 import { IconSvg, Icons } from "@/components/nova/icons";
 import { NovaAvatar } from "@/components/nova/avatar";
 import { PageHeader } from "@/components/nova/page-header";
+import { NovaDatePicker, todayISO } from "@/components/nova/date-picker";
 
 /* -------------------------------------------------------------------- types */
 
@@ -136,6 +137,13 @@ export default function RegularizePage() {
 
   // Reset confirmation when key inputs change.
   useEffect(() => setConfirmingClean(false), [employeeId, workDate, mode]);
+
+  // Default the single-day date to today on mount (deferred to rAF so it's not
+  // a synchronous setState in the effect body, and SSR-safe — starts empty).
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setWorkDate((w) => w || todayISO()));
+    return () => cancelAnimationFrame(id);
+  }, []);
 
   function invalidateAttendanceCaches(empId?: string) {
     queryClient.invalidateQueries({ queryKey: ["admin", "attendance"] });
@@ -342,24 +350,22 @@ export default function RegularizePage() {
                   <label className="rg-label" htmlFor="dateFrom">
                     Desde<span className="req">*</span>
                   </label>
-                  <input
+                  <NovaDatePicker
                     id="dateFrom"
-                    type="date"
-                    className="rg-input"
                     value={dateFrom}
-                    onChange={(e) => setDateFrom(e.target.value)}
+                    onChange={setDateFrom}
+                    max={dateTo || undefined}
                   />
                 </div>
                 <div className="rg-field">
                   <label className="rg-label" htmlFor="dateTo">
                     Hasta<span className="req">*</span>
                   </label>
-                  <input
+                  <NovaDatePicker
                     id="dateTo"
-                    type="date"
-                    className="rg-input"
                     value={dateTo}
-                    onChange={(e) => setDateTo(e.target.value)}
+                    onChange={setDateTo}
+                    min={dateFrom || undefined}
                   />
                 </div>
               </div>
@@ -369,12 +375,10 @@ export default function RegularizePage() {
                   Fecha a {mode === "clean" ? "eliminar" : "regularizar"}
                   <span className="req">*</span>
                 </label>
-                <input
+                <NovaDatePicker
                   id="workDate"
-                  type="date"
-                  className="rg-input"
                   value={workDate}
-                  onChange={(e) => setWorkDate(e.target.value)}
+                  onChange={setWorkDate}
                 />
               </div>
             )}
@@ -630,10 +634,10 @@ export default function RegularizePage() {
 /* ============================================================ Pieces */
 
 function ModeSwitcher({ mode, onChange }: { mode: Mode; onChange: (m: Mode) => void }) {
-  const items: { key: Mode; icon: React.ReactNode; title: string; desc: string; danger?: boolean }[] = [
-    { key: "single", icon: Icons.calendar, title: "Día único", desc: "Regularizar un solo día" },
-    { key: "range", icon: Icons.history, title: "Rango", desc: "Aplicar a varios días seguidos" },
-    { key: "clean", icon: Icons.trash, title: "Limpiar día", desc: "Eliminar un registro erróneo", danger: true },
+  const items: { key: Mode; icon: React.ReactNode; title: string; desc: string; tone: string }[] = [
+    { key: "single", icon: Icons.calendar, title: "Día único", desc: "Regularizar un solo día", tone: "#6366F1" },
+    { key: "range", icon: Icons.history, title: "Rango", desc: "Aplicar a varios días seguidos", tone: "#14B8A6" },
+    { key: "clean", icon: Icons.trash, title: "Limpiar día", desc: "Eliminar un registro erróneo", tone: "var(--danger)" },
   ];
   return (
     <div className="rg-modes">
@@ -641,7 +645,8 @@ function ModeSwitcher({ mode, onChange }: { mode: Mode; onChange: (m: Mode) => v
         <button
           key={it.key}
           type="button"
-          className={`rg-mode${mode === it.key ? " active" : ""}${it.danger ? " danger" : ""}`}
+          className={`rg-mode${mode === it.key ? " active" : ""}`}
+          style={{ "--mtone": it.tone } as React.CSSProperties}
           onClick={() => onChange(it.key)}
           aria-pressed={mode === it.key}
         >
