@@ -48,6 +48,7 @@
   --text-primary: #0A1628;
   --text-secondary:#64748B;
   --text-muted:   #94A3B8;
+  --text:         var(--text-primary); /* alias — many components reference var(--text) */
   --logo-bg:      #0A1628;
   --logo-ring:    #FFFFFF;
 }
@@ -62,6 +63,7 @@
   --text-primary: #F4F7FB;
   --text-secondary:#9FB0C6;
   --text-muted:   #5E6F86;
+  --text:         var(--text-primary); /* alias — many components reference var(--text) */
   --logo-bg:      #0A1628;
   --logo-ring:    #94A3B8;
   --shadow-xs: 0 1px 1px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.03);
@@ -6455,7 +6457,8 @@ polygon.chart-area-breath,
   font-family: inherit;
   border: 1px solid var(--border);
 }
-.rg-confirm-cancel { background: var(--bg); color: var(--text); }
+.rg-confirm-cancel { background: var(--bg-elevated); color: var(--text-primary); }
+.rg-confirm-cancel:hover { background: var(--bg-subtle); border-color: var(--border-strong); }
 .rg-confirm-yes { background: var(--danger); color: white; border-color: var(--danger); }
 
 /* Hint banner (warning above clean mode) */
@@ -6782,3 +6785,82 @@ polygon.chart-area-breath,
   .table.cards td[colspan]::before { display: none; }
   .table.cards td[colspan] { justify-content: center; }
 }
+
+/* ============================================================
+   PREMIUM INTERACTION LAYER (vistoso)
+   Additive polish: fills the few missing card hovers, adds an
+   accent glow + sweeping "sheen" on primary CTAs, and small icon /
+   press / badge micro-interactions. The motion-heavy sheen is gated
+   behind prefers-reduced-motion: no-preference so reduced-motion
+   users keep a calm, fully-static UI.
+   ============================================================ */
+
+/* — Fill the missing card hover-lifts (match .panel / .hero-stat) — */
+.stat-mini,
+.dctx-card {
+  transition: transform .18s cubic-bezier(.22,1,.36,1), border-color .18s ease, box-shadow .18s ease;
+}
+.stat-mini:hover,
+.dctx-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-md);
+}
+
+/* — Primary CTAs: accent glow + a sweeping light sheen on hover.
+     Scoped to :not(.is-live) on .btn-action so the live pulse ring
+     (which paints outside the button) is never clipped. — */
+.btn-primary,
+.rg-cta,
+.btn-action:not(.is-live) {
+  position: relative;
+  overflow: hidden;
+}
+.btn-primary::before,
+.rg-cta::before,
+.btn-action:not(.is-live)::before {
+  content: "";
+  position: absolute;
+  top: 0; bottom: 0; left: 0;
+  width: 55%;
+  transform: translateX(-220%) skewX(-18deg);
+  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, .38), transparent);
+  pointer-events: none;
+}
+.btn-primary:hover { box-shadow: 0 8px 22px -8px color-mix(in srgb, var(--accent) 60%, transparent); }
+.rg-cta:hover:not(:disabled) { box-shadow: 0 8px 22px -8px color-mix(in srgb, var(--accent) 60%, transparent); }
+.btn-action:not(.is-live):hover { box-shadow: 0 8px 22px -8px color-mix(in srgb, var(--accent) 55%, transparent); }
+
+@media (prefers-reduced-motion: no-preference) {
+  .btn-primary:hover::before,
+  .rg-cta:hover:not(:disabled)::before,
+  .btn-action:not(.is-live):hover::before {
+    animation: cta-sheen .75s cubic-bezier(.4, 0, .2, 1);
+  }
+}
+@keyframes cta-sheen {
+  from { transform: translateX(-220%) skewX(-18deg); }
+  to   { transform: translateX(320%)  skewX(-18deg); }
+}
+
+/* — Icon micro-interaction inside buttons — */
+.btn-primary svg,
+.btn-secondary svg,
+.btn-action svg,
+.rg-cta svg,
+.btn svg { transition: transform .18s cubic-bezier(.22, 1, .36, 1); }
+.btn-primary:hover svg,
+.btn-secondary:hover svg,
+.btn-action:not(.is-live):hover svg,
+.rg-cta:hover:not(:disabled) svg,
+.btn:hover svg { transform: scale(1.14); }
+
+/* — Press feedback on chip-style buttons — */
+.rg-reason,
+.rg-mode { transition: transform .12s ease, border-color .18s ease, background .18s ease; }
+.rg-reason:active,
+.rg-mode:active { transform: scale(.97); }
+
+/* — Badges feel alive inside hovered table rows — */
+.type-tag { transition: filter .15s ease; }
+.table tbody tr:hover .type-tag { filter: brightness(1.06); }
