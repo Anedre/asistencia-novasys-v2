@@ -6973,3 +6973,68 @@ polygon.chart-area-breath,
   box-shadow: none;
   opacity: 1;
 }
+
+/* ============================================================
+   NovaDatePicker (custom calendar). Global (not styled-jsx) because the
+   popover is portaled to .nva-app — styled-jsx scoping is unreliable across
+   portals. The .nva-app prefix also out-specifies the global button reset.
+   ============================================================ */
+.nva-app .ndp { position: relative; }
+.nva-app .ndp-trigger {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 9px 12px; border-radius: 10px;
+  border: 1.5px solid var(--border-strong);
+  background: var(--bg-elevated); color: var(--text-primary);
+  font-size: 14px; font-family: inherit; cursor: pointer;
+  transition: border-color .15s, box-shadow .15s;
+}
+.nva-app .ndp-trigger:hover { border-color: var(--accent); }
+.nva-app .ndp-trigger.open {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.nva-app .ndp-trigger svg { flex-shrink: 0; color: var(--text-muted); }
+.nva-app .ndp-value { flex: 1; text-align: left; }
+.nva-app .ndp-value.ph { color: var(--text-muted); }
+
+.nva-app .ndp-pop {
+  z-index: 1000; padding: 12px;
+  background: var(--bg-elevated); border: 1px solid var(--border);
+  border-radius: 14px; box-shadow: var(--shadow-lg);
+  animation: ndp-in .14s ease;
+}
+@keyframes ndp-in { from { opacity: 0; transform: translateY(-4px); } }
+.nva-app .ndp-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.nva-app .ndp-title { font-weight: 600; font-size: 13.5px; color: var(--text-primary); text-transform: capitalize; }
+.nva-app .ndp-nav {
+  width: 30px; height: 30px; display: flex; align-items: center; justify-content: center;
+  border-radius: 8px; border: 1px solid var(--border); background: var(--bg-elevated);
+  color: var(--text-secondary); cursor: pointer; transition: all .15s;
+}
+.nva-app .ndp-nav:hover { border-color: var(--accent); color: var(--accent); }
+.nva-app .ndp-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; }
+.nva-app .ndp-dow { margin-bottom: 4px; }
+.nva-app .ndp-dow-cell {
+  text-align: center; font-size: 10.5px; font-weight: 600;
+  color: var(--text-muted); text-transform: uppercase; padding: 2px 0;
+}
+.nva-app .ndp-cell {
+  height: 34px; min-width: 0;
+  display: flex; align-items: center; justify-content: center;
+  border: none; background: transparent; border-radius: 9px;
+  font-size: 13px; color: var(--text-primary); cursor: pointer; font-family: inherit;
+  transition: background .12s, color .12s;
+}
+.nva-app .ndp-cell.other { color: var(--text-muted); opacity: .5; }
+.nva-app .ndp-cell:not(:disabled):hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.nva-app .ndp-cell.today { font-weight: 700; color: var(--accent-strong, var(--accent)); }
+.nva-app .ndp-cell.sel, .nva-app .ndp-cell.sel.today { background: var(--accent); color: #fff; font-weight: 600; opacity: 1; }
+.nva-app .ndp-cell:disabled { color: var(--text-muted); opacity: .35; cursor: not-allowed; }
+.nva-app .ndp-foot { margin-top: 10px; display: flex; justify-content: flex-end; }
+.nva-app .ndp-today-btn {
+  padding: 6px 14px; border-radius: 8px; border: 1px solid var(--border-strong);
+  background: var(--bg-subtle); color: var(--text-primary);
+  font-size: 12.5px; font-weight: 600; cursor: pointer; font-family: inherit; transition: all .15s;
+}
+.nva-app .ndp-today-btn:hover { border-color: var(--accent); color: var(--accent); }
+@media (prefers-reduced-motion: reduce) { .nva-app .ndp-pop { animation: none; } }

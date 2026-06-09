@@ -6,10 +6,12 @@ import { IconSvg, Icons } from "@/components/nova/icons";
 
 /* ============================================================
    NovaDatePicker — custom calendar popover (replaces <input type=date>).
-   - Spanish, Monday-first week. Highlights today, "Hoy" shortcut, min/max.
-   - Popover is portaled to the .nva-app root (so no ancestor card can clip
-     or paint over it) and positioned with fixed coords (flips up near the
-     bottom edge). Closes on outside-click / Esc; repositions on scroll/resize.
+   - Spanish, Monday-first, constant 6-week grid (adjacent-month days shown
+     muted) so the height never changes between months — no blank space.
+   - Portaled to the .nva-app root (keeps design tokens, escapes card clipping),
+     fixed positioning with flip-up near the viewport bottom.
+   - Styles live in nova-design.css (.ndp-*), NOT styled-jsx: styled-jsx scoping
+     is unreliable across React portals.
    - Value is an ISO "YYYY-MM-DD" string (same contract as the native input).
    ============================================================ */
 
@@ -21,7 +23,7 @@ const MONTHS_SHORT = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "s
 const WEEKDAYS = ["lu", "ma", "mi", "ju", "vi", "sá", "do"]; // Monday-first
 
 const POP_W = 282;
-const POP_H = 340;
+const POP_H = 348;
 
 const pad = (n: number) => String(n).padStart(2, "0");
 const toISO = (y: number, m: number, d: number) => `${y}-${pad(m + 1)}-${pad(d)}`; // m is 0-based
@@ -48,6 +50,8 @@ function fmtDisplay(s?: string): string {
 const firstWeekdayMonday = (y: number, m: number) => (new Date(y, m, 1).getDay() + 6) % 7;
 const daysInMonth = (y: number, m: number) => new Date(y, m + 1, 0).getDate();
 
+interface Cell { y: number; m: number; d: number; cur: boolean }
+
 interface Props {
   value: string;
   onChange: (v: string) => void;
@@ -59,7 +63,7 @@ interface Props {
 
 export function NovaDatePicker({ value, onChange, min, max, placeholder = "Seleccionar fecha", id }: Props) {
   const [open, setOpen] = useState(false);
-  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  const [posn, setPosn] = useState<{ top: number; left: number } | null>(null);
   const sel = parseISO(value);
   const [view, setView] = useState<{ y: number; m: number }>(() => {
     const p = sel ?? parseISO(todayISO());
@@ -75,9 +79,8 @@ export function NovaDatePicker({ value, onChange, min, max, placeholder = "Selec
     let left = Math.min(r.left, window.innerWidth - POP_W - 8);
     left = Math.max(8, left);
     let top = r.bottom + 6;
-    // Flip above the trigger if there isn't room below.
     if (top + POP_H > window.innerHeight - 8 && r.top - POP_H - 6 > 8) top = r.top - POP_H - 6;
-    setPos({ top, left });
+    setPosn({ top, left });
   }
 
   function toggle() {
@@ -90,7 +93,6 @@ export function NovaDatePicker({ value, onChange, min, max, placeholder = "Selec
     setOpen(willOpen);
   }
 
-  // Outside-click / Esc to close; reposition on scroll / resize while open.
   useEffect(() => {
     if (!open) return;
     const onDoc = (e: MouseEvent) => {
@@ -114,20 +116,27 @@ export function NovaDatePicker({ value, onChange, min, max, placeholder = "Selec
 
   const { y: vy, m: vm } = view;
   const todayStr = todayISO();
+
+  // Constant 6-week grid (42 cells): prev-month tail + current + next-month head.
   const lead = firstWeekdayMonday(vy, vm);
   const total = daysInMonth(vy, vm);
-  const cells: (number | null)[] = [];
-  for (let i = 0; i < lead; i++) cells.push(null);
-  for (let d = 1; d <= total; d++) cells.push(d);
-  while (cells.length % 7 !== 0) cells.push(null);
+  const prevY = vm === 0 ? vy - 1 : vy;
+  const prevM = vm === 0 ? 11 : vm - 1;
+  const prevTotal = daysInMonth(prevY, prevM);
+  const nextY = vm === 11 ? vy + 1 : vy;
+  const nextM = vm === 11 ? 0 : vm + 1;
+  const cells: Cell[] = [];
+  for (let i = lead - 1; i >= 0; i--) cells.push({ y: prevY, m: prevM, d: prevTotal - i, cur: false });
+  for (let d = 1; d <= total; d++) cells.push({ y: vy, m: vm, d, cur: true });
+  let nd = 1;
+  while (cells.length < 42) cells.push({ y: nextY, m: nextM, d: nd++, cur: false });
 
-  const isDisabled = (d: number) => {
-    const iso = toISO(vy, vm, d);
-    return (!!min && iso < min) || (!!max && iso > max);
-  };
-  function pick(d: number) {
-    if (isDisabled(d)) return;
-    onChange(toISO(vy, vm, d));
+  const isDisabled = (iso: string) => (!!min && iso < min) || (!!max && iso > max);
+  function pick(c: Cell) {
+    const iso = toISO(c.y, c.m, c.d);
+    if (isDisabled(iso)) return;
+    onChange(iso);
+    if (!c.cur) setView({ y: c.y, m: c.m });
     setOpen(false);
   }
   const prevMonth = () => setView((v) => (v.m === 0 ? { y: v.y - 1, m: 11 } : { y: v.y, m: v.m - 1 }));
@@ -141,14 +150,14 @@ export function NovaDatePicker({ value, onChange, min, max, placeholder = "Selec
     typeof document !== "undefined" ? (document.querySelector(".nva-app") ?? document.body) : null;
 
   const popover =
-    open && pos && portalTarget
+    open && posn && portalTarget
       ? createPortal(
           <div
             ref={popRef}
             className="ndp-pop"
             role="dialog"
             aria-label="Seleccionar fecha"
-            style={{ position: "fixed", top: pos.top, left: pos.left, width: POP_W }}
+            style={{ position: "fixed", top: posn.top, left: posn.left, width: POP_W }}
           >
             <div className="ndp-head">
               <button type="button" className="ndp-nav" onClick={prevMonth} aria-label="Mes anterior">
@@ -165,13 +174,13 @@ export function NovaDatePicker({ value, onChange, min, max, placeholder = "Selec
             </div>
 
             <div className="ndp-grid">
-              {cells.map((d, i) => {
-                if (d === null) return <div key={i} className="ndp-cell empty" />;
-                const iso = toISO(vy, vm, d);
-                const cls = `ndp-cell${value === iso ? " sel" : ""}${iso === todayStr ? " today" : ""}`;
+              {cells.map((c, i) => {
+                const iso = toISO(c.y, c.m, c.d);
+                const cls =
+                  `ndp-cell${c.cur ? "" : " other"}${value === iso ? " sel" : ""}${iso === todayStr ? " today" : ""}`;
                 return (
-                  <button key={i} type="button" className={cls} disabled={isDisabled(d)} onClick={() => pick(d)}>
-                    {d}
+                  <button key={i} type="button" className={cls} disabled={isDisabled(iso)} onClick={() => pick(c)}>
+                    {c.d}
                   </button>
                 );
               })}
@@ -180,50 +189,6 @@ export function NovaDatePicker({ value, onChange, min, max, placeholder = "Selec
             <div className="ndp-foot">
               <button type="button" className="ndp-today-btn" onClick={goToday}>Hoy</button>
             </div>
-
-            <style jsx>{`
-              .ndp-pop {
-                z-index: 1000; padding: 12px;
-                background: var(--bg-elevated); border: 1px solid var(--border);
-                border-radius: 14px; box-shadow: var(--shadow-lg);
-                animation: ndp-in .14s ease;
-              }
-              @keyframes ndp-in { from { opacity: 0; transform: translateY(-4px); } }
-              .ndp-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-              .ndp-title { font-weight: 600; font-size: 13.5px; color: var(--text-primary); text-transform: capitalize; }
-              .ndp-nav {
-                width: 30px; height: 30px; display: flex; align-items: center; justify-content: center;
-                border-radius: 8px; border: 1px solid var(--border); background: var(--bg-elevated);
-                color: var(--text-secondary); cursor: pointer; transition: all .15s;
-              }
-              .ndp-nav:hover { border-color: var(--accent); color: var(--accent); }
-              .ndp-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; }
-              .ndp-dow { margin-bottom: 4px; }
-              .ndp-dow-cell {
-                text-align: center; font-size: 10.5px; font-weight: 600;
-                color: var(--text-muted); text-transform: uppercase; padding: 2px 0;
-              }
-              .ndp-cell {
-                height: 34px; min-width: 0;
-                display: flex; align-items: center; justify-content: center;
-                border: none; background: transparent; border-radius: 9px;
-                font-size: 13px; color: var(--text-primary); cursor: pointer; font-family: inherit;
-                transition: background .12s, color .12s;
-              }
-              .ndp-cell.empty { cursor: default; }
-              .ndp-cell:not(.empty):not(:disabled):hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }
-              .ndp-cell.today { font-weight: 700; color: var(--accent-strong, var(--accent)); }
-              .ndp-cell.sel, .ndp-cell.sel.today { background: var(--accent); color: #fff; font-weight: 600; }
-              .ndp-cell:disabled { color: var(--text-muted); opacity: .4; cursor: not-allowed; }
-              .ndp-foot { margin-top: 10px; display: flex; justify-content: flex-end; }
-              .ndp-today-btn {
-                padding: 6px 14px; border-radius: 8px; border: 1px solid var(--border-strong);
-                background: var(--bg-subtle); color: var(--text-primary);
-                font-size: 12.5px; font-weight: 600; cursor: pointer; font-family: inherit; transition: all .15s;
-              }
-              .ndp-today-btn:hover { border-color: var(--accent); color: var(--accent); }
-              @media (prefers-reduced-motion: reduce) { .ndp-pop { animation: none; } }
-            `}</style>
           </div>,
           portalTarget,
         )
@@ -245,26 +210,6 @@ export function NovaDatePicker({ value, onChange, min, max, placeholder = "Selec
         <IconSvg d="M6 9l6 6 6-6" size={14} />
       </button>
       {popover}
-
-      <style jsx>{`
-        .ndp { position: relative; }
-        .ndp-trigger {
-          display: flex; align-items: center; gap: 8px; width: 100%;
-          padding: 9px 12px; border-radius: 10px;
-          border: 1.5px solid var(--border-strong);
-          background: var(--bg-elevated); color: var(--text-primary);
-          font-size: 14px; font-family: inherit; cursor: pointer;
-          transition: border-color .15s, box-shadow .15s;
-        }
-        .ndp-trigger:hover { border-color: var(--accent); }
-        .ndp-trigger.open {
-          border-color: var(--accent);
-          box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
-        }
-        .ndp-trigger :global(svg) { flex-shrink: 0; color: var(--text-muted); }
-        .ndp-value { flex: 1; text-align: left; }
-        .ndp-value.ph { color: var(--text-muted); }
-      `}</style>
     </div>
   );
 }
