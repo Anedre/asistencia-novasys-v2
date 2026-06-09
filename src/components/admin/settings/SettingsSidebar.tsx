@@ -61,7 +61,7 @@ export function SettingsSidebar({ dirty }: Props) {
               key={it.href}
               href={it.href}
               className={`chip ${active ? "active" : ""}`}
-              style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 12px" }}
+              style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 14px", whiteSpace: "nowrap" }}
             >
               <IconSvg d={it.icon} size={13} />
               {it.label}
@@ -122,8 +122,8 @@ export function SettingsSidebar({ dirty }: Props) {
         .settings-aside-mobile {
           display: none;
           flex-wrap: wrap;
-          gap: 4px;
-          margin-bottom: 12px;
+          gap: 8px;
+          margin-bottom: 20px;
         }
         @media (max-width: 1000px) {
           .settings-aside-mobile {

@@ -9,6 +9,7 @@ import { usePendingRequests } from "@/hooks/use-requests";
 import { useTenant } from "@/lib/contexts/tenant-context";
 import { IconSvg, Icons } from "@/components/nova/icons";
 import { PremiumIcon, type PremiumIconTone } from "@/components/nova/premium-icon";
+import { CountUp } from "@/components/nova/count-up";
 import { Skeleton } from "@/components/ui/skeleton";
 import { fmtClock } from "@/lib/utils/time";
 
@@ -247,7 +248,7 @@ function DctxCard({
       <div className="dctx-chips">
         <div className="dctx-chip">
           <span className="pulse small" />
-          {present} {present === 1 ? "presente" : "presentes"}
+          <CountUp value={present} /> {present === 1 ? "presente" : "presentes"}
         </div>
         {isHoliday && (
           <div className="dctx-chip">
@@ -887,7 +888,7 @@ export default function AdminDashboard() {
             {getGreeting(now.getHours())}, {firstName}.
           </h1>
           <p className="hero-sub">
-            Vista general de operaciones. <strong>{present}</strong> empleados en jornada en{" "}
+            Vista general de operaciones. <strong><CountUp value={present} /></strong> empleados en jornada en{" "}
             <strong>{sites.length || 1}</strong> sede{(sites.length || 1) !== 1 ? "s" : ""}.
           </p>
           <div className="hero-actions">

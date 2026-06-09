@@ -9,6 +9,7 @@ import { useTenantConfig } from "@/hooks/use-tenant";
 import { useTenantTimezone, todayInTz } from "@/hooks/use-timezone";
 import { IconSvg, Icons } from "@/components/nova/icons";
 import { PageHeader } from "@/components/nova/page-header";
+import { CountUp } from "@/components/nova/count-up";
 
 /* ============================================================
    Helpers
@@ -366,24 +367,24 @@ export default function MyAttendancePage() {
         <div className="stat-mini">
           <div className="stat-mini-label">Asistencia mes</div>
           <div className="stat-mini-value">
-            {isLoading ? "—" : attendancePct}
+            {isLoading ? "—" : <CountUp value={attendancePct} />}
             <span style={{ fontSize: 14 }}>%</span>
           </div>
         </div>
         <div className="stat-mini">
           <div className="stat-mini-label">Horas trabajadas</div>
           <div className="stat-mini-value">
-            {isLoading ? "—" : Math.round(totalWorkedMin / 60)}
+            {isLoading ? "—" : <CountUp value={Math.round(totalWorkedMin / 60)} />}
             <span style={{ fontSize: 14 }}>h</span>
           </div>
         </div>
         <div className="stat-mini">
           <div className="stat-mini-label">Llegadas tarde</div>
-          <div className="stat-mini-value">{isLoading ? "—" : lateCount}</div>
+          <div className="stat-mini-value">{isLoading ? "—" : <CountUp value={lateCount} />}</div>
         </div>
         <div className="stat-mini">
           <div className="stat-mini-label">Permisos</div>
-          <div className="stat-mini-value">{isLoading ? "—" : permitCount}</div>
+          <div className="stat-mini-value">{isLoading ? "—" : <CountUp value={permitCount} />}</div>
         </div>
       </div>
 

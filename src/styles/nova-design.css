@@ -6864,3 +6864,23 @@ polygon.chart-area-breath,
 /* — Badges feel alive inside hovered table rows — */
 .type-tag { transition: filter .15s ease; }
 .table tbody tr:hover .type-tag { filter: brightness(1.06); }
+
+/* — Staggered entrance for form-heavy pages that lacked one (settings
+     cards, regularize steps). Motion-safe: only runs when motion is OK,
+     so reduced-motion users always see fully-visible, static content. — */
+@media (prefers-reduced-motion: no-preference) {
+  .settings-layout .panel,
+  .rg-step {
+    animation: prem-rise .5s cubic-bezier(.22, 1, .36, 1) both;
+  }
+  .settings-layout .panel:nth-of-type(2),
+  .rg-step:nth-of-type(2) { animation-delay: .07s; }
+  .settings-layout .panel:nth-of-type(3),
+  .rg-step:nth-of-type(3) { animation-delay: .14s; }
+  .settings-layout .panel:nth-of-type(4),
+  .rg-step:nth-of-type(4) { animation-delay: .21s; }
+}
+@keyframes prem-rise {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: none; }
+}
