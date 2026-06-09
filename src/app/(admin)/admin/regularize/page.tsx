@@ -301,6 +301,8 @@ export default function RegularizePage() {
             </div>
           )}
 
+          {/* Steps 1 & 2 sit side by side so the employee picker stays compact */}
+          <div className="rg-toprow">
           {/* Step 1 — empleado */}
           <StepBlock num={1} title="Empleado" done={!!employeeId}>
             {employeeId ? (
@@ -345,7 +347,7 @@ export default function RegularizePage() {
             hint={mode === "range" && dayCount > 0 ? `${dayCount} día(s)` : undefined}
           >
             {mode === "range" ? (
-              <div className="rg-row cols-2">
+              <div className="rg-row">
                 <div className="rg-field">
                   <label className="rg-label" htmlFor="dateFrom">
                     Desde<span className="req">*</span>
@@ -370,7 +372,7 @@ export default function RegularizePage() {
                 </div>
               </div>
             ) : (
-              <div className="rg-field" style={{ maxWidth: 280 }}>
+              <div className="rg-field">
                 <label className="rg-label" htmlFor="workDate">
                   Fecha a {mode === "clean" ? "eliminar" : "regularizar"}
                   <span className="req">*</span>
@@ -383,6 +385,7 @@ export default function RegularizePage() {
               </div>
             )}
           </StepBlock>
+          </div>
 
           {/* Step 3 — jornada + motivo (no aplica al modo clean) */}
           {mode !== "clean" && (

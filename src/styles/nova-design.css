@@ -6266,6 +6266,18 @@ polygon.chart-area-breath,
 @media (max-width: 560px) {
   .rg-row.cols-2, .rg-row.cols-3 { grid-template-columns: 1fr; }
 }
+/* Employee picker + date sit side by side so neither stretches full width. */
+.rg-toprow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+.rg-toprow > .rg-step { margin-bottom: 0; }
+@media (max-width: 760px) {
+  .rg-toprow { grid-template-columns: 1fr; gap: 0; }
+  .rg-toprow > .rg-step { margin-bottom: 14px; }
+}
 .rg-field {
   display: flex;
   flex-direction: column;
