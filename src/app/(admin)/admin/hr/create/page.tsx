@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useCreateHREvent } from "@/hooks/use-hr";
 import { IconSvg, Icons } from "@/components/nova/icons";
 import { PageHeader } from "@/components/nova/page-header";
+import { NovaDatePicker } from "@/components/nova/date-picker";
 
 /* ============================================================
    /admin/hr/create — create new HR event
@@ -143,14 +144,7 @@ export default function CreateHREventPage() {
               <label className="form-label" htmlFor="eventDate">
                 Fecha del evento<span className="req">*</span>
               </label>
-              <input
-                id="eventDate"
-                className="form-input"
-                type="date"
-                value={eventDate}
-                onChange={(e) => setEventDate(e.target.value)}
-                required
-              />
+              <NovaDatePicker value={eventDate} onChange={setEventDate} />
             </div>
             <div className="form-group">
               <label className="form-label" htmlFor="audience">

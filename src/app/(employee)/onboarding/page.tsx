@@ -8,6 +8,7 @@ import { useMyProfile } from "@/hooks/use-employee";
 import { useTenant } from "@/lib/contexts/tenant-context";
 import { IconSvg, Icons } from "@/components/nova/icons";
 import { NovaLogo } from "@/components/nova/logo";
+import { NovaDatePicker } from "@/components/nova/date-picker";
 
 const STEPS = ["Bienvenida", "Tu perfil", "Cómo marcar", "Permisos", "Listo"];
 
@@ -258,7 +259,7 @@ export default function OnboardingPage() {
               </div>
               <div className="form-group" style={{ marginTop: 12, marginBottom: 0, textAlign: "left" }}>
                 <label className="form-label">Fecha de nacimiento</label>
-                <input className="form-input" type="date" value={birthDate} onChange={(e) => setBirthDate(e.target.value)} />
+                <NovaDatePicker value={birthDate} onChange={setBirthDate} />
               </div>
 
               {error && (

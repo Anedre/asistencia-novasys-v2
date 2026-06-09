@@ -18,6 +18,7 @@ import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { StepProgress } from "@/components/auth/StepProgress";
 import { IconSvg, Icons } from "@/components/nova/icons";
+import { NovaDatePicker } from "@/components/nova/date-picker";
 import { useQueryClient } from "@tanstack/react-query";
 
 const STEPS = [
@@ -781,12 +782,7 @@ export default function OnboardingPage() {
                 gap: 8,
               }}
             >
-              <input
-                className="form-input"
-                type="date"
-                value={newHolidayDate}
-                onChange={(e) => setNewHolidayDate(e.target.value)}
-              />
+              <NovaDatePicker value={newHolidayDate} onChange={setNewHolidayDate} />
               <input
                 className="form-input"
                 type="text"

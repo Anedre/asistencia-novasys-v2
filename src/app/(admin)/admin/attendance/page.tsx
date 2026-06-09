@@ -6,6 +6,7 @@ import { useAdminAttendance } from "@/hooks/use-employee";
 import { IconSvg, Icons } from "@/components/nova/icons";
 import { NovaAvatar } from "@/components/nova/avatar";
 import { PageHeader } from "@/components/nova/page-header";
+import { NovaDatePicker } from "@/components/nova/date-picker";
 import { RegularizeSheet } from "@/components/attendance/regularize-sheet";
 
 /* ============================================================
@@ -321,13 +322,9 @@ export default function AdminAttendancePage() {
             Hace 7 días
           </button>
         </div>
-        <input
-          type="date"
-          value={selectedDate}
-          onChange={(e) => setSelectedDate(e.target.value)}
-          className="form-input"
-          style={{ width: 160, padding: "8px 10px", marginLeft: "auto" }}
-        />
+        <div style={{ width: 190, marginLeft: "auto" }}>
+          <NovaDatePicker value={selectedDate} onChange={setSelectedDate} />
+        </div>
       </div>
 
       {/* Table */}

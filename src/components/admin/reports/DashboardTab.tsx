@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
+import { NovaDatePicker } from "@/components/nova/date-picker";
 import {
   Select,
   SelectContent,
@@ -141,25 +142,17 @@ export function DashboardTab() {
                 <Label htmlFor="from" className="text-xs">
                   Desde
                 </Label>
-                <Input
-                  id="from"
-                  type="date"
-                  value={customFrom}
-                  onChange={(e) => setCustomFrom(e.target.value)}
-                  className="h-9 w-40"
-                />
+                <div className="w-40">
+                  <NovaDatePicker value={customFrom} onChange={setCustomFrom} max={customTo || undefined} />
+                </div>
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="to" className="text-xs">
                   Hasta
                 </Label>
-                <Input
-                  id="to"
-                  type="date"
-                  value={customTo}
-                  onChange={(e) => setCustomTo(e.target.value)}
-                  className="h-9 w-40"
-                />
+                <div className="w-40">
+                  <NovaDatePicker value={customTo} onChange={setCustomTo} min={customFrom || undefined} />
+                </div>
               </div>
             </>
           )}

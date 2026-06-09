@@ -9,6 +9,7 @@ import { useMyProfile, useUpdateProfile } from "@/hooks/use-employee";
 import { IconSvg, Icons } from "@/components/nova/icons";
 import { NovaAvatar } from "@/components/nova/avatar";
 import { PageHeader } from "@/components/nova/page-header";
+import { NovaDatePicker } from "@/components/nova/date-picker";
 import { NovaClock, CLOCK_STYLES, useClockStyle, setClockStyle } from "@/components/nova/clocks";
 
 /* ============================================================
@@ -142,12 +143,7 @@ function ProfilePersonal(p: PersonalProps) {
         </div>
         <div className="form-group">
           <label className="form-label">Fecha de nacimiento</label>
-          <input
-            type="date"
-            className="form-input"
-            value={p.birthDate}
-            onChange={(e) => p.setBirthDate(e.target.value)}
-          />
+          <NovaDatePicker value={p.birthDate} onChange={p.setBirthDate} />
         </div>
       </div>
       <div className="form-group">

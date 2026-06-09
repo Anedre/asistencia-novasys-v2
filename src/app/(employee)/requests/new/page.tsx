@@ -9,6 +9,7 @@ import { REQUEST_TYPE_LABELS } from "@/lib/constants/event-types";
 import type { RequestType, CreateRequestInput } from "@/lib/types";
 import { IconSvg, Icons } from "@/components/nova/icons";
 import { PageHeader } from "@/components/nova/page-header";
+import { NovaDatePicker } from "@/components/nova/date-picker";
 
 const REQUEST_TYPES: { value: RequestType; label: string }[] = [
   { value: "REGULARIZATION_SINGLE", label: REQUEST_TYPE_LABELS.REGULARIZATION_SINGLE },
@@ -177,27 +178,13 @@ export default function NewRequestPage() {
                 <label className="form-label" htmlFor="dateFrom">
                   Fecha inicio<span className="req">*</span>
                 </label>
-                <input
-                  id="dateFrom"
-                  className="form-input"
-                  type="date"
-                  value={dateFrom}
-                  onChange={(e) => setDateFrom(e.target.value)}
-                  required
-                />
+                <NovaDatePicker value={dateFrom} onChange={setDateFrom} max={dateTo || undefined} />
               </div>
               <div className="form-group">
                 <label className="form-label" htmlFor="dateTo">
                   Fecha fin<span className="req">*</span>
                 </label>
-                <input
-                  id="dateTo"
-                  className="form-input"
-                  type="date"
-                  value={dateTo}
-                  onChange={(e) => setDateTo(e.target.value)}
-                  required
-                />
+                <NovaDatePicker value={dateTo} onChange={setDateTo} min={dateFrom || undefined} />
               </div>
             </div>
           ) : (
@@ -205,14 +192,7 @@ export default function NewRequestPage() {
               <label className="form-label" htmlFor="effectiveDate">
                 Fecha<span className="req">*</span>
               </label>
-              <input
-                id="effectiveDate"
-                className="form-input"
-                type="date"
-                value={effectiveDate}
-                onChange={(e) => setEffectiveDate(e.target.value)}
-                required
-              />
+              <NovaDatePicker value={effectiveDate} onChange={setEffectiveDate} />
             </div>
           )}
 

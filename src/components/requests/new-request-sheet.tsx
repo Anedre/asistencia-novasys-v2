@@ -7,6 +7,7 @@ import { ALL_REASON_OPTIONS } from "@/lib/constants/reason-codes";
 import type { RequestType, CreateRequestInput } from "@/lib/types";
 import { IconSvg, Icons } from "@/components/nova/icons";
 import { NovaModal } from "@/components/nova/modal";
+import { NovaDatePicker } from "@/components/nova/date-picker";
 
 const TYPE_CARDS: {
   type: RequestType;
@@ -172,11 +173,11 @@ export function NewRequestSheet({
           <div className="form-row">
             <div className="form-group">
               <label className="form-label">Desde<span className="req">*</span></label>
-              <input type="date" className="form-input" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+              <NovaDatePicker value={dateFrom} onChange={setDateFrom} max={dateTo || undefined} />
             </div>
             <div className="form-group">
               <label className="form-label">Hasta<span className="req">*</span></label>
-              <input type="date" className="form-input" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+              <NovaDatePicker value={dateTo} onChange={setDateTo} min={dateFrom || undefined} />
             </div>
           </div>
           {vacationDays > 0 && (
@@ -206,7 +207,7 @@ export function NewRequestSheet({
       {isPermission && (
         <div className="form-group">
           <label className="form-label">Fecha<span className="req">*</span></label>
-          <input type="date" className="form-input" value={permDate} onChange={(e) => setPermDate(e.target.value)} />
+          <NovaDatePicker value={permDate} onChange={setPermDate} />
         </div>
       )}
 
@@ -214,7 +215,7 @@ export function NewRequestSheet({
         <>
           <div className="form-group">
             <label className="form-label">Fecha a corregir<span className="req">*</span></label>
-            <input type="date" className="form-input" value={effectiveDate} onChange={(e) => setEffectiveDate(e.target.value)} />
+            <NovaDatePicker value={effectiveDate} onChange={setEffectiveDate} />
           </div>
           <div className="form-row" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
             <div className="form-group">

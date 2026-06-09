@@ -6,6 +6,7 @@ import { useTenantSettings, useSaveTenantSettings } from "@/hooks/use-tenant-set
 import { getPeruHolidays, type Holiday } from "@/lib/constants/tenant-defaults";
 import { SettingsCard, SaveBar } from "@/components/admin/settings/SettingsCard";
 import { IconSvg, Icons } from "@/components/nova/icons";
+import { NovaDatePicker } from "@/components/nova/date-picker";
 
 const MONTH_SHORT = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
 
@@ -154,12 +155,7 @@ export default function HolidaysSettingsPage() {
         >
           <div className="form-group" style={{ marginBottom: 0, flex: "0 0 160px" }}>
             <label className="form-label">Fecha</label>
-            <input
-              type="date"
-              className="form-input"
-              value={newDate}
-              onChange={(e) => setNewDate(e.target.value)}
-            />
+            <NovaDatePicker value={newDate} onChange={setNewDate} />
           </div>
           <div className="form-group" style={{ marginBottom: 0, flex: 1, minWidth: 200 }}>
             <label className="form-label">Nombre</label>
