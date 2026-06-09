@@ -24,22 +24,8 @@ import {
   CalendarDays,
   CalendarRange,
 } from "lucide-react";
-
-function getCurrentWeek(): string {
-  const now = new Date();
-  const year = now.getFullYear();
-  const oneJan = new Date(year, 0, 1);
-  const days = Math.floor(
-    (now.getTime() - oneJan.getTime()) / (24 * 60 * 60 * 1000)
-  );
-  const week = Math.ceil((days + oneJan.getDay() + 1) / 7);
-  return `${year}-W${String(week).padStart(2, "0")}`;
-}
-
-function getCurrentMonth(): string {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-}
+import { NovaWeekPicker, currentISOWeek } from "@/components/nova/week-picker";
+import { NovaMonthPicker, currentMonth } from "@/components/nova/month-picker";
 
 interface GenerateResult {
   type: "success" | "error";
@@ -53,8 +39,8 @@ export function GeneratePdfTab() {
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
-  const [week, setWeek] = useState(getCurrentWeek());
-  const [month, setMonth] = useState(getCurrentMonth());
+  const [week, setWeek] = useState(currentISOWeek());
+  const [month, setMonth] = useState(currentMonth());
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<GenerateResult[]>([]);
 
@@ -254,12 +240,7 @@ export function GeneratePdfTab() {
                 <Label htmlFor="weekSelect" className="text-xs">
                   Semana
                 </Label>
-                <Input
-                  id="weekSelect"
-                  type="week"
-                  value={week}
-                  onChange={(e) => setWeek(e.target.value)}
-                />
+                <NovaWeekPicker id="weekSelect" value={week} onChange={setWeek} />
               </div>
               <Button
                 onClick={() => handleGenerate("weekly")}
@@ -281,12 +262,7 @@ export function GeneratePdfTab() {
                 <Label htmlFor="monthSelect" className="text-xs">
                   Mes
                 </Label>
-                <Input
-                  id="monthSelect"
-                  type="month"
-                  value={month}
-                  onChange={(e) => setMonth(e.target.value)}
-                />
+                <NovaMonthPicker id="monthSelect" value={month} onChange={setMonth} />
               </div>
               <Button
                 onClick={() => handleGenerate("monthly")}

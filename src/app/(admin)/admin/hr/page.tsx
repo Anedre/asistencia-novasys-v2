@@ -27,6 +27,7 @@ import { IconSvg, Icons } from "@/components/nova/icons";
 import { EmptyState } from "@/components/shared/empty-state";
 import { PageHeader } from "@/components/nova/page-header";
 import { NovaAvatar } from "@/components/nova/avatar";
+import { NovaMonthPicker, currentMonth } from "@/components/nova/month-picker";
 import type { BirthdayEntry, AnniversaryEntry, UpcomingBirthday, HREvent } from "@/lib/types";
 
 /* ---------------------------------------------------------------- helpers */
@@ -68,10 +69,7 @@ function fileTypeFromName(name: string): { tag: string; cls: string } {
 /* ============================================================ Page */
 
 export default function AdminHRPage() {
-  const [month, setMonth] = useState(() => {
-    const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-  });
+  const [month, setMonth] = useState(currentMonth);
 
   const { data, isLoading } = useHREvents(month);
 
@@ -92,15 +90,9 @@ export default function AdminHRPage() {
         subtitle="Administra eventos, cumpleaños, aniversarios y comunicados."
         actions={
           <>
-            <input
-              id="month-select"
-              type="month"
-              className="form-input"
-              value={month}
-              onChange={(e) => setMonth(e.target.value)}
-              style={{ width: 160, padding: "6px 10px", fontSize: 13 }}
-              aria-label="Mes"
-            />
+            <div style={{ width: 180 }}>
+              <NovaMonthPicker id="month-select" value={month} onChange={setMonth} />
+            </div>
             <Link href="/admin/hr/create" className="btn primary btn-sm">
               <IconSvg d={Icons.plus} size={14} />
               Crear evento

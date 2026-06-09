@@ -4,22 +4,8 @@ import { useState } from "react";
 import { useSession } from "next-auth/react";
 import { IconSvg, Icons } from "@/components/nova/icons";
 import { PageHeader } from "@/components/nova/page-header";
-
-function getCurrentWeek(): string {
-  const now = new Date();
-  const year = now.getFullYear();
-  const oneJan = new Date(year, 0, 1);
-  const days = Math.floor(
-    (now.getTime() - oneJan.getTime()) / (24 * 60 * 60 * 1000)
-  );
-  const week = Math.ceil((days + oneJan.getDay() + 1) / 7);
-  return `${year}-W${String(week).padStart(2, "0")}`;
-}
-
-function getCurrentMonth(): string {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-}
+import { NovaWeekPicker, currentISOWeek } from "@/components/nova/week-picker";
+import { NovaMonthPicker, currentMonth } from "@/components/nova/month-picker";
 
 type TabKey = "weekly" | "monthly";
 
@@ -28,8 +14,8 @@ export default function ReportsPage() {
   const employeeId = (session?.user as { employeeId?: string })?.employeeId ?? "";
 
   const [tab, setTab] = useState<TabKey>("weekly");
-  const [week, setWeek] = useState(getCurrentWeek());
-  const [month, setMonth] = useState(getCurrentMonth());
+  const [week, setWeek] = useState(currentISOWeek());
+  const [month, setMonth] = useState(currentMonth());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Keep last generated URL for fallback if popup was blocked
@@ -113,13 +99,7 @@ export default function ReportsPage() {
               <label className="form-label" htmlFor="weekSelect">
                 Semana
               </label>
-              <input
-                id="weekSelect"
-                className="form-input"
-                type="week"
-                value={week}
-                onChange={(e) => setWeek(e.target.value)}
-              />
+              <NovaWeekPicker id="weekSelect" value={week} onChange={setWeek} />
             </div>
             <button
               type="button"
@@ -139,13 +119,7 @@ export default function ReportsPage() {
               <label className="form-label" htmlFor="monthSelect">
                 Mes
               </label>
-              <input
-                id="monthSelect"
-                className="form-input"
-                type="month"
-                value={month}
-                onChange={(e) => setMonth(e.target.value)}
-              />
+              <NovaMonthPicker id="monthSelect" value={month} onChange={setMonth} />
             </div>
             <button
               type="button"
