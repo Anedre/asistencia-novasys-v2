@@ -623,7 +623,7 @@ export default function OnboardingPage() {
               </div>
             </div>
 
-            <div className="form-row" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
+            <div className="fill-grid min-200">
               <div className="form-group">
                 <label className="form-label" htmlFor="startTime">Hora de entrada</label>
                 <input

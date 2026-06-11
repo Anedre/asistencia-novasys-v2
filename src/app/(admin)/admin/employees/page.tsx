@@ -173,7 +173,7 @@ export default function AdminEmployeesPage() {
       />
 
       {/* 4 stat-mini KPIs */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 20 }}>
+      <div className="fill-grid min-240" style={{ marginBottom: 20 }}>
         <div className="stat-mini">
           <div className="stat-mini-label">Total activos</div>
           <div className="stat-mini-value">{totalActive}</div>

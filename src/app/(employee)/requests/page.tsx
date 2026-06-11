@@ -322,7 +322,7 @@ export default function MyRequestsPage() {
       />
 
       {/* 3 stat-mini KPIs */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 20 }}>
+      <div className="fill-grid min-280" style={{ marginBottom: 20 }}>
         <div className="stat-mini">
           <div className="stat-mini-label">Vacaciones disponibles</div>
           <div className="stat-mini-value">

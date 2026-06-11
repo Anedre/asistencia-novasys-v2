@@ -217,7 +217,7 @@ export function NewRequestSheet({
             <label className="form-label">Fecha a corregir<span className="req">*</span></label>
             <NovaDatePicker value={effectiveDate} onChange={setEffectiveDate} />
           </div>
-          <div className="form-row" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
+          <div className="fill-grid min-200">
             <div className="form-group">
               <label className="form-label">Entrada<span className="req">*</span></label>
               <input type="time" className="form-input" value={startTime} onChange={(e) => setStartTime(e.target.value)} />
