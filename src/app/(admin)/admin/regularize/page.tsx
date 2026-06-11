@@ -359,7 +359,7 @@ export default function RegularizePage() {
                 />
               </div>
             ) : (
-              <div className="rg-field">
+              <div className="rg-field rg-field-date">
                 <label className="rg-label" htmlFor="workDate">
                   Fecha a {mode === "clean" ? "eliminar" : "regularizar"}
                   <span className="req">*</span>
