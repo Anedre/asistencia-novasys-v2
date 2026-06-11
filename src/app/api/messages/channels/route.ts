@@ -5,6 +5,7 @@ import {
   getChannelsByMember,
   createChannel,
 } from "@/lib/db/chat-channels";
+import { getEmployeeById } from "@/lib/db/employees";
 import type { ChatChannel } from "@/lib/types/channel";
 
 export const GET = withErrorHandler(async () => {
@@ -54,10 +55,24 @@ export const POST = withErrorHandler(async (req: Request) => {
   const memberIds: string[] = [user.employeeId];
 
   for (const m of members) {
-    if (m.id !== user.employeeId) {
-      memberIds.push(m.id);
-      memberNames[m.id] = m.name;
+    if (m.id === user.employeeId) continue;
+
+    // Tenant isolation: every member must exist and belong to the caller's
+    // tenant, so a client can't seed a new channel with cross-tenant employee
+    // ids. Mirrors the per-member check in channels/[id]/members/route.ts.
+    const target = await getEmployeeById(m.id);
+    if (!target) {
+      return NextResponse.json({ error: "Empleado no encontrado" }, { status: 404 });
     }
+    if (user.tenantId && target.TenantID && target.TenantID !== user.tenantId) {
+      return NextResponse.json(
+        { error: "El empleado no pertenece a esta empresa" },
+        { status: 403 }
+      );
+    }
+
+    memberIds.push(m.id);
+    memberNames[m.id] = m.name;
   }
 
   const channel: ChatChannel = {
