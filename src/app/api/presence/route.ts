@@ -21,7 +21,7 @@ export const POST = withErrorHandler(async (req: Request) => {
 
 /** GET /api/presence?ids=EMP1,EMP2 — get presence for specific employees */
 export const GET = withErrorHandler(async (req: Request) => {
-  await requireSession();
+  const user = await requireSession();
   const { searchParams } = new URL(req.url);
   const idsParam = searchParams.get("ids") ?? "";
 
@@ -30,6 +30,7 @@ export const GET = withErrorHandler(async (req: Request) => {
   }
 
   const ids = idsParam.split(",").filter(Boolean);
-  const presence = await getPresenceForEmployees(ids);
+  // Scope to the caller's tenant so presence can't be probed cross-tenant.
+  const presence = await getPresenceForEmployees(ids, user.tenantId);
   return NextResponse.json({ presence });
 });

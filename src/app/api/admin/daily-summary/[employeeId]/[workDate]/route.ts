@@ -19,6 +19,7 @@ import {
 } from "@/lib/db/daily-summary";
 import { withErrorHandler, ValidationError } from "@/lib/utils/errors";
 import { withAudit } from "@/lib/services/audit.service";
+import { assertEmployeeInTenant } from "@/lib/utils/authz";
 
 /**
  * Convert a local ISO string (e.g. "2026-04-08T09:00:00-05:00") to a UTC ISO
@@ -62,8 +63,9 @@ async function resolveParams(context: unknown) {
 }
 
 export const GET = withErrorHandler(async (_req: Request, context: unknown) => {
-  await requireAdmin();
+  const admin = await requireAdmin();
   const { employeeId, workDate } = await resolveParams(context);
+  await assertEmployeeInTenant(employeeId, admin);
   const summary = await getDailySummary(employeeId, workDate);
   return NextResponse.json({ ok: true, summary });
 });
@@ -71,6 +73,7 @@ export const GET = withErrorHandler(async (_req: Request, context: unknown) => {
 export const PATCH = withErrorHandler(async (req: Request, context: unknown) => {
   const admin = await requireAdmin();
   const { employeeId, workDate } = await resolveParams(context);
+  await assertEmployeeInTenant(employeeId, admin);
   const body = (await req.json()) as Record<string, unknown>;
 
   const existing = await getDailySummary(employeeId, workDate);
@@ -138,6 +141,7 @@ export const PATCH = withErrorHandler(async (req: Request, context: unknown) => 
 export const DELETE = withErrorHandler(async (_req: Request, context: unknown) => {
   const admin = await requireAdmin();
   const { employeeId, workDate } = await resolveParams(context);
+  await assertEmployeeInTenant(employeeId, admin);
 
   const existing = await getDailySummary(employeeId, workDate);
   if (!existing) {

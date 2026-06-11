@@ -236,6 +236,11 @@ export async function rejectRequest(
   if (request.status !== "PENDING") {
     throw new ConflictError("Solo se pueden rechazar solicitudes pendientes");
   }
+  // Tenant isolation: a reviewer must belong to the same tenant as the request
+  // (mirrors the check in approveRequest).
+  if (tenantId && request.TenantID && request.TenantID !== tenantId) {
+    throw new NotFoundError("Solicitud no encontrada");
+  }
 
   const rejectActor: SessionUser = {
     id: reviewerId,

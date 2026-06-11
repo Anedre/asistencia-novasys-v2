@@ -12,6 +12,7 @@ import {
 import { LIMA_OFFSET } from "@/lib/constants/timezone";
 import { ValidationError } from "@/lib/utils/errors";
 import { getHolidaySet } from "@/lib/utils/holidays";
+import { assertEmployeeInTenant } from "@/lib/utils/authz";
 import { withAudit, buildGroupId } from "./audit.service";
 import type { SessionUser } from "@/lib/auth-helpers";
 
@@ -174,6 +175,11 @@ export async function regularizeSingle(
     throw new ValidationError("El motivo es obligatorio cuando la razón es OTRO");
   }
 
+  // Tenant isolation: the target employee must belong to the actor's tenant —
+  // otherwise an admin could write (and re-stamp the TenantID of) another
+  // tenant's attendance row by passing a guessable EMP#<email>.
+  await assertEmployeeInTenant(employeeId, actor);
+
   // Block holidays: feriados are read-only by policy, they must never be
   // replaced by a manual regularization (single or bulk).
   if (tenantId) {
@@ -251,6 +257,10 @@ export async function regularizeRange(
   if (code === "OTRO" && !reasonNote) {
     throw new ValidationError("El motivo es obligatorio cuando la razón es OTRO");
   }
+
+  // Tenant isolation: the target employee must belong to the actor's tenant
+  // before we write any rows for the whole range.
+  await assertEmployeeInTenant(employeeId, actor);
 
   const startD = new Date(dateFrom + "T12:00:00");
   const endD = new Date(dateTo + "T12:00:00");
