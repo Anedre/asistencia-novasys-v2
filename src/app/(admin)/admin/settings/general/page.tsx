@@ -108,7 +108,7 @@ export default function GeneralSettingsPage() {
         title="Información de la empresa"
         subtitle="Datos legales y de contacto."
       >
-        <div className="form-row">
+        <div className="fill-grid min-280">
           <div className="form-group">
             <label className="form-label">Nombre comercial</label>
             <input
@@ -127,8 +127,6 @@ export default function GeneralSettingsPage() {
               placeholder="Tu Empresa SAC"
             />
           </div>
-        </div>
-        <div className="form-row">
           <div className="form-group">
             <label className="form-label">RUC</label>
             <input
@@ -150,20 +148,20 @@ export default function GeneralSettingsPage() {
               <option>Otro</option>
             </select>
           </div>
-        </div>
-        <div className="form-group">
-          <label className="form-label">Dirección fiscal</label>
-          <input
-            className="form-input"
-            value={address}
-            onChange={(e) => setAddress(e.target.value)}
-            placeholder="Av. Javier Prado Este 1234, San Isidro, Lima"
-          />
+          <div className="form-group" style={{ gridColumn: "1 / -1" }}>
+            <label className="form-label">Dirección fiscal</label>
+            <input
+              className="form-input"
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              placeholder="Av. Javier Prado Este 1234, San Isidro, Lima"
+            />
+          </div>
         </div>
       </SettingsCard>
 
       <SettingsCard title="Zona horaria y formato" subtitle="Cómo se muestran las fechas y horas.">
-        <div className="form-row">
+        <div className="fill-grid min-200">
           <div className="form-group">
             <label className="form-label">Zona horaria</label>
             <select className="form-select" value={timezone} onChange={(e) => setTimezone(e.target.value)}>
@@ -185,8 +183,6 @@ export default function GeneralSettingsPage() {
               <option value="SUNDAY">Domingo</option>
             </select>
           </div>
-        </div>
-        <div className="form-row">
           <div className="form-group">
             <label className="form-label">Formato de fecha</label>
             <select

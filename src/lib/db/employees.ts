@@ -317,7 +317,8 @@ export async function updateTypingStatus(
 }
 
 export async function getPresenceForEmployees(
-  employeeIds: string[]
+  employeeIds: string[],
+  tenantId?: string
 ): Promise<Record<string, { status: string; lastActivity: string; typingIn?: string }>> {
   const result: Record<string, { status: string; lastActivity: string; typingIn?: string }> = {};
   if (employeeIds.length === 0) return result;
@@ -335,7 +336,7 @@ export async function getPresenceForEmployees(
         RequestItems: {
           [TABLES.EMPLOYEES]: {
             Keys: chunk.map((EmployeeID) => ({ EmployeeID })),
-            ProjectionExpression: "EmployeeID, LastActivityAt, TypingInChannel",
+            ProjectionExpression: "EmployeeID, LastActivityAt, TypingInChannel, TenantID",
           },
         },
       }),
@@ -344,8 +345,12 @@ export async function getPresenceForEmployees(
       EmployeeID: string;
       LastActivityAt?: string;
       TypingInChannel?: string;
+      TenantID?: string;
     }>;
     for (const emp of items) {
+      // Tenant isolation: never leak presence for employees outside the caller's
+      // tenant (the ids come straight from the client query string).
+      if (tenantId && (emp.TenantID || "TENANT#novasys") !== tenantId) continue;
       const lastAct = emp.LastActivityAt ?? "";
       let status: string = "offline";
       if (lastAct > twoMinAgo) status = "online";

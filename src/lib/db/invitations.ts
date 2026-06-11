@@ -1,7 +1,18 @@
-import { QueryCommand, PutCommand, UpdateCommand, DeleteCommand } from "@aws-sdk/lib-dynamodb";
+import { QueryCommand, GetCommand, PutCommand, UpdateCommand, DeleteCommand } from "@aws-sdk/lib-dynamodb";
 import { docClient } from "./client";
 import { TABLES, INDEXES } from "./tables";
 import type { Invitation } from "../types/invitation";
+
+/** Get a single invitation by its InviteID (partition key). */
+export async function getInvitationById(inviteId: string): Promise<Invitation | null> {
+  const result = await docClient.send(
+    new GetCommand({
+      TableName: TABLES.INVITATIONS,
+      Key: { InviteID: inviteId },
+    })
+  );
+  return (result.Item as Invitation) ?? null;
+}
 
 /** Get invitation by token (for validation during registration) */
 export async function getInvitationByToken(token: string): Promise<Invitation | null> {

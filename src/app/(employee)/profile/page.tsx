@@ -165,7 +165,7 @@ function ProfilePersonal(p: PersonalProps) {
         <div className="form-hint" style={{ marginBottom: 14, fontSize: 12, color: "var(--text-muted)" }}>
           Gestionado por RRHH — solicita actualización a tu administrador.
         </div>
-        <div className="form-row">
+        <div className="fill-grid min-240">
           <div className="form-group">
             <label className="form-label">
               Nombre <span className="form-label-locked">· admin</span>
@@ -178,12 +178,12 @@ function ProfilePersonal(p: PersonalProps) {
             </label>
             <input className="form-input" value={p.emergencyRel} disabled />
           </div>
-        </div>
-        <div className="form-group">
-          <label className="form-label">
-            Teléfono <span className="form-label-locked">· admin</span>
-          </label>
-          <input className="form-input" value={p.emergencyPhone} disabled />
+          <div className="form-group">
+            <label className="form-label">
+              Teléfono <span className="form-label-locked">· admin</span>
+            </label>
+            <input className="form-input" value={p.emergencyPhone} disabled />
+          </div>
         </div>
       </div>
 

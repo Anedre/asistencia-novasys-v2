@@ -8,6 +8,7 @@ import { createChannel, getChannelsByMember, updateChannelLastMessage } from "@/
 import { createMessage } from "@/lib/db/chat-messages";
 import { putNotification } from "@/lib/db/notifications";
 import { withAudit } from "@/lib/services/audit.service";
+import { assertSameTenant } from "@/lib/utils/authz";
 
 export const DELETE = withErrorHandler(async (
   req: Request,
@@ -15,6 +16,12 @@ export const DELETE = withErrorHandler(async (
 ) => {
   const admin = await requireAdmin();
   const { id } = await (context as { params: Promise<{ id: string }> }).params;
+  // Tenant isolation: only archive events owned by the admin's tenant.
+  const existing = await getHREvent(id);
+  if (!existing) {
+    return NextResponse.json({ ok: false, error: "Evento no encontrado" }, { status: 404 });
+  }
+  assertSameTenant(existing.TenantID, admin);
   await withAudit(
     {
       actor: admin,
@@ -49,6 +56,8 @@ export const POST = withErrorHandler(async (
   if (!event) {
     return NextResponse.json({ ok: false, error: "Evento no encontrado" }, { status: 404 });
   }
+  // Tenant isolation: don't let an admin re-broadcast another tenant's event.
+  assertSameTenant(event.TenantID, user);
 
   if (event.Type !== "ANNOUNCEMENT" && event.Type !== "HOLIDAY") {
     return NextResponse.json(

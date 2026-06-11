@@ -477,7 +477,7 @@ export default function EmployeeDetailPage() {
 
         {/* Right side: KPIs + tabs */}
         <div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 14 }}>
+          <div className="fill-grid min-240" style={{ marginBottom: 14 }}>
             <div className="stat-mini">
               <div className="stat-mini-label">Asistencia 30d</div>
               <div className="stat-mini-value">

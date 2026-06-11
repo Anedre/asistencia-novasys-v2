@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth-helpers";
 import { withErrorHandler } from "@/lib/utils/errors";
-import { deleteHRDocument } from "@/lib/db/hr-documents";
+import { NotFoundError } from "@/lib/utils/errors";
+import { deleteHRDocument, getHRDocumentById } from "@/lib/db/hr-documents";
 import { S3Client, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { withAudit } from "@/lib/services/audit.service";
+import { assertSameTenant } from "@/lib/utils/authz";
 
 const s3 = new S3Client({
   region:
@@ -23,6 +25,13 @@ export const DELETE = withErrorHandler(
   async (req: Request, { params }: { params: Promise<{ id: string }> }) => {
     const user = await requireAdmin();
     const { id } = await params;
+
+    // Tenant isolation: only delete documents owned by the admin's tenant.
+    const doc = await getHRDocumentById(`HRDOC#${id}`);
+    if (!doc) {
+      throw new NotFoundError("Documento no encontrado");
+    }
+    assertSameTenant(doc.TenantID, user);
 
     // Try to delete the S3 object (best effort — metadata is the source of truth)
     try {

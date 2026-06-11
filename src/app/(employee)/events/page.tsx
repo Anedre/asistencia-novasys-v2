@@ -970,8 +970,8 @@ export default function EventsPage() {
 
       {/* Event list */}
       {isLoading ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          {[1, 2, 3].map((i) => (
+        <div className="fill-grid min-440">
+          {[1, 2, 3, 4].map((i) => (
             <Skeleton key={i} className="h-48 w-full rounded-xl" />
           ))}
         </div>
@@ -1011,7 +1011,7 @@ export default function EventsPage() {
               }
             />
           ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            <div className="fill-grid min-440">
               {list.map((event) => (
                 <EnhancedEventCard key={event.EventID} event={event} />
               ))}

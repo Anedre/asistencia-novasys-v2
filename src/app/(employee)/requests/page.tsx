@@ -306,6 +306,10 @@ export default function MyRequestsPage() {
 
   return (
     <>
+      {/* Cap the content column so the header, KPIs, tabs and request rows
+          don't stretch full-bleed on wide screens (the rows were sparse —
+          content on the left, arrow shoved to the far right). */}
+      <div className="rq-col">
       {/* PageHeader */}
       <PageHeader
         title="Mis solicitudes"
@@ -318,7 +322,7 @@ export default function MyRequestsPage() {
       />
 
       {/* 3 stat-mini KPIs */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 20 }}>
+      <div className="fill-grid min-280" style={{ marginBottom: 20 }}>
         <div className="stat-mini">
           <div className="stat-mini-label">Vacaciones disponibles</div>
           <div className="stat-mini-value">
@@ -378,10 +382,11 @@ export default function MyRequestsPage() {
         ))}
       </div>
 
-      {/* Request cards */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        {isLoading ? (
-          Array.from({ length: 3 }).map((_, i) => (
+      {/* Request cards — self-filling grid (2–3 per row on wide screens)
+          instead of one full-width row each (was: flex column). */}
+      {isLoading ? (
+        <div className="fill-grid min-440">
+          {Array.from({ length: 4 }).map((_, i) => (
             <div
               key={i}
               className="approval-card"
@@ -401,8 +406,9 @@ export default function MyRequestsPage() {
                 />
               </div>
             </div>
-          ))
-        ) : filtered.length === 0 ? (
+          ))}
+        </div>
+      ) : filtered.length === 0 ? (
           <div
             style={{
               padding: "60px 24px",
@@ -444,9 +450,12 @@ export default function MyRequestsPage() {
               <IconSvg d={Icons.plus} size={14} /> Nueva solicitud
             </button>
           </div>
-        ) : (
-          filtered.map((r) => <RequestCard key={r.RequestID} r={r} />)
-        )}
+      ) : (
+        <div className="fill-grid min-440">
+          {filtered.map((r) => <RequestCard key={r.RequestID} r={r} />)}
+        </div>
+      )}
+
       </div>
 
       <NewRequestSheet open={newOpen} onClose={() => setNewOpen(false)} />

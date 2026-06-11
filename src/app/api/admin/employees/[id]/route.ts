@@ -8,6 +8,7 @@ import { withErrorHandler } from "@/lib/utils/errors";
 import { NotFoundError } from "@/lib/utils/errors";
 import { updateEmployeeRoleSchema } from "@/lib/utils/validation";
 import { withAudit } from "@/lib/services/audit.service";
+import { assertSameTenant } from "@/lib/utils/authz";
 
 export const GET = withErrorHandler(async (req: Request, context: unknown) => {
   const user = await requireAdmin();
@@ -17,6 +18,8 @@ export const GET = withErrorHandler(async (req: Request, context: unknown) => {
   if (!employee) {
     throw new NotFoundError("Empleado no encontrado");
   }
+  // Tenant isolation: an admin may only read employees of their own tenant.
+  assertSameTenant(employee.TenantID, user);
 
   // Last 30 days attendance — anchored on Lima local "today" so the window
   // doesn't slide forward by a day between 19:00–23:59 Lima (UTC-5), when
@@ -86,6 +89,8 @@ export const PATCH = withErrorHandler(async (req: Request, context: unknown) => 
   if (!employee) {
     throw new NotFoundError("Empleado no encontrado");
   }
+  // Tenant isolation: block editing an employee outside the admin's tenant.
+  assertSameTenant(employee.TenantID, admin);
 
   // If updating role
   if (body.role !== undefined) {
@@ -137,6 +142,8 @@ export const DELETE = withErrorHandler(async (_req: Request, context: unknown) =
   if (!employee) {
     throw new NotFoundError("Empleado no encontrado");
   }
+  // Tenant isolation: block deactivating an employee outside the admin's tenant.
+  assertSameTenant(employee.TenantID, admin);
 
   // Prevent self-deactivation
   if (employee.EmployeeID === admin.employeeId) {

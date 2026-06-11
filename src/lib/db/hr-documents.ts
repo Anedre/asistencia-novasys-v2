@@ -9,6 +9,7 @@ import { docClient } from "./client";
 import { TABLES, INDEXES } from "./tables";
 import {
   PutCommand,
+  GetCommand,
   QueryCommand,
   DeleteCommand,
 } from "@aws-sdk/lib-dynamodb";
@@ -69,6 +70,18 @@ export async function getAllHRDocuments(
   return items.sort(
     (a, b) => new Date(b.CreatedAt).getTime() - new Date(a.CreatedAt).getTime()
   );
+}
+
+export async function getHRDocumentById(
+  notificationId: string
+): Promise<HRDocument | null> {
+  const result = await docClient.send(
+    new GetCommand({
+      TableName: TABLES.HR_EVENTS,
+      Key: { NotificationID: notificationId },
+    })
+  );
+  return (result.Item as HRDocument) ?? null;
 }
 
 export async function deleteHRDocument(

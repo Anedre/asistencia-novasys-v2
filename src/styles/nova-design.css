@@ -2466,6 +2466,29 @@
   border-color: var(--border-strong);
   box-shadow: var(--shadow-sm);
 }
+/* "Mis solicitudes" content column. The request rows used to read as mostly
+   empty at full width, so they were capped narrow. Now the rows flow in a
+   self-filling grid (.fill-grid) instead, so we can use more width without the
+   sparse look. */
+.rq-col { max-width: 1200px; }
+
+/* ---------- Generic self-filling grid ----------
+   Drop-in replacement for full-width single-column stacks: items flow to fill
+   each row (no empty gutter on the right) and the column count drops as the
+   viewport narrows — no per-page media queries needed. The min(…, 100%) guard
+   stops the track minimum from forcing horizontal overflow on small screens.
+   Cards in the same row stretch to equal height (default grid stretch), which
+   reads as ordered rather than ragged. */
+.fill-grid { display: grid; gap: var(--gap); }
+/* Form fields inside a fill-grid rely on the grid gap, not their own
+   margin-bottom, so vertical and horizontal spacing stay equal. */
+.fill-grid > .form-group { margin-bottom: 0; }
+.fill-grid.min-200 { grid-template-columns: repeat(auto-fill, minmax(min(200px, 100%), 1fr)); }
+.fill-grid.min-240 { grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr)); }
+.fill-grid.min-280 { grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr)); }
+.fill-grid.min-320 { grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr)); }
+.fill-grid.min-380 { grid-template-columns: repeat(auto-fill, minmax(min(380px, 100%), 1fr)); }
+.fill-grid.min-440 { grid-template-columns: repeat(auto-fill, minmax(min(440px, 100%), 1fr)); }
 
 /* Settings layout */
 .settings-aside {
@@ -2635,8 +2658,8 @@
   }
   to {
     opacity: 1;
-    transform: translateY(0);
-    filter: blur(0);
+    transform: none;
+    filter: none;
   }
 }
 @keyframes page-progress {
@@ -2646,8 +2669,15 @@
 }
 
 .page-transition {
-  animation: page-enter 0.34s cubic-bezier(0.22, 1, 0.36, 1) both;
-  will-change: opacity, transform, filter;
+  /* `backwards`, NOT `both`: with `both` the finished animation keeps its end
+     state, but an animated transform/filter endpoint computes to a
+     matrix(…)/blur(0) value — never literal `none` — and ANY transform other
+     than `none` (even the identity matrix) makes this a containing block for
+     `position: fixed`. That trapped every modal/sheet backdrop (.sheet-backdrop)
+     to the content box instead of the viewport. `backwards` drops the transform
+     once the run finishes so fixed overlays cover the viewport. `will-change`
+     (transform/filter) was removed for the same reason. */
+  animation: page-enter 0.34s cubic-bezier(0.22, 1, 0.36, 1) backwards;
   position: relative;
 }
 /* Thin progress bar at the top of the content area while the page
@@ -2673,10 +2703,10 @@
   pointer-events: none;
 }
 
-/* Hint for snappier nav clicks: hide overflow during transition */
-.main {
-  contain: layout style;
-}
+/* NOTE: removed `contain: layout style` here. The `layout` value (like `paint`)
+   makes `.main` a containing block for `position: fixed`, which trapped every
+   modal/sheet backdrop (.sheet-backdrop) to the content area instead of the
+   viewport. Style/layout containment isn't worth breaking fixed overlays. */
 
 /* Make navigation links feel snappier with subtle press feedback */
 .nav-item:active { transform: scale(0.98); }
@@ -2770,7 +2800,9 @@
     transform 0.22s cubic-bezier(0.22, 1, 0.36, 1),
     box-shadow 0.22s ease,
     border-color 0.22s ease;
-  will-change: transform;
+  /* No `will-change: transform`: it makes every panel a containing block for
+     `position: fixed`, which traps any modal/sheet backdrop rendered inside a
+     card. The hover transition works fine without the hint. */
 }
 
 /* Stagger entrance for list items inside panels */
@@ -7042,6 +7074,23 @@ polygon.chart-area-breath,
 .nva-app .ndp-cell.range-start, .nva-app .ndp-cell.range-end { background: var(--accent); color: #fff; font-weight: 600; opacity: 1; }
 .nva-app .ndp-foot-range { justify-content: space-between; align-items: center; }
 .nva-app .ndp-range-hint { font-size: 11.5px; color: var(--text-muted); }
+/* Month grid (NovaMonthPicker) */
+.nva-app .ndp-mgrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin-top: 2px; }
+.nva-app .ndp-mcell {
+  height: 46px; display: flex; align-items: center; justify-content: center;
+  border: 1px solid transparent; background: var(--bg-subtle); border-radius: 9px;
+  font-size: 13px; color: var(--text-primary); cursor: pointer; font-family: inherit;
+  text-transform: capitalize; transition: background .12s, color .12s, border-color .12s;
+}
+.nva-app .ndp-mcell:not(:disabled):hover {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+.nva-app .ndp-mcell.today { font-weight: 700; color: var(--accent-strong, var(--accent)); }
+.nva-app .ndp-mcell.sel, .nva-app .ndp-mcell.sel.today {
+  background: var(--accent); color: #fff; font-weight: 600; border-color: var(--accent);
+}
+.nva-app .ndp-mcell:disabled { opacity: .35; cursor: not-allowed; }
 @media (prefers-reduced-motion: reduce) { .nva-app .ndp-pop { animation: none; } }
 
 /* ============================================================
@@ -7060,3 +7109,33 @@ polygon.chart-area-breath,
 }
 .nva-app .rg-mode-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .nva-app .rg-mode-desc { line-height: 1.3; }
+
+/* ============================================================
+   De-elongate, pass 2 — form controls. Several inputs stretched to fill
+   their container even though their content is tiny (a single date, a
+   "60" minute count). Cap them to content-appropriate widths so they read
+   as inputs, not full-width bars — same intent as the mode-card fix above.
+   Each rule re-asserts the mobile collapse so capping doesn't leak into the
+   stacked small-screen layout.
+   ============================================================ */
+
+/* Empleado | Fecha row: the employee picker needs width (search + list),
+   the date does not. Give Fecha a tidy fixed column instead of half the row. */
+.nva-app .rg-toprow { grid-template-columns: minmax(0, 1fr) 280px; }
+@media (max-width: 760px) {
+  .nva-app .rg-toprow { grid-template-columns: 1fr; }
+}
+
+/* Single-day / clean-day picker shows one short date — cap it tighter than
+   the range picker (which fills its column to fit "9 jun – 15 jun 2026"). */
+.nva-app .rg-field-date { max-width: 220px; }
+
+/* Entrada / Salida / Break: content-sized columns, left-packed (was 3×1fr,
+   which ballooned each to ~240px). */
+.nva-app .rg-row.cols-3 { grid-template-columns: 150px 150px 120px; }
+@media (max-width: 560px) {
+  .nva-app .rg-row.cols-3 { grid-template-columns: 1fr; }
+}
+
+/* Optional note: keep lines at a readable width instead of full-bleed. */
+.nva-app .rg-textarea { max-width: 520px; }

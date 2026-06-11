@@ -3,6 +3,7 @@ export type HREventStatus = "ACTIVE" | "ARCHIVED";
 
 export interface HREvent {
   NotificationID: string;
+  TenantID?: string; // "TENANT#novasys" — multi-tenant isolation
   Type: HREventType;
   EmployeeID?: string;
   EmployeeName?: string;

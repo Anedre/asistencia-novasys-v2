@@ -100,10 +100,13 @@ interface TodayLike {
 }
 
 function deriveState(today: TodayLike | undefined, now: Date): CheckinState {
-  if (today?.isHoliday) return "holiday";
+  // Active or finished shifts take precedence over holiday/weekend framing, so
+  // an employee who works a holiday or weekend can still pause, resume, or close
+  // their shift instead of being stuck on a card with no action.
   if (today?.hasOpenBreak) return "break";
   if (today?.hasOpenShift) return "working";
   if (today?.status === "OK" || today?.status === "CLOSED" || today?.status === "REGULARIZED") return "completed";
+  if (today?.isHoliday) return "holiday";
   const dow = now.getDay();
   if (dow === 0 || dow === 6) return "offhours";
   return "before";
@@ -129,6 +132,10 @@ interface HeroProps {
   onAction: (type: EventType, customTime?: string) => Promise<void>;
   pendingAction: EventType | null;
   allowCustomStart: boolean;
+  /** True while the tenant config (which carries allowCustomStartTime) is still
+   *  loading. We must not let a START tap resolve to an immediate check-in
+   *  before we know whether the custom-start picker should open. */
+  tenantConfigLoading: boolean;
   weekTotalMin: number;
   weekAvgMin: number;
   weekBestMin: number;
@@ -156,6 +163,7 @@ function CheckInHero({
   onAction,
   pendingAction,
   allowCustomStart,
+  tenantConfigLoading,
   weekTotalMin,
   weekAvgMin,
   weekBestMin,
@@ -232,13 +240,17 @@ function CheckInHero({
     },
     offhours: {
       dot: "muted",
-      pillTxt: "Fuera de horario",
+      pillTxt: "Fin de semana",
       pillCls: "muted",
-      primaryLabel: "Ver horario",
-      primaryIcon: <IconSvg d={Icons.calendar} size={16} stroke={2} />,
-      sub: "Próximo turno",
-      subVal: `Lun ${shiftStart}`,
-      headline: "Disfruta el fin de semana.",
+      // Weekends are off for most, but some employees work them — allow check-in
+      // (and the custom-start picker, which keys on primaryAction === "START")
+      // instead of blocking it behind an action-less "Ver horario" button.
+      primaryLabel: "Marcar entrada",
+      primaryIcon: <IconSvg d={Icons.check} size={16} stroke={2} />,
+      primaryAction: "START",
+      sub: "Tu turno comienza a las",
+      subVal: shiftStart,
+      headline: `${getGreeting(now.getHours())}, ${firstName}.`,
     },
     vacation: {
       dot: "accent",
@@ -469,7 +481,15 @@ function CheckInHero({
         <div className="checkin-cta">
           <button
             className={`btn-action ${meta.pillCls} ${isLive ? "is-live" : ""}`}
-            disabled={isLoading || pendingAction !== null || !meta.primaryAction}
+            disabled={
+              isLoading ||
+              pendingAction !== null ||
+              !meta.primaryAction ||
+              // Don't allow the day's first check-in to fire until the tenant
+              // config has loaded — otherwise a fast tap (common on mobile)
+              // checks in immediately and skips the custom-start picker.
+              (meta.primaryAction === "START" && tenantConfigLoading)
+            }
             onClick={() => {
               if (!meta.primaryAction) return;
               if (canCustomStart) openStartPicker();
@@ -1043,7 +1063,7 @@ export default function EmployeeDashboardPage() {
   const { data: profile } = useMyProfile();
   const { data: today, isLoading: todayLoading } = useTodayStatus();
   const { data: week } = useWeekSummary(0);
-  const { data: tenant } = useTenantConfig();
+  const { data: tenant, isLoading: tenantLoading } = useTenantConfig();
   const recordEvent = useRecordEvent();
   const [pendingAction, setPendingAction] = useState<EventType | null>(null);
 
@@ -1069,7 +1089,15 @@ export default function EmployeeDashboardPage() {
       const startMin = h * 60 + m + (s || 0) / 60;
       const tp = timePartsInTz(tz);
       const nowMin = tp.hours * 60 + tp.minutes + tp.seconds / 60;
-      const workedMin = Math.max(0, nowMin - startMin - (today.breakMinutes || 0));
+      // An open break isn't in breakMinutes yet (that's only written on
+      // BREAK_END), so subtract the in-progress break too — otherwise the worked
+      // timer keeps climbing while the employee is on break.
+      let openBreakMin = 0;
+      if (today.hasOpenBreak && today.breakStartLocal) {
+        const [bh, bm, bs] = today.breakStartLocal.split(":").map(Number);
+        openBreakMin = Math.max(0, nowMin - (bh * 60 + bm + (bs || 0) / 60));
+      }
+      const workedMin = Math.max(0, nowMin - startMin - (today.breakMinutes || 0) - openBreakMin);
       return Math.floor(workedMin * 60);
     }
     return Math.floor((today?.workedMinutes ?? 0) * 60);
@@ -1077,8 +1105,8 @@ export default function EmployeeDashboardPage() {
 
   const liveBreakSec = useMemo(() => {
     if (today?.hasOpenBreak && today?.breakStartLocal) {
-      const [h, m] = today.breakStartLocal.split(":").map(Number);
-      const startMin = h * 60 + m;
+      const [h, m, s] = today.breakStartLocal.split(":").map(Number);
+      const startMin = h * 60 + m + (s || 0) / 60;
       const tp = timePartsInTz(tz);
       const nowMin = tp.hours * 60 + tp.minutes + tp.seconds / 60;
       return Math.floor((nowMin - startMin) * 60);
@@ -1290,6 +1318,7 @@ export default function EmployeeDashboardPage() {
         onAction={handleAction}
         pendingAction={pendingAction}
         allowCustomStart={allowCustomStart}
+        tenantConfigLoading={tenantLoading}
         weekTotalMin={weekTotalMin}
         weekAvgMin={weekAvgMin}
         weekBestMin={weekBestMin}

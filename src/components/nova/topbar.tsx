@@ -52,20 +52,11 @@ export function NovaTopbar({ activeView, showViewToggle = true, onMenuToggle }: 
       </button>
 
       {showViewToggle && (
-        <div
-          className="view-toggle"
-          role="tablist"
-          style={{
-            display: "inline-flex",
-            gap: 2,
-            padding: 3,
-            background: "var(--bg-elevated)",
-            border: "1px solid var(--border)",
-            borderRadius: 999,
-            fontSize: 12,
-            fontWeight: 600,
-          }}
-        >
+        <div className="view-toggle" role="tablist">
+          {/* No inline `display` here — it would override the
+              `@media (max-width:900px) .topbar .view-toggle { display:none }`
+              rule and leave the toggle on phones, pushing the user menu
+              off-screen. The `.view-toggle` class already styles the container. */}
           <Link
             href="/dashboard"
             role="tab"

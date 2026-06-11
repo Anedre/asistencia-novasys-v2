@@ -361,10 +361,11 @@ export default function AdminApprovalsPage() {
         ))}
       </div>
 
-      {/* List */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        {isLoading ? (
-          Array.from({ length: 3 }).map((_, i) => (
+      {/* List — self-filling grid so cards pack 2–3 per row on wide screens
+          instead of one full-width row each (was: flex column). */}
+      {isLoading ? (
+        <div className="fill-grid min-440">
+          {Array.from({ length: 4 }).map((_, i) => (
             <div key={i} className="approval-card" style={{ opacity: 0.5 }}>
               <div
                 style={{
@@ -388,23 +389,25 @@ export default function AdminApprovalsPage() {
                 />
               </div>
             </div>
-          ))
-        ) : filtered.length === 0 ? (
-          <EmptyState
-            icon={Icons.check}
-            title={tab === "all" ? "¡Todo al día!" : "Sin solicitudes en esta categoría"}
-            description={
-              tab === "all"
-                ? "No hay solicitudes pendientes de aprobación. Cuando tu equipo cree solicitudes, aparecerán aquí."
-                : "Cambia de pestaña para ver otras solicitudes (vacaciones, permisos o regularizaciones)."
-            }
-          />
-        ) : (
-          filtered.map((r) => (
+          ))}
+        </div>
+      ) : filtered.length === 0 ? (
+        <EmptyState
+          icon={Icons.check}
+          title={tab === "all" ? "¡Todo al día!" : "Sin solicitudes en esta categoría"}
+          description={
+            tab === "all"
+              ? "No hay solicitudes pendientes de aprobación. Cuando tu equipo cree solicitudes, aparecerán aquí."
+              : "Cambia de pestaña para ver otras solicitudes (vacaciones, permisos o regularizaciones)."
+          }
+        />
+      ) : (
+        <div className="fill-grid min-440">
+          {filtered.map((r) => (
             <ApprovalCard key={r.RequestID} r={r} onDecide={scheduleDecision} />
-          ))
-        )}
-      </div>
+          ))}
+        </div>
+      )}
     </>
   );
 }
