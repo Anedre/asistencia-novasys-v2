@@ -1259,9 +1259,21 @@
 }
 .table-toolbar {
   display: flex; gap: 8px; align-items: center;
+  flex-wrap: wrap;
   padding: 12px 14px;
   border-bottom: 1px solid var(--border);
   background: var(--bg-elevated);
+}
+/* Toolbar/legend pieces as classes so mobile media queries can override them
+   (an inline style can't be beaten by a stylesheet rule — see topbar view-toggle). */
+.tb-search { max-width: 240px; }
+.tb-chips { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
+.tb-legend { margin-left: auto; display: flex; gap: 12px; flex-wrap: wrap; align-items: center; font-size: 11px; color: var(--text-muted); }
+.hist-legend { margin-left: auto; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; font-size: 11px; color: var(--text-muted); }
+@media (max-width: 640px) {
+  .table-toolbar { flex-direction: column; align-items: stretch; }
+  .tb-search { max-width: none; }
+  .tb-legend, .hist-legend { margin-left: 0; }
 }
 .table {
   width: 100%;
@@ -4003,7 +4015,7 @@
   animation: fade-up 0.5s 0.05s ease-out both;
 }
 @media (max-width: 1100px) { .kpi-grid { grid-template-columns: repeat(2, 1fr); } }
-@media (max-width: 560px)  { .kpi-grid { grid-template-columns: 1fr; } }
+@media (max-width: 360px)  { .kpi-grid { grid-template-columns: 1fr; } }
 
 .kpi-card {
   display: flex;

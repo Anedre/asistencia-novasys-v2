@@ -330,7 +330,7 @@ export default function AdminAttendancePage() {
       {/* Table */}
       <div className="table-wrap">
         <div className="table-toolbar">
-          <div className="searchbar" style={{ maxWidth: 240 }}>
+          <div className="searchbar tb-search">
             <span style={{ color: "var(--text-muted)" }}>
               <IconSvg d={Icons.search} size={14} />
             </span>
@@ -340,7 +340,7 @@ export default function AdminAttendancePage() {
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
-          <div style={{ display: "flex", gap: 4, marginLeft: 8, flexWrap: "wrap" }}>
+          <div className="tb-chips">
             <button
               type="button"
               className={`chip ${areaFilter === "ALL" ? "active" : ""}`}
@@ -359,16 +359,7 @@ export default function AdminAttendancePage() {
               </button>
             ))}
           </div>
-          <span
-            style={{
-              marginLeft: "auto",
-              fontSize: 11,
-              color: "var(--text-muted)",
-              display: "flex",
-              gap: 12,
-              flexWrap: "wrap",
-            }}
-          >
+          <span className="tb-legend">
             {totals && (
               <>
                 <button
