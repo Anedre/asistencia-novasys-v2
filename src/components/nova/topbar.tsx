@@ -170,6 +170,14 @@ export function NovaTopbar({ activeView, showViewToggle = true, onMenuToggle }: 
             </>
           ) : (
             <>
+              {showViewToggle && (
+                <>
+                  <Link className="pop-item" href="/admin/dashboard">
+                    <IconSvg d={Icons.shield} size={16} /> Volver a vista de admin
+                  </Link>
+                  <div className="pop-sep" />
+                </>
+              )}
               <Link className="pop-item" href="/profile">
                 <IconSvg d={Icons.user} size={16} /> Mi perfil
               </Link>

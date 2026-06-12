@@ -427,7 +427,7 @@ export default function MyAttendancePage() {
             <IconSvg d={Icons.dashboard} size={13} /> Lista
           </button>
         </div>
-        <div style={{ marginLeft: "auto", display: "flex", gap: 10, fontSize: 11, color: "var(--text-muted)" }}>
+        <div className="hist-legend">
           <span>
             <span className="legend-dot success" /> OK
           </span>
