@@ -64,6 +64,11 @@ interface DashboardData {
   presentToday: number;
   pendingRequests: number;
   anomaliesToday: number;
+  anomalyBreakdown?: {
+    openOverdue: number;
+    closedShort: number;
+    noShow: number;
+  };
   lateToday?: number;
   onBreakNow: number;
   absentToday: number;
@@ -154,6 +159,61 @@ function StatCard({ pi, tone, label, value, suffix, delta, hint, feature, loadin
         )}
       </div>
       {hint && <div className="stat-hint">{hint}</div>}
+    </div>
+  );
+}
+
+/* ============================================================
+   AnomaliesCard — the "Anomalías" KPI split into the three
+   operational signals: open shifts past 9h, shifts closed under
+   9h, and active employees who never marked entry past 09:15.
+   ============================================================ */
+
+function AnomaliesCard({
+  openOverdue,
+  closedShort,
+  noShow,
+  loading,
+}: {
+  openOverdue: number;
+  closedShort: number;
+  noShow: number;
+  loading?: boolean;
+}) {
+  const hex = TONE_HEX.Rose;
+  const rows: Array<{ key: string; label: string; hint: string; value: number; tone: PremiumIconTone }> = [
+    { key: "open", label: "Jornadas abiertas", hint: "+9 h sin cerrar", value: openOverdue, tone: "Amber" },
+    { key: "short", label: "Jornadas cortas", hint: "cerró antes de 9 h", value: closedShort, tone: "Violet" },
+    { key: "noshow", label: "Sin marcar", hint: "sin abrir tras 9:15", value: noShow, tone: "Rose" },
+  ];
+  return (
+    <div
+      className="stat-card toned anom-card"
+      style={{ "--tone": hex, "--tone-soft": `color-mix(in srgb, ${hex} 12%, transparent)` } as React.CSSProperties}
+    >
+      <div className="stat-bar" />
+      <div className="stat-head">
+        <span className="stat-icon">
+          <PremiumIcon name="alert" size={30} tone="Rose" />
+        </span>
+        <span className="stat-label">Anomalías</span>
+      </div>
+      <div className="anom-list">
+        {rows.map((r) => (
+          <div className="anom-row" key={r.key}>
+            <span className="anom-dot" style={{ background: TONE_HEX[r.tone] }} />
+            <span className="anom-text">
+              <span className="anom-row-label">{r.label}</span>
+              <span className="anom-row-hint">{r.hint}</span>
+            </span>
+            {loading ? (
+              <Skeleton className="h-5 w-5" />
+            ) : (
+              <span className="anom-val">{r.value}</span>
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -678,7 +738,6 @@ export default function AdminDashboard() {
   const total = dashboard?.totalActiveEmployees ?? 0;
   const present = dashboard?.presentToday ?? 0;
   const pending = dashboard?.pendingRequests ?? 0;
-  const anomalies = dashboard?.anomaliesToday ?? 0;
   const avgHours = dashboard?.avgHoursPerDay ?? 0;
   const weeklyPct =
     dashboard?.weeklyAttendancePct ??
@@ -943,12 +1002,10 @@ export default function AdminDashboard() {
           hint="requiere revisión"
           loading={isLoading}
         />
-        <StatCard
-          pi="alert"
-          tone="Rose"
-          label="Anomalías"
-          value={anomalies}
-          hint="jornadas abiertas"
+        <AnomaliesCard
+          openOverdue={dashboard?.anomalyBreakdown?.openOverdue ?? 0}
+          closedShort={dashboard?.anomalyBreakdown?.closedShort ?? 0}
+          noShow={dashboard?.anomalyBreakdown?.noShow ?? 0}
           loading={isLoading}
         />
         <StatCard

@@ -17,6 +17,16 @@ import { LIMA_TZ } from "@/lib/constants/timezone";
 // users. Always pin the formatter to Lima.
 const LIMA_TIME = { hour: "2-digit", minute: "2-digit", timeZone: LIMA_TZ } as const;
 
+// ── Anomaly thresholds (Carlos's ops signals) ────────────────────────────
+// A "complete" workday measured in GROSS presence minutes — first-in → last-out,
+// break included. Carlos asked for 9 h precisely because the stored span counts
+// the ~1 h break on top of the 8 h worked. This single knob drives both the
+// "jornada abierta" (open too long) and "jornada corta" (closed too soon) signals.
+const FULL_DAY_MINUTES = 9 * 60; // 540
+// Past this Lima wall-clock, an active employee who never opened a shift is a
+// no-show ("anomalía"). 09:15 per Carlos.
+const NO_SHOW_CUTOFF_MIN = 9 * 60 + 15; // 555 → 09:15
+
 export interface EmployeePresence {
   employeeId: string;
   fullName: string;
@@ -37,6 +47,15 @@ export interface DashboardMetrics {
   onBreakNow: number;
   pendingRequests: number;
   anomaliesToday: number;
+  /** Carlos's 3-way split of the "Anomalías" KPI, all evaluated against now (Lima). */
+  anomalyBreakdown: {
+    /** Opened a shift and still open after ≥ 9 h of elapsed presence. */
+    openOverdue: number;
+    /** Closed the shift but the in→out span (break included) was under 9 h. */
+    closedShort: number;
+    /** Active, no shift opened, past 09:15, not on approved leave or a holiday. */
+    noShow: number;
+  };
   /** How many employees arrived late today (after schedule + grace period). */
   lateToday: number;
   todayDate: string;
@@ -92,6 +111,10 @@ export async function getDashboardMetrics(tenantId?: string): Promise<DashboardM
   let onBreak = 0;
   let anomalies = 0;
   let lateToday = 0;
+  // Carlos's anomaly split (see FULL_DAY_MINUTES / NO_SHOW_CUTOFF_MIN).
+  let openOverdue = 0;
+  let closedShort = 0;
+  const nowMs = Date.now();
 
   // Build employee lookup
   const empMap = new Map<string, (typeof employees)[0]>();
@@ -114,6 +137,18 @@ export async function getDashboardMetrics(tenantId?: string): Promise<DashboardM
       presenceStatus = hasBreakStart ? "ON_BREAK" : "WORKING";
     } else if (hasIn && hasOut) {
       presenceStatus = "COMPLETED";
+    }
+
+    // Anomaly signals — measured in GROSS presence minutes (in→out, break
+    // included) against the 9 h full-day threshold.
+    if (hasIn && !hasOut) {
+      const elapsedMin = Math.floor((nowMs - new Date(s.firstInUtc!).getTime()) / 60000);
+      if (elapsedMin >= FULL_DAY_MINUTES) openOverdue++;
+    } else if (hasIn && hasOut) {
+      const spanMin = Math.floor(
+        (new Date(s.lastOutUtc!).getTime() - new Date(s.firstInUtc!).getTime()) / 60000
+      );
+      if (spanMin < FULL_DAY_MINUTES) closedShort++;
     }
 
     presence.push({
@@ -174,6 +209,24 @@ export async function getDashboardMetrics(tenantId?: string): Promise<DashboardM
 
   const missingCount = employees.length - checkedIn.size;
   statusBreakdown.missing += missingCount;
+
+  // No-show anomaly: active employees who never opened a shift, evaluated only
+  // on a working day and only once the 09:15 cutoff has passed. Employees on
+  // approved leave (ABSENCE summary) are legitimately out, not anomalies.
+  let noShow = 0;
+  if (!isHol) {
+    const [hh, mm] = clockLima().split(":").map(Number);
+    const nowClockMin = hh * 60 + mm;
+    if (nowClockMin >= NO_SHOW_CUTOFF_MIN) {
+      const summaryByEmp = new Map(summaries.map((s) => [s.EmployeeID, s] as const));
+      for (const emp of employees) {
+        const s = summaryByEmp.get(emp.EmployeeID);
+        if (s?.firstInUtc) continue; // opened a shift today
+        if (s?.status === "ABSENCE") continue; // approved leave
+        noShow++;
+      }
+    }
+  }
 
   // Sort: working first, then on break, then completed, then not checked in
   const statusOrder: Record<string, number> = { WORKING: 0, ON_BREAK: 1, COMPLETED: 2, NOT_CHECKED_IN: 3 };
@@ -290,6 +343,7 @@ export async function getDashboardMetrics(tenantId?: string): Promise<DashboardM
     onBreakNow: onBreak,
     pendingRequests: pendingRequests.length,
     anomaliesToday: anomalies,
+    anomalyBreakdown: { openOverdue, closedShort, noShow },
     lateToday,
     todayDate,
     isHoliday: isHol,
