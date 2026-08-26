@@ -48,6 +48,10 @@ export async function GET(request: NextRequest) {
         area: invitation.Area || "",
         position: invitation.Position || "",
         role: invitation.Role,
+        // The register page reads this to render "<X> te invitó a unirte".
+        // Without it the panel silently falls back to the impersonal
+        // "Has sido invitado" copy.
+        invitedByName: invitation.InvitedByName || "",
       },
       tenant: {
         name: tenant?.name || "Empresa",

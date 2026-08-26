@@ -43,6 +43,15 @@ export const POST = withErrorHandler(async (req: Request) => {
   const tenant = await getTenantById(tenantId);
   const approvalRequired = tenant?.settings?.approvalRequired ?? false;
 
+  // A regularization can only target a day that already happened. Without this
+  // a client with a skewed clock could post a future date and overwrite (or
+  // pre-create) a shift that has not been worked yet.
+  const tz = tenant?.settings?.timezone ?? "America/Lima";
+  const todayYmd = new Date().toLocaleDateString("en-CA", { timeZone: tz });
+  if (workDate > todayYmd) {
+    throw new ValidationError("No puedes regularizar una fecha futura");
+  }
+
   if (approvalRequired) {
     // Create an approval request instead of applying directly
     const request = await createRequest(

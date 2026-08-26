@@ -13,9 +13,10 @@
  * decides to handle it later, but reappears the next day.
  */
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
+import { useTenantTimezone, todayInTz } from "@/hooks/use-timezone";
 import { IconSvg, Icons } from "@/components/nova/icons";
 
 type WeekDayLike = {
@@ -80,19 +81,32 @@ export function OpenShiftBanner({ days }: Props) {
   const [submitting, setSubmitting] = useState(false);
   const [dismissedTick, setDismissedTick] = useState(0); // forces re-render
 
-  // Find the most recent day with status OPEN + no clock-out, ignoring today
-  const todayYmd = useMemo(() => {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-  }, []);
+  // Today's date in the TENANT timezone — the same clock the week summary uses
+  // to label its days. Two things used to break here: the value came from the
+  // device clock (a phone on a different timezone lands on another day), and it
+  // was memoized with an empty dep array, so a tab left open across midnight
+  // kept yesterday's date forever. Either one makes the *current, still-open*
+  // shift look like a forgotten clock-out. Starts empty so the first paint
+  // never shows the banner, then refreshes every minute.
+  const tz = useTenantTimezone();
+  const [todayYmd, setTodayYmd] = useState("");
+
+  useEffect(() => {
+    setTodayYmd(todayInTz(tz));
+    const id = setInterval(() => setTodayYmd(todayInTz(tz)), 60_000);
+    return () => clearInterval(id);
+  }, [tz]);
 
   const openDay = useMemo(() => {
+    if (!todayYmd) return undefined;
     const dismissed = getDismissedDates();
     // Iterate most recent first
     const sorted = [...days].sort((a, b) => b.date.localeCompare(a.date));
     return sorted.find(
       (d) =>
-        d.date !== todayYmd &&
+        // Strictly before today: today's shift is still running, and a future
+        // date can never be a forgotten clock-out.
+        d.date < todayYmd &&
         d.status === "OPEN" &&
         !!d.firstInLocal &&
         !d.lastOutLocal &&
