@@ -7,16 +7,18 @@ import { IconSvg, Icons } from "@/components/nova/icons";
 import { NovaAvatar } from "@/components/nova/avatar";
 import { PageHeader } from "@/components/nova/page-header";
 import { areaKey, buildAreaCanon } from "@/lib/utils/area";
+import { GenerateReportPanel } from "@/components/admin/reports/GenerateReportPanel";
 import type { ReportsStats } from "@/lib/services/reports-stats.service";
 
 /* ============================================================
    Helpers
    ============================================================ */
 
-type TabKey = "dashboard" | "attendance" | "hours" | "absences" | "payroll";
+type TabKey = "dashboard" | "generate" | "attendance" | "hours" | "absences" | "payroll";
 
 const TABS: { key: TabKey; label: string; icon: React.ReactNode }[] = [
   { key: "dashboard", label: "Dashboard", icon: Icons.dashboard },
+  { key: "generate", label: "Generar PDF", icon: Icons.download },
   { key: "attendance", label: "Asistencia", icon: Icons.clock },
   { key: "hours", label: "Horas trabajadas", icon: Icons.pulse },
   { key: "absences", label: "Ausencias", icon: Icons.alert },
@@ -466,6 +468,242 @@ function TopList({ stats }: { stats: ReportsStats | undefined }) {
 }
 
 /* ============================================================
+   Export URLs — the API streams the file back with a
+   Content-Disposition attachment header, so a plain link is enough.
+   ============================================================ */
+
+function exportUrl(opts: {
+  range: { from: string; to: string };
+  variant: "all" | "attendance" | "hours" | "absences" | "payroll";
+  format: "xlsx" | "csv";
+}): string {
+  const q = new URLSearchParams({
+    from: opts.range.from,
+    to: opts.range.to,
+    variant: opts.variant,
+    format: opts.format,
+  });
+  return `/api/admin/reports/export?${q.toString()}`;
+}
+
+/* ============================================================
+   Per-employee table — the "reporte por persona" view.
+   One component; the column set switches per tab.
+   ============================================================ */
+
+function EmployeeTable({
+  stats,
+  isLoading,
+  variant,
+  range,
+}: {
+  stats: ReportsStats | undefined;
+  isLoading: boolean;
+  variant: "attendance" | "hours" | "absences" | "payroll";
+  range: { from: string; to: string };
+}) {
+  const [search, setSearch] = useState("");
+
+  const rows = useMemo(() => {
+    const list = stats?.employeeRanking ?? [];
+    const q = search.trim().toLowerCase();
+    const filtered = q
+      ? list.filter(
+          (e) =>
+            e.employeeName.toLowerCase().includes(q) ||
+            (e.area ?? "").toLowerCase().includes(q)
+        )
+      : list.slice();
+
+    // Sort by whatever the tab is actually about.
+    return filtered.sort((a, b) => {
+      if (variant === "absences") return b.absences - a.absences;
+      if (variant === "hours" || variant === "payroll") return b.workedHours - a.workedHours;
+      const aPct = a.plannedHours > 0 ? a.workedHours / a.plannedHours : 0;
+      const bPct = b.plannedHours > 0 ? b.workedHours / b.plannedHours : 0;
+      return bPct - aPct;
+    });
+  }, [stats, search, variant]);
+
+  const totals = stats?.totals;
+
+  return (
+    <div className="table-wrap">
+      <div className="table-toolbar">
+        <div className="searchbar" style={{ maxWidth: 280 }}>
+          <span style={{ color: "var(--text-muted)" }}>
+            <IconSvg d={Icons.search} size={14} />
+          </span>
+          <input
+            placeholder="Buscar empleado o área…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+        <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--text-muted)" }}>
+          {rows.length} empleado{rows.length === 1 ? "" : "s"}
+          {totals ? ` · ${totals.totalDays} días registrados` : ""}
+        </span>
+        <div style={{ display: "flex", gap: 6, marginLeft: 8 }}>
+          <a
+            className="btn outline btn-sm"
+            href={exportUrl({ range, variant, format: "xlsx" })}
+            title="Descargar esta vista en Excel"
+          >
+            <IconSvg d={Icons.download} size={13} /> Excel
+          </a>
+          <a
+            className="btn ghost btn-sm"
+            href={exportUrl({ range, variant, format: "csv" })}
+            title="Descargar esta vista en CSV"
+          >
+            CSV
+          </a>
+        </div>
+      </div>
+
+      <table className="table cards">
+        <thead>
+          <tr>
+            <th>Empleado</th>
+            <th>Área</th>
+            {variant === "attendance" && (
+              <>
+                <th>Días presente</th>
+                <th>Ausencias</th>
+                <th>% Asistencia</th>
+              </>
+            )}
+            {variant === "hours" && (
+              <>
+                <th>Horas trabajadas</th>
+                <th>Horas planificadas</th>
+                <th>Diferencia</th>
+              </>
+            )}
+            {variant === "absences" && (
+              <>
+                <th>Ausencias</th>
+                <th>Regularizaciones</th>
+                <th>Horas faltantes</th>
+              </>
+            )}
+            {variant === "payroll" && (
+              <>
+                <th>Días presente</th>
+                <th>Horas trabajadas</th>
+                <th>Horas extra</th>
+              </>
+            )}
+          </tr>
+        </thead>
+        <tbody>
+          {isLoading ? (
+            Array.from({ length: 6 }).map((_, i) => (
+              <tr key={i}>
+                <td colSpan={5}>
+                  <div
+                    style={{
+                      height: 32,
+                      background: "var(--bg-subtle)",
+                      borderRadius: 4,
+                      margin: "4px 0",
+                      opacity: 0.6,
+                    }}
+                  />
+                </td>
+              </tr>
+            ))
+          ) : rows.length === 0 ? (
+            <tr>
+              <td
+                colSpan={5}
+                style={{ textAlign: "center", padding: "48px 0", color: "var(--text-muted)", fontSize: 13 }}
+              >
+                {search
+                  ? "Sin empleados que coincidan con la búsqueda"
+                  : "Sin datos de asistencia en el rango seleccionado"}
+              </td>
+            </tr>
+          ) : (
+            rows.map((e) => {
+              const pct = e.plannedHours > 0 ? Math.round((e.workedHours / e.plannedHours) * 100) : 0;
+              const missing = Math.max(0, e.plannedHours - e.workedHours);
+              const overtime = Math.max(0, e.workedHours - e.plannedHours);
+              return (
+                <tr key={e.employeeId}>
+                  <td data-label="Empleado">
+                    <Link
+                      href={`/admin/employees/${encodeURIComponent(e.employeeId)}`}
+                      style={{ display: "flex", alignItems: "center", gap: 8, textDecoration: "none" }}
+                    >
+                      <NovaAvatar name={e.employeeName} size={26} variant="plain" />
+                      <span style={{ fontWeight: 600, color: "var(--text-primary)" }}>{e.employeeName}</span>
+                    </Link>
+                  </td>
+                  <td data-label="Área" className="tcell-muted">
+                    {e.area || "—"}
+                  </td>
+
+                  {variant === "attendance" && (
+                    <>
+                      <td data-label="Días presente" className="tcell-mono">{e.daysPresent}</td>
+                      <td data-label="Ausencias" className="tcell-mono">{e.absences}</td>
+                      <td data-label="% Asistencia" className="tcell-mono">
+                        <span style={{ fontWeight: 700, color: pct >= 95 ? "var(--success)" : "var(--text-primary)" }}>
+                          {pct}%
+                        </span>
+                      </td>
+                    </>
+                  )}
+
+                  {variant === "hours" && (
+                    <>
+                      <td data-label="Horas trabajadas" className="tcell-mono">{e.workedHours.toFixed(1)}h</td>
+                      <td data-label="Horas planificadas" className="tcell-mono">{e.plannedHours.toFixed(1)}h</td>
+                      <td data-label="Diferencia" className="tcell-mono">
+                        <span style={{ color: e.deltaHours < 0 ? "var(--danger)" : "var(--success)", fontWeight: 600 }}>
+                          {e.deltaHours >= 0 ? "+" : ""}
+                          {e.deltaHours.toFixed(1)}h
+                        </span>
+                      </td>
+                    </>
+                  )}
+
+                  {variant === "absences" && (
+                    <>
+                      <td data-label="Ausencias" className="tcell-mono">
+                        <span style={{ fontWeight: 700, color: e.absences > 0 ? "var(--danger)" : "var(--text-primary)" }}>
+                          {e.absences}
+                        </span>
+                      </td>
+                      <td data-label="Regularizaciones" className="tcell-mono">{e.regularizations}</td>
+                      <td data-label="Horas faltantes" className="tcell-mono">{missing.toFixed(1)}h</td>
+                    </>
+                  )}
+
+                  {variant === "payroll" && (
+                    <>
+                      <td data-label="Días presente" className="tcell-mono">{e.daysPresent}</td>
+                      <td data-label="Horas trabajadas" className="tcell-mono">{e.workedHours.toFixed(1)}h</td>
+                      <td data-label="Horas extra" className="tcell-mono">
+                        <span style={{ color: overtime > 0 ? "var(--success)" : "var(--text-muted)", fontWeight: 600 }}>
+                          {overtime.toFixed(1)}h
+                        </span>
+                      </td>
+                    </>
+                  )}
+                </tr>
+              );
+            })
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/* ============================================================
    Page
    ============================================================ */
 
@@ -493,11 +731,19 @@ export default function AdminReportsPage() {
         subtitle="Genera, visualiza y exporta análisis de asistencia."
         actions={
           <>
-            <button type="button" className="btn outline btn-md">
-              <IconSvg d={Icons.filter} size={14} /> Filtros
-            </button>
-            <button type="button" className="btn primary btn-md">
-              <IconSvg d={Icons.download} size={14} /> Exportar PDF
+            <a
+              className="btn outline btn-md"
+              href={exportUrl({ range, variant: "all", format: "xlsx" })}
+              title="Descarga un libro de Excel con resumen, asistencia, horas, ausencias, nómina y tendencia mensual"
+            >
+              <IconSvg d={Icons.download} size={14} /> Exportar Excel
+            </a>
+            <button
+              type="button"
+              className="btn primary btn-md"
+              onClick={() => setTab("generate")}
+            >
+              <IconSvg d={Icons.download} size={14} /> Generar PDF
             </button>
           </>
         }
@@ -522,6 +768,7 @@ export default function AdminReportsPage() {
         ))}
       </div>
 
+      {tab !== "generate" && (
       <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>
         <button
           type="button"
@@ -555,7 +802,22 @@ export default function AdminReportsPage() {
           {isLoading ? "Cargando…" : `Rango: ${range.from} → ${range.to}`}
         </span>
       </div>
+      )}
 
+      {tab === "generate" && (
+        <div id="tab-panel-generate" role="tabpanel" aria-labelledby="tab-generate">
+          <GenerateReportPanel />
+        </div>
+      )}
+
+      {(tab === "attendance" || tab === "hours" || tab === "absences" || tab === "payroll") && (
+        <div id={`tab-panel-${tab}`} role="tabpanel" aria-labelledby={`tab-${tab}`}>
+          <EmployeeTable stats={stats} isLoading={isLoading} variant={tab} range={range} />
+        </div>
+      )}
+
+      {tab === "dashboard" && (
+      <div id="tab-panel-dashboard" role="tabpanel" aria-labelledby="tab-dashboard">
       {/* Row 1: BigChart + AreaBreakdown */}
       <div className="row two-thirds" style={{ marginTop: 0 }}>
         <div className="panel">
@@ -628,6 +890,8 @@ export default function AdminReportsPage() {
           <TopList stats={stats} />
         </div>
       </div>
+      </div>
+      )}
     </>
   );
 }
