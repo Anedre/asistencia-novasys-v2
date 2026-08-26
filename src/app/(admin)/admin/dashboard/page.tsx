@@ -25,6 +25,23 @@ const TONE_HEX: Record<PremiumIconTone, string> = {
   Gold: "#F59E0B",
 };
 
+/* Stable per-person tone for initials avatars (same name → same tone). */
+const AVATAR_TONES = [
+  TONE_HEX.Indigo,
+  TONE_HEX.Teal,
+  TONE_HEX.Green,
+  TONE_HEX.Amber,
+  TONE_HEX.Violet,
+  TONE_HEX.Rose,
+  TONE_HEX.Accent,
+];
+
+function toneForName(name: string): string {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+  return AVATAR_TONES[h % AVATAR_TONES.length];
+}
+
 type ChartRange = "hoy" | "semana" | "mes";
 
 /** YYYY-MM-DD in America/Lima. */
@@ -182,8 +199,8 @@ function AnomaliesCard({
 }) {
   const hex = TONE_HEX.Rose;
   const rows: Array<{ key: string; label: string; hint: string; value: number; tone: PremiumIconTone }> = [
-    { key: "open", label: "Jornadas abiertas", hint: "+9 h sin cerrar", value: openOverdue, tone: "Amber" },
-    { key: "short", label: "Jornadas cortas", hint: "cerró antes de 9 h", value: closedShort, tone: "Violet" },
+    { key: "open", label: "Abiertas", hint: "+9 h sin cerrar", value: openOverdue, tone: "Amber" },
+    { key: "short", label: "Cortas", hint: "cerró antes de 9 h", value: closedShort, tone: "Violet" },
     { key: "noshow", label: "Sin marcar", hint: "sin abrir tras 9:15", value: noShow, tone: "Rose" },
   ];
   return (
@@ -325,7 +342,42 @@ function DctxCard({
    HourlyChart — area chart with axis
    ============================================================ */
 
-function HourlyChart({ data, loading, range = "hoy" }: { data: number[]; loading?: boolean; range?: ChartRange }) {
+/** Catmull-Rom → cubic Bézier. Control points are clamped to the plot band
+    so the curve never dips below the 0-baseline nor above the max line. */
+function smoothLinePath(xs: number[], ys: number[], minY: number, maxY: number): string {
+  if (xs.length < 2) return "";
+  const clamp = (y: number) => Math.min(maxY, Math.max(minY, y));
+  let d = `M ${xs[0]} ${ys[0]}`;
+  for (let i = 0; i < xs.length - 1; i++) {
+    const x0 = xs[i - 1] ?? xs[i];
+    const y0 = ys[i - 1] ?? ys[i];
+    const x1 = xs[i];
+    const y1 = ys[i];
+    const x2 = xs[i + 1];
+    const y2 = ys[i + 1];
+    const x3 = xs[i + 2] ?? x2;
+    const y3 = ys[i + 2] ?? y2;
+    const c1x = x1 + (x2 - x0) / 6;
+    const c1y = clamp(y1 + (y2 - y0) / 6);
+    const c2x = x2 - (x3 - x1) / 6;
+    const c2y = clamp(y2 - (y3 - y1) / 6);
+    d += ` C ${c1x} ${c1y}, ${c2x} ${c2y}, ${x2} ${y2}`;
+  }
+  return d;
+}
+
+function HourlyChart({
+  data,
+  loading,
+  range = "hoy",
+  nowIdx = null,
+}: {
+  data: number[];
+  loading?: boolean;
+  range?: ChartRange;
+  /** Fractional x-position (0–13) of "now" — only rendered for range "hoy". */
+  nowIdx?: number | null;
+}) {
   const [hover, setHover] = useState<number | null>(null);
   const sum = data.reduce((a, b) => a + b, 0);
   const rawMax = Math.max(1, ...data);
@@ -340,10 +392,14 @@ function HourlyChart({ data, loading, range = "hoy" }: { data: number[]; loading
   const toY = (v: number) => TOP_PCT + ((niceMax - v) / niceMax) * (100 - TOP_PCT);
   const toSvgY = (v: number) => (toY(v) / 100) * H;
 
-  const pts = data.map((v, i) => `${xAt(i)},${toSvgY(v)}`).join(" ");
-  const firstY = toSvgY(data[0]);
-  const lastY = toSvgY(data[data.length - 1]);
-  const area = `0,${H} 0,${firstY} ${pts} ${W},${lastY} ${W},${H}`;
+  const xsArr = data.map((_, i) => xAt(i));
+  const ysArr = data.map((v) => toSvgY(v));
+  const topY = (TOP_PCT / 100) * H;
+  const linePath = smoothLinePath(xsArr, ysArr, topY, H);
+  const firstY = ysArr[0];
+  const lastY = ysArr[ysArr.length - 1];
+  const areaPath = `M 0 ${H} L 0 ${firstY} ${linePath.replace(/^M/, "L")} L ${W} ${lastY} L ${W} ${H} Z`;
+  const showNow = range === "hoy" && nowIdx != null && nowIdx >= 0 && nowIdx <= data.length - 1;
 
   const yTicks = [0, 0.5, 1].map((f) => Math.round(niceMax * f));
   const Y_AXIS_W = 32;
@@ -446,17 +502,36 @@ function HourlyChart({ data, loading, range = "hoy" }: { data: number[]; loading
                 />
               );
             })}
-            <polygon points={area} fill="url(#hourlyAreaGrad)" className="chart-area-breath" />
-            <polyline points={pts} fill="none" stroke="var(--accent)" strokeWidth="1" vectorEffect="non-scaling-stroke" />
-            <polyline points={pts} className="chart-shimmer" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+            <path d={areaPath} fill="url(#hourlyAreaGrad)" className="chart-area-breath" />
+            <path d={linePath} className="line" fill="none" stroke="var(--accent)" strokeWidth="1" vectorEffect="non-scaling-stroke" strokeLinecap="round" />
+            <path d={linePath} fill="none" className="chart-shimmer" strokeWidth="1.5" vectorEffect="non-scaling-stroke" strokeLinecap="round" />
+            {showNow && (
+              <line
+                x1={xAt(nowIdx!)}
+                x2={xAt(nowIdx!)}
+                y1={topY}
+                y2={H}
+                stroke="var(--accent)"
+                strokeWidth="1"
+                strokeDasharray="2 3"
+                opacity="0.5"
+                vectorEffect="non-scaling-stroke"
+              />
+            )}
           </svg>
+          {showNow && (
+            <span className="chart-now-label" style={{ left: `${lerp(nowIdx!)}%` }}>
+              ahora
+            </span>
+          )}
           {data.map((v, i) => {
             if (v === 0) return null;
+            const isLast = i === data.reduce((acc, val, idx) => (val > 0 ? idx : acc), 0);
             return (
               <button
                 key={i}
                 type="button"
-                className="chart-dot"
+                className={`chart-dot ${isLast ? "last" : ""}`}
                 style={{ left: `${lerp(i)}%`, top: `${toY(v)}%` }}
                 onMouseEnter={() => setHover(i)}
                 onMouseLeave={() => setHover(null)}
@@ -521,10 +596,16 @@ function PresenceCard({ p }: { p: PresenceItem }) {
     .slice(0, 2)
     .join("")
     .toUpperCase();
+  const muted = cfg.cls === "muted";
   return (
     <div className="presence-card">
       <div className="presence-avatar-wrap">
-        <div className={`avatar ${cfg.cls === "muted" ? "muted" : "plain"}`}>{initials}</div>
+        <div
+          className={`avatar ${muted ? "muted" : "toned"}`}
+          style={muted ? undefined : ({ "--av": toneForName(p.fullName) } as React.CSSProperties)}
+        >
+          {initials}
+        </div>
         <span className={`presence-dot ${cfg.cls}`} />
       </div>
       <div style={{ minWidth: 0, flex: 1 }}>
@@ -684,7 +765,12 @@ function PendingRow({ r }: { r: PendingItem }) {
     .toUpperCase();
   return (
     <div className="pending-row">
-      <div className="avatar plain" style={{ width: 36, height: 36 }}>{initials}</div>
+      <div
+        className="avatar toned"
+        style={{ width: 36, height: 36, "--av": toneForName(r.who) } as React.CSSProperties}
+      >
+        {initials}
+      </div>
       <div style={{ minWidth: 0, flex: 1 }}>
         <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
           <span className="pending-who">{r.who}</span>
@@ -818,6 +904,20 @@ export default function AdminDashboard() {
 
   const chartIsLoading = chartRange !== "hoy" && rangeStatsFetching && !rangeStats;
 
+  // Fractional position of "now" on the 6h–19h axis (Lima wall-clock).
+  const nowChartIdx = useMemo(() => {
+    const hhmm = new Intl.DateTimeFormat("en-GB", {
+      timeZone: "America/Lima",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).format(now);
+    const [h, m] = hhmm.split(":").map(Number);
+    if (Number.isNaN(h) || Number.isNaN(m)) return null;
+    const idx = h - 6 + m / 60;
+    return idx >= 0 && idx <= 13 ? idx : null;
+  }, [now]);
+
   const chartSubLabel =
     chartRange === "hoy"
       ? "Hoy, por hora"
@@ -939,6 +1039,19 @@ export default function AdminDashboard() {
     <>
       {/* Hero / Welcome */}
       <section className="hero">
+        <div className="hero-orbits" aria-hidden>
+          <svg width="640" height="320" viewBox="0 0 640 320" fill="none">
+            <circle cx="320" cy="160" r="268" stroke="currentColor" strokeWidth="1" strokeDasharray="2 8" opacity="0.5" />
+            <circle cx="320" cy="160" r="212" stroke="currentColor" strokeWidth="1" opacity="0.45" />
+            <g className="orbit-spin">
+              <circle cx="320" cy="160" r="156" stroke="currentColor" strokeWidth="1" strokeDasharray="1 6" opacity="0.65" />
+              <circle cx="164" cy="160" r="3.5" fill="var(--accent)" opacity="0.95" />
+              <circle cx="476" cy="160" r="2.2" fill="currentColor" opacity="0.8" />
+            </g>
+            <circle cx="320" cy="-52" r="2.4" fill="currentColor" opacity="0.7" />
+            <circle cx="108" cy="160" r="2" fill="currentColor" opacity="0.65" />
+          </svg>
+        </div>
         <div className="hero-text">
           <div className="hero-eyebrow">
             Panel de administración · {dateStr}
@@ -1066,7 +1179,7 @@ export default function AdminDashboard() {
               </button>
             </div>
           </div>
-          <HourlyChart data={hourlyData} loading={chartIsLoading} range={chartRange} />
+          <HourlyChart data={hourlyData} loading={chartIsLoading} range={chartRange} nowIdx={nowChartIdx} />
         </div>
 
         <div className="panel">
@@ -1197,8 +1310,9 @@ export default function AdminDashboard() {
                 </Link>
               </div>
             ) : (
-              <div style={{ padding: "20px 0", textAlign: "center", fontSize: 13, color: "var(--text-muted)" }}>
-                Sin solicitudes pendientes
+              <div className="queue-empty">
+                <PremiumIcon name="check" size={28} tone="Green" />
+                <span>Todo al día — sin solicitudes pendientes</span>
               </div>
             )}
           </div>

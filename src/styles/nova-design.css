@@ -615,6 +615,22 @@
   color: var(--text-muted);
   border: 1px dashed var(--border);
 }
+/* Deterministic per-person tone (set --av inline): soft tinted disc with
+   strong initials — brings life to people lists without photo avatars. */
+.avatar.toned {
+  background: linear-gradient(140deg,
+    color-mix(in srgb, var(--av) 22%, var(--bg-elevated)),
+    color-mix(in srgb, var(--av) 9%, var(--bg-elevated)));
+  color: color-mix(in srgb, var(--av) 72%, var(--text-primary));
+  border: 1px solid color-mix(in srgb, var(--av) 32%, var(--border));
+}
+.nva-app[data-theme="dark"] .avatar.toned {
+  background: linear-gradient(140deg,
+    color-mix(in srgb, var(--av) 30%, var(--bg-elevated)),
+    color-mix(in srgb, var(--av) 12%, var(--bg-elevated)));
+  color: color-mix(in srgb, var(--av) 60%, #fff);
+  border-color: color-mix(in srgb, var(--av) 38%, var(--border));
+}
 
 /* ---------- hero ---------- */
 .hero {
@@ -635,10 +651,48 @@
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(ellipse 600px 200px at 80% 50%, var(--accent-soft), transparent 60%),
-    radial-gradient(ellipse 300px 200px at 0% 100%, var(--accent-soft), transparent 70%);
+    radial-gradient(ellipse 640px 240px at 82% 42%, var(--accent-soft), transparent 62%),
+    radial-gradient(ellipse 420px 260px at 6% 115%, color-mix(in srgb, #6366F1 8%, transparent), transparent 70%),
+    radial-gradient(ellipse 340px 200px at 45% -35%, color-mix(in srgb, #14B8A6 6%, transparent), transparent 70%);
   pointer-events: none;
-  opacity: 0.6;
+  opacity: 0.8;
+}
+/* Faint star-grid texture, fading out toward the text side */
+.hero::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(color-mix(in srgb, var(--text-muted) 55%, transparent) 1px, transparent 1px);
+  background-size: 26px 26px;
+  -webkit-mask-image: linear-gradient(100deg, transparent 30%, rgba(0,0,0,0.5) 72%, rgba(0,0,0,0.8) 100%);
+  mask-image: linear-gradient(100deg, transparent 30%, rgba(0,0,0,0.5) 72%, rgba(0,0,0,0.8) 100%);
+  pointer-events: none;
+  opacity: 0.35;
+}
+.nva-app[data-theme="dark"] .hero::after { opacity: 0.5; }
+/* Decorative orbit rings behind the context card */
+.hero-orbits {
+  position: absolute;
+  top: 50%;
+  right: -110px;
+  transform: translateY(-50%);
+  pointer-events: none;
+  color: var(--border-strong);
+  opacity: 0.65;
+}
+.nva-app[data-theme="dark"] .hero-orbits {
+  color: color-mix(in srgb, var(--accent) 38%, var(--border));
+  opacity: 0.75;
+}
+.hero-orbits .orbit-spin {
+  transform-origin: 320px 160px;
+  animation: orbit-spin 80s linear infinite;
+}
+@keyframes orbit-spin {
+  to { transform: rotate(360deg); }
+}
+@media (max-width: 900px) {
+  .hero-orbits { display: none; }
 }
 .hero-text { position: relative; z-index: 1; max-width: 620px; }
 .hero-eyebrow {
@@ -669,7 +723,7 @@
   gap: 10px;
   margin-top: 20px;
 }
-.hero-art { position: relative; z-index: 0; }
+.hero-art { position: relative; z-index: 1; }
 /* On phones the admin hero's 2nd column (context/clock card) can't fit beside
    the text — stack it underneath instead of letting it run off-screen. */
 @media (max-width: 760px) {
@@ -729,8 +783,12 @@
 .live-indicator {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
   margin-left: auto;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--success) 22%, var(--border));
+  background: color-mix(in srgb, var(--success) 6%, var(--bg-elevated));
   font-size: 11px;
   font-weight: 600;
   color: var(--text-secondary);
@@ -760,6 +818,17 @@
 }
 @media (max-width: 1280px) { .metrics-grid { grid-template-columns: repeat(3, 1fr); } }
 @media (max-width: 720px)  { .metrics-grid { grid-template-columns: repeat(2, 1fr); } }
+/* Orchestrated entrance: KPI cards cascade in after the hero */
+.metrics-grid > * { animation: fade-up 0.5s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.metrics-grid > *:nth-child(1) { animation-delay: 0.04s; }
+.metrics-grid > *:nth-child(2) { animation-delay: 0.09s; }
+.metrics-grid > *:nth-child(3) { animation-delay: 0.14s; }
+.metrics-grid > *:nth-child(4) { animation-delay: 0.19s; }
+.metrics-grid > *:nth-child(5) { animation-delay: 0.24s; }
+.metrics-grid > *:nth-child(6) { animation-delay: 0.29s; }
+@media (prefers-reduced-motion: reduce) {
+  .metrics-grid > *, .row, .hero-orbits .orbit-spin { animation: none !important; }
+}
 
 .stat-card {
   background: var(--bg-elevated);
@@ -791,8 +860,9 @@
   opacity: 0.9;
 }
 .stat-card.toned .stat-icon {
-  width: 34px; height: 34px;
-  background: transparent;
+  width: 36px; height: 36px;
+  background: var(--tone-soft);
+  border-radius: 10px;
   display: flex; align-items: center; justify-content: center;
 }
 .stat-card.toned.feature {
@@ -864,19 +934,20 @@
   gap: 8px;
 }
 .stat-value {
-  font-family: var(--font-sans);
-  font-size: 28px;
+  font-family: var(--font-mono);
+  font-size: 26px;
   font-weight: 700;
-  letter-spacing: -0.025em;
+  letter-spacing: -0.045em;
   color: var(--text-primary);
   font-variant-numeric: tabular-nums;
-  font-feature-settings: "ss01";
+  font-feature-settings: "tnum", "ss01";
 }
 .stat-suffix {
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 600;
   color: var(--text-secondary);
-  margin-left: 1px;
+  margin-left: 2px;
+  letter-spacing: 0;
 }
 .stat-delta {
   display: inline-flex;
@@ -902,8 +973,8 @@
 .anom-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin-top: 2px;
+  gap: 9px;
+  margin-top: 4px;
 }
 .anom-row {
   display: flex;
@@ -924,23 +995,29 @@
   line-height: 1.2;
 }
 .anom-row-label {
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .anom-row-hint {
   font-size: 10px;
   color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .anom-val {
   margin-left: auto;
-  font-family: var(--font-sans);
-  font-size: 19px;
+  font-family: var(--font-mono);
+  font-size: 17px;
   font-weight: 700;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.03em;
   color: var(--text-primary);
   font-variant-numeric: tabular-nums;
-  font-feature-settings: "ss01";
+  font-feature-settings: "tnum", "ss01";
 }
 
 /* ---------- panels ---------- */
@@ -1006,6 +1083,30 @@
 
 /* ---------- hourly chart ---------- */
 .hourly-chart { padding: 8px 0 0; }
+.chart-now-label {
+  position: absolute;
+  top: -3px;
+  transform: translateX(-50%);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--accent-strong);
+  font-family: var(--font-label);
+  pointer-events: none;
+}
+.nva-app[data-theme="dark"] .chart-now-label { color: var(--accent); }
+/* Friendly empty state for the approval queue */
+.queue-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 9px;
+  padding: 24px 0;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  text-align: center;
+}
 .hourly-axis {
   display: grid;
   grid-template-columns: repeat(14, 1fr);
@@ -1053,7 +1154,7 @@
 .legend-dot.danger  { background: var(--danger); }
 .legend-dot.muted   { background: var(--text-muted); }
 .breakdown-label { color: var(--text-primary); font-weight: 500; }
-.breakdown-val { color: var(--text-primary); font-weight: 600; font-variant-numeric: tabular-nums; }
+.breakdown-val { color: var(--text-primary); font-weight: 600; font-variant-numeric: tabular-nums; font-family: var(--font-mono); font-size: 12.5px; }
 .breakdown-pct {
   color: var(--text-muted);
   font-size: 11px;
@@ -1066,9 +1167,11 @@
 }
 
 /* ---------- presence ---------- */
+/* Self-collapsing: 2 columns on desktop, 1 on phones — the min(240px, 100%)
+   guard keeps card min-content from forcing horizontal overflow. */
 .presence-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr));
   gap: 8px;
 }
 .presence-card {
@@ -1076,12 +1179,18 @@
   align-items: center;
   gap: 10px;
   padding: 10px;
+  min-width: 0;
   background: var(--bg-subtle);
   border: 1px solid transparent;
   border-radius: var(--r);
   transition: all 0.15s;
 }
-.presence-card:hover { border-color: var(--border); background: var(--bg-elevated); }
+.presence-card:hover {
+  border-color: var(--border);
+  background: var(--bg-elevated);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-xs);
+}
 .presence-avatar-wrap { position: relative; }
 .presence-dot {
   position: absolute;
@@ -1118,6 +1227,7 @@
   font-size: 10px;
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono);
   margin-top: 1px;
 }
 
@@ -1158,9 +1268,10 @@
 .activity-text strong { color: var(--text-primary); font-weight: 600; }
 .activity-detail { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
 .activity-time {
-  font-size: 11px;
+  font-size: 10.5px;
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono);
   flex-shrink: 0;
 }
 
@@ -1199,6 +1310,7 @@
   font-weight: 600;
   color: var(--text-primary);
   font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono);
   min-width: 36px;
   text-align: right;
 }
@@ -1209,12 +1321,13 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 12px;
+  padding: 11px;
   background: var(--bg-subtle);
+  border: 1px solid transparent;
   border-radius: var(--r);
   transition: all 0.15s;
 }
-.pending-row:hover { background: var(--bg-elevated); border: 1px solid var(--border); padding: 11px; }
+.pending-row:hover { background: var(--bg-elevated); border-color: var(--border); box-shadow: var(--shadow-xs); }
 .pending-who { font-size: 13px; font-weight: 600; color: var(--text-primary); }
 .pending-meta { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
 .type-tag {
@@ -5134,7 +5247,9 @@ a.kpi-card:hover {
    to beat `.chart-rise polyline` (which would otherwise apply
    chart-draw and stop it from looping). */
 polyline.chart-shimmer,
-.chart-rise polyline.chart-shimmer {
+path.chart-shimmer,
+.chart-rise polyline.chart-shimmer,
+.chart-rise path.chart-shimmer {
   fill: none;
   stroke: #ffffff;
   stroke-linecap: round;
@@ -5145,7 +5260,9 @@ polyline.chart-shimmer,
   pointer-events: none;
 }
 polygon.chart-area-breath,
-.chart-rise polygon.chart-area-breath {
+path.chart-area-breath,
+.chart-rise polygon.chart-area-breath,
+.chart-rise path.chart-area-breath {
   animation: chart-area-breath 4s ease-in-out infinite;
   transform: none;
   opacity: 0.9;
@@ -5155,11 +5272,11 @@ polygon.chart-area-breath,
    when SVG is stretched, supports hover, never gets clipped at edge) */
 .chart-dot {
   position: absolute;
-  width: 12px;
-  height: 12px;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
   background: var(--accent);
-  border: 2px solid var(--bg, #ffffff);
+  border: 2px solid var(--bg-elevated, #ffffff);
   transform: translate(-50%, -50%);
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
   cursor: pointer;
@@ -5175,7 +5292,8 @@ polygon.chart-area-breath,
   transform: translate(-50%, -50%) scale(1.5);
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
 }
-.chart-dot::before {
+/* Radar halo only on the newest point — one live signal, not a field of them */
+.chart-dot.last::before {
   content: "";
   position: absolute;
   inset: -4px;
@@ -5185,10 +5303,6 @@ polygon.chart-area-breath,
   animation: chart-dot-pulse 2.4s ease-out infinite;
   transform-origin: center;
 }
-/* Stagger the halo pulse so they don't all flash together */
-.chart-dot:nth-child(3n)::before     { animation-delay: 0.8s; }
-.chart-dot:nth-child(3n + 1)::before { animation-delay: 1.6s; }
-.chart-dot:nth-child(3n + 2)::before { animation-delay: 2.4s; }
 
 .chart-tooltip {
   position: absolute;
