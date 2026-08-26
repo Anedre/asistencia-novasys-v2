@@ -30,6 +30,13 @@ interface GenerateResult {
   url?: string;
 }
 
+interface ConsolidatedResult {
+  status: "ok" | "error";
+  message?: string;
+  url?: string;
+  employeeCount?: number;
+}
+
 export function GenerateReportPanel() {
   const { data, isLoading: loadingEmployees } = useAdminEmployees();
   const employees = useMemo(() => data?.employees ?? [], [data]);
@@ -43,6 +50,8 @@ export function GenerateReportPanel() {
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [results, setResults] = useState<GenerateResult[]>([]);
+  const [runningAll, setRunningAll] = useState(false);
+  const [allResult, setAllResult] = useState<ConsolidatedResult | null>(null);
 
   const areas = useMemo(
     () => Array.from(new Set(employees.map((e) => e.area).filter(Boolean))).sort(),
@@ -146,6 +155,45 @@ export function GenerateReportPanel() {
     // links on screen instead: opening 30 tabs trips the popup blocker.
     if (collected.length === 1 && collected[0].status === "ok" && collected[0].url) {
       window.open(collected[0].url, "_blank", "noopener");
+    }
+  }
+
+  /**
+   * Company-wide monthly register: ONE PDF with every employee, no per-employee
+   * loop. Always monthly — it is the document presented to SUNAFIL, and the
+   * inspection unit is the month.
+   */
+  async function handleGenerateAll() {
+    if (runningAll || running || !month) return;
+
+    setRunningAll(true);
+    setAllResult(null);
+
+    try {
+      const res = await fetch("/api/reports/generate-all", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ month }),
+      });
+      const payload = await res.json();
+
+      if (!res.ok || !payload.url) {
+        setAllResult({ status: "error", message: payload?.error || "No se pudo generar" });
+      } else {
+        setAllResult({
+          status: "ok",
+          url: payload.url,
+          employeeCount: payload.employeeCount,
+        });
+        window.open(payload.url, "_blank", "noopener");
+      }
+    } catch (err) {
+      setAllResult({
+        status: "error",
+        message: err instanceof Error ? err.message : "Error de red",
+      });
+    } finally {
+      setRunningAll(false);
     }
   }
 
@@ -410,6 +458,60 @@ export function GenerateReportPanel() {
             Selecciona al menos un empleado.
           </p>
         )}
+
+        {/* ── Company-wide register (SUNAFIL) ──────────────── */}
+        <div style={{ marginTop: 18, paddingTop: 16, borderTop: "1px solid var(--border)" }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 2 }}>
+            Registro mensual de toda la empresa
+          </div>
+          <p style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 10 }}>
+            Un solo PDF con todos los empleados, listo para imprimir. Sin columnas
+            de estado ni observaciones. No depende de la selección de arriba.
+          </p>
+
+          <button
+            type="button"
+            className="btn outline btn-md"
+            style={{ width: "100%", justifyContent: "center" }}
+            onClick={handleGenerateAll}
+            disabled={runningAll || running || !month}
+          >
+            {runningAll ? (
+              <>
+                <Spinner size={14} />
+                Generando registro…
+              </>
+            ) : (
+              <>
+                <IconSvg d={Icons.users} size={14} />
+                Generar registro · {month}
+              </>
+            )}
+          </button>
+
+          {allResult && (
+            <div
+              style={{
+                marginTop: 10,
+                padding: "8px 10px",
+                borderRadius: "var(--r)",
+                fontSize: 11,
+                background:
+                  allResult.status === "ok"
+                    ? "color-mix(in srgb, var(--success) 12%, transparent)"
+                    : "color-mix(in srgb, var(--danger) 12%, transparent)",
+              }}
+            >
+              {allResult.status === "ok" ? (
+                <a href={allResult.url} target="_blank" rel="noopener noreferrer">
+                  Registro generado{allResult.employeeCount ? ` · ${allResult.employeeCount} empleados` : ""} — abrir PDF
+                </a>
+              ) : (
+                <span style={{ color: "var(--danger)" }}>{allResult.message}</span>
+              )}
+            </div>
+          )}
+        </div>
 
         {results.length > 0 && (
           <div style={{ marginTop: 16 }}>

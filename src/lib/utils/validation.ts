@@ -96,6 +96,14 @@ export const generateReportSchema = z.object({
   { message: "Envía solo week o solo month, no ambos" }
 );
 
+/**
+ * Company-wide monthly register. No employeeId and no tenantId on purpose: it
+ * covers every employee, and the tenant comes from the session.
+ */
+export const generateAllReportSchema = z.object({
+  month: z.string().regex(/^\d{4}-\d{2}$/),
+});
+
 // ── HR Events ──
 export const createHREventSchema = z.object({
   type: z.enum(["BIRTHDAY", "WORK_ANNIVERSARY", "ANNOUNCEMENT", "HOLIDAY"]),
