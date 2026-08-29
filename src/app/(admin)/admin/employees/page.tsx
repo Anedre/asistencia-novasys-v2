@@ -6,6 +6,7 @@ import { useAdminEmployees, useAdminDashboard } from "@/hooks/use-employee";
 import { IconSvg, Icons } from "@/components/nova/icons";
 import { NovaAvatar } from "@/components/nova/avatar";
 import { InviteEmployeeDialog } from "@/components/admin/invite-employee-dialog";
+import { PendingInvitations } from "@/components/admin/pending-invitations";
 import { PageHeader } from "@/components/nova/page-header";
 import { fmtClock } from "@/lib/utils/time";
 
@@ -212,6 +213,9 @@ export default function AdminEmployeesPage() {
           </div>
         </div>
       </div>
+
+      {/* Pending invitations — renders nothing when there are none */}
+      <PendingInvitations />
 
       {/* Table */}
       <div className="table-wrap">

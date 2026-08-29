@@ -93,6 +93,27 @@ export async function revokeInvitation(inviteId: string): Promise<void> {
   );
 }
 
+/**
+ * Push an invitation's expiry back, for a resend.
+ *
+ * The Token is left untouched so any link already delivered keeps working —
+ * the point of a resend is usually that the first mail was lost or filtered,
+ * not that the link leaked.
+ */
+export async function refreshInvitationExpiry(
+  inviteId: string,
+  expiresAt: string
+): Promise<void> {
+  await docClient.send(
+    new UpdateCommand({
+      TableName: TABLES.INVITATIONS,
+      Key: { InviteID: inviteId },
+      UpdateExpression: "SET ExpiresAt = :exp",
+      ExpressionAttributeValues: { ":exp": expiresAt },
+    })
+  );
+}
+
 /** Delete an invitation */
 export async function deleteInvitation(inviteId: string): Promise<void> {
   await docClient.send(

@@ -58,6 +58,35 @@ export function useCreateInvitation() {
   });
 }
 
+interface ResendInviteResponse {
+  ok: boolean;
+  inviteLink: string;
+  expiresAt: string;
+  emailSent?: boolean;
+  emailError?: string;
+}
+
+export function useResendInvitation() {
+  const queryClient = useQueryClient();
+
+  return useMutation<ResendInviteResponse, Error, string>({
+    mutationFn: async (inviteId: string) => {
+      const res = await fetch(
+        `/api/admin/invitations/${encodeURIComponent(inviteId)}/resend`,
+        { method: "POST" }
+      );
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Error al reenviar la invitación");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["invitations"] });
+    },
+  });
+}
+
 export function useRevokeInvitation() {
   const queryClient = useQueryClient();
 
