@@ -5,12 +5,15 @@
  *
  * SES metrics are aggregate counters, so when invitations reported success but
  * never arrived there was no way to tell one message from another. This sends
- * one email to the admin's own address and shows the SES MessageId, the sender
- * actually used and the real recipient — enough to trace a single message
- * instead of guessing from totals.
+ * one email and shows the SES MessageId, the sender actually used and the real
+ * recipient — enough to trace a single message instead of guessing from totals.
+ *
+ * The recipient can be anyone the tenant already mails (staff or a pending
+ * invitation), which is what makes it useful for chasing an invitation that
+ * never showed up. The server re-checks that list on every send.
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { IconSvg, Icons } from "@/components/nova/icons";
 import { Spinner } from "@/components/nova/spinner";
 
@@ -39,16 +42,44 @@ const labelStyle: React.CSSProperties = {
   flexShrink: 0,
 };
 
+interface Recipient {
+  email: string;
+  label: string;
+}
+
 export function EmailTestPanel() {
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<TestResult | null>(null);
+  const [recipients, setRecipients] = useState<Recipient[]>([]);
+  const [to, setTo] = useState("");
+
+  // Options come from the same server helper that guards the send, so the
+  // picker can never offer an address the endpoint would reject.
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/admin/email-test")
+      .then((r) => (r.ok ? r.json() : { recipients: [] }))
+      .then((d) => {
+        if (alive) setRecipients(d.recipients ?? []);
+      })
+      .catch(() => {
+        /* the picker degrades to "my address" only */
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   async function handleTest() {
     if (running) return;
     setRunning(true);
     setResult(null);
     try {
-      const res = await fetch("/api/admin/email-test", { method: "POST" });
+      const res = await fetch("/api/admin/email-test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(to ? { to } : {}),
+      });
       const payload = await res.json();
       if (!res.ok) {
         setResult({ failure: payload?.error || `HTTP ${res.status}` });
@@ -75,10 +106,33 @@ export function EmailTestPanel() {
             Diagnóstico de correo
           </div>
           <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
-            Envía un correo de prueba a tu propia dirección y muestra el identificador
-            que SES devuelve, para poder rastrear ese mensaje concreto.
+            Envía un correo de prueba y muestra el identificador que SES devuelve,
+            para rastrear ese mensaje concreto. Elige a quién enviarlo.
           </div>
         </div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
+        <select
+          value={to}
+          onChange={(e) => setTo(e.target.value)}
+          disabled={running}
+          aria-label="Destinatario de la prueba"
+          style={{
+            fontSize: 11.5,
+            padding: "6px 8px",
+            borderRadius: "var(--r)",
+            border: "1px solid var(--border)",
+            background: "var(--bg-elevated)",
+            color: "var(--text-primary)",
+            maxWidth: 240,
+          }}
+        >
+          <option value="">Mi correo</option>
+          {recipients.map((r) => (
+            <option key={r.email} value={r.email}>
+              {r.label}
+            </option>
+          ))}
+        </select>
         <button
           type="button"
           className="btn outline btn-sm"
@@ -96,6 +150,7 @@ export function EmailTestPanel() {
             </>
           )}
         </button>
+        </div>
       </div>
 
       {result && (
