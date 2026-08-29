@@ -7,6 +7,7 @@ import { IconSvg, Icons } from "@/components/nova/icons";
 import { NovaAvatar } from "@/components/nova/avatar";
 import { InviteEmployeeDialog } from "@/components/admin/invite-employee-dialog";
 import { PendingInvitations } from "@/components/admin/pending-invitations";
+import { EmailTestPanel } from "@/components/admin/email-test-panel";
 import { PageHeader } from "@/components/nova/page-header";
 import { fmtClock } from "@/lib/utils/time";
 
@@ -213,6 +214,9 @@ export default function AdminEmployeesPage() {
           </div>
         </div>
       </div>
+
+      {/* Email diagnostics */}
+      <EmailTestPanel />
 
       {/* Pending invitations — renders nothing when there are none */}
       <PendingInvitations />
