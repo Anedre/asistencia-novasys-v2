@@ -550,18 +550,38 @@ def get_tenant_daily(tenant_id, start_d, end_d):
     return grouped
 
 
-def build_roster(tenant_id, start_d, end_d):
+def build_roster(tenant_id, start_d, end_d, roster_in=None):
     """Everyone who must appear in the register, sorted by name.
 
     Active employees plus anyone with attendance in the period — somebody who
     left mid-month still worked days an inspector will ask about, and dropping
     them would leave a hole in the register.
+
+    `roster_in` is the active staff list already resolved by the Next.js
+    backend and sent in the invoke payload. Preferred over querying the
+    Employees GSI from here, for the same reason the company name and RUC are
+    passed in: it keeps this Lambda's IAM scope to GetItem on the table, with
+    no permission on the table's indexes.
     """
     by_emp = get_tenant_daily(tenant_id, start_d, end_d)
 
     infos = {}
-    for e in get_tenant_employees(tenant_id):
-        infos[e.get("EmployeeID", "")] = e
+    if roster_in:
+        for e in roster_in:
+            emp_id = (e.get("employeeId") or "").strip()
+            if emp_id:
+                infos[emp_id] = {
+                    "EmployeeID": emp_id,
+                    "FullName": e.get("fullName") or "",
+                    "DNI": e.get("dni") or "",
+                    "Area": e.get("area") or "",
+                    "Position": e.get("position") or "",
+                }
+    else:
+        # Direct invocations (no roster supplied) still work, provided the role
+        # can query the Employees GSI.
+        for e in get_tenant_employees(tenant_id):
+            infos[e.get("EmployeeID", "")] = e
 
     for emp_id in by_emp:
         if emp_id and emp_id not in infos:
@@ -912,7 +932,7 @@ def handle_employee_report(qs, company_name, company_ruc):
                       "toDate": end_d.isoformat()})
 
 
-def handle_tenant_report(qs, company_name, company_ruc):
+def handle_tenant_report(qs, company_name, company_ruc, roster_in=None):
     """Monthly register covering every employee of the tenant, in one PDF."""
     month = (qs.get("month") or "").strip()
     tenant_id = (qs.get("tenantId") or "").strip()
@@ -926,7 +946,7 @@ def handle_tenant_report(qs, company_name, company_ruc):
     y, m = month.split("-")
     period_label = "Mes: " + MONTH_ES[int(m)] + " " + y
 
-    roster = build_roster(tenant_id, start_d, end_d)
+    roster = build_roster(tenant_id, start_d, end_d, roster_in)
     if not roster:
         return resp(404, {"ok": False, "error": "No hay empleados ni registros en el período"})
 
@@ -954,7 +974,9 @@ def handler(event, context):
         scope = (qs.get("scope") or "employee").strip().lower()
 
         if scope == "tenant":
-            return handle_tenant_report(qs, company_name, company_ruc)
+            # Active staff resolved by the caller (see build_roster).
+            return handle_tenant_report(qs, company_name, company_ruc,
+                                        event.get("roster"))
         return handle_employee_report(qs, company_name, company_ruc)
 
     except Exception as e:

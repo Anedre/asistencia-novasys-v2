@@ -5,6 +5,8 @@
 
 import { LambdaClient, InvokeCommand } from "@aws-sdk/client-lambda";
 import { getTenantById } from "@/lib/db/tenants";
+import { getAllActiveEmployees } from "@/lib/db/employees";
+import { AppError } from "@/lib/utils/errors";
 
 const lambda = new LambdaClient({
   region: process.env.CUSTOM_AWS_REGION || process.env.AWS_REGION || "us-east-1",
@@ -78,32 +80,42 @@ interface PdfLambdaBody {
   toDate: string;
 }
 
-/** Invoke the PDF Lambda and unwrap its API-Gateway-shaped response. */
+/**
+ * Invoke the PDF Lambda and unwrap its API-Gateway-shaped response.
+ *
+ * Failures are raised as AppError, never a bare Error: `errorResponse` maps an
+ * unrecognised Error to a blank 500 "Error interno del servidor", which turned
+ * a plain "Falta employeeKey" from a stale Lambda into an unreadable 500 in the
+ * browser. Admins need to see what the Lambda actually said.
+ */
 async function invokePdfLambda(
-  queryStringParameters: Record<string, string>
+  queryStringParameters: Record<string, string>,
+  extraPayload: Record<string, unknown> = {}
 ): Promise<PdfLambdaBody> {
   const functionName = process.env.PDF_LAMBDA_FUNCTION_NAME;
   if (!functionName) {
-    throw new Error("PDF_LAMBDA_FUNCTION_NAME no configurado");
+    throw new AppError("PDF_LAMBDA_FUNCTION_NAME no configurado", 500, "PDF_LAMBDA_UNCONFIGURED");
   }
 
   const result = await lambda.send(
     new InvokeCommand({
       FunctionName: functionName,
-      Payload: new TextEncoder().encode(JSON.stringify({ queryStringParameters })),
+      Payload: new TextEncoder().encode(
+        JSON.stringify({ queryStringParameters, ...extraPayload })
+      ),
     })
   );
 
   if (result.FunctionError) {
     const errorPayload = new TextDecoder().decode(result.Payload);
-    throw new Error(`Lambda error: ${errorPayload}`);
+    throw new AppError(`El Lambda de PDF falló: ${errorPayload}`, 502, "PDF_LAMBDA_ERROR");
   }
 
   const responsePayload = JSON.parse(new TextDecoder().decode(result.Payload));
   const body = JSON.parse(responsePayload.body);
 
   if (!body.ok) {
-    throw new Error(body.error || "Error generando reporte");
+    throw new AppError(body.error || "Error generando reporte", 502, "PDF_LAMBDA_ERROR");
   }
   return body;
 }
@@ -144,15 +156,33 @@ export async function generateReport(
 export async function generateConsolidatedReport(
   params: ConsolidatedReportParams
 ): Promise<ConsolidatedReportResult> {
-  const { companyName, companyRuc } = await resolveCompany(params.tenantId);
+  const [{ companyName, companyRuc }, employees] = await Promise.all([
+    resolveCompany(params.tenantId),
+    // The active roster is resolved HERE, not in the Lambda. Listing staff by
+    // tenant needs a Query on the Employees GSI, and the Lambda's role is only
+    // granted GetItem on the table itself — same reason the company name and
+    // RUC are passed in. Sending the list keeps its IAM scope untouched.
+    getAllActiveEmployees(params.tenantId),
+  ]);
 
-  const body = await invokePdfLambda({
-    scope: "tenant",
-    month: params.month,
-    tenantId: params.tenantId,
-    ...(companyName && { companyName }),
-    ...(companyRuc && { companyRuc }),
-  });
+  const roster = employees.map((e) => ({
+    employeeId: e.EmployeeID,
+    fullName: e.FullName,
+    dni: e.DNI,
+    area: e.Area,
+    position: e.Position,
+  }));
+
+  const body = await invokePdfLambda(
+    {
+      scope: "tenant",
+      month: params.month,
+      tenantId: params.tenantId,
+      ...(companyName && { companyName }),
+      ...(companyRuc && { companyRuc }),
+    },
+    { roster }
+  );
 
   return {
     url: body.url,
