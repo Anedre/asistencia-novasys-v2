@@ -6,7 +6,7 @@
 import { LambdaClient, InvokeCommand } from "@aws-sdk/client-lambda";
 import { getTenantById } from "@/lib/db/tenants";
 import { getAllActiveEmployees } from "@/lib/db/employees";
-import { AppError } from "@/lib/utils/errors";
+import { AppError, ValidationError } from "@/lib/utils/errors";
 
 const lambda = new LambdaClient({
   region: process.env.CUSTOM_AWS_REGION || process.env.AWS_REGION || "us-east-1",
@@ -26,8 +26,14 @@ interface GenerateReportParams {
 }
 
 interface ConsolidatedReportParams {
-  month: string; // "2026-03"
+  month?: string; // "2026-03"
+  week?: string; // "2026-W12"
   tenantId: string;
+  /**
+   * Optional hand-picked subset. Absent means the whole company; when present,
+   * ONLY these people appear — nobody is added back for having attendance.
+   */
+  employeeIds?: string[];
 }
 
 interface ReportResult {
@@ -146,8 +152,9 @@ export async function generateReport(
 }
 
 /**
- * Monthly attendance register covering every employee of the tenant, in a
- * single printable PDF (`scope=tenant`).
+ * Attendance register for a week or a month covering the tenant's staff, in a
+ * single printable PDF (`scope=tenant`). Pass `employeeIds` to narrow it to a
+ * hand-picked subset.
  *
  * Built for SUNAFIL inspections, so the Lambda renders it without the "Estado"
  * and "Obs." columns of the per-employee report: no regularization badges and
@@ -165,23 +172,36 @@ export async function generateConsolidatedReport(
     getAllActiveEmployees(params.tenantId),
   ]);
 
-  const roster = employees.map((e) => ({
-    employeeId: e.EmployeeID,
-    fullName: e.FullName,
-    dni: e.DNI,
-    area: e.Area,
-    position: e.Position,
-  }));
+  const picked = params.employeeIds?.length ? new Set(params.employeeIds) : null;
+
+  const roster = employees
+    .filter((e) => !picked || picked.has(e.EmployeeID))
+    .map((e) => ({
+      employeeId: e.EmployeeID,
+      fullName: e.FullName,
+      dni: e.DNI,
+      area: e.Area,
+      position: e.Position,
+    }));
+
+  if (picked && roster.length === 0) {
+    throw new ValidationError(
+      "Ninguno de los empleados seleccionados pertenece a tu empresa"
+    );
+  }
 
   const body = await invokePdfLambda(
     {
       scope: "tenant",
-      month: params.month,
+      ...(params.month && { month: params.month }),
+      ...(params.week && { week: params.week }),
       tenantId: params.tenantId,
       ...(companyName && { companyName }),
       ...(companyRuc && { companyRuc }),
     },
-    { roster }
+    // rosterOnly stops the Lambda from re-adding anyone with attendance who is
+    // not on the list — otherwise an explicit exclusion would be undone.
+    { roster, rosterOnly: Boolean(picked) }
   );
 
   return {

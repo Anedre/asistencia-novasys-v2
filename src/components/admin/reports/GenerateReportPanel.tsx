@@ -159,21 +159,29 @@ export function GenerateReportPanel() {
   }
 
   /**
-   * Company-wide monthly register: ONE PDF with every employee, no per-employee
-   * loop. Always monthly — it is the document presented to SUNAFIL, and the
-   * inspection unit is the month.
+   * Consolidated register: ONE PDF covering several people, no per-employee
+   * loop. Follows the period selector above, and narrows to the checked
+   * employees when there are any — an inspection often asks for one area or a
+   * few names rather than the whole company.
    */
   async function handleGenerateAll() {
-    if (runningAll || running || !month) return;
+    if (runningAll || running || !periodValid) return;
 
     setRunningAll(true);
     setAllResult(null);
+
+    const scope =
+      period === "weekly" ? { week } : { month };
+    const picked = Array.from(selectedIds);
 
     try {
       const res = await fetch("/api/reports/generate-all", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ month }),
+        body: JSON.stringify({
+          ...scope,
+          ...(picked.length > 0 && { employeeIds: picked }),
+        }),
       });
       const payload = await res.json();
 
@@ -462,11 +470,14 @@ export function GenerateReportPanel() {
         {/* ── Company-wide register (SUNAFIL) ──────────────── */}
         <div style={{ marginTop: 18, paddingTop: 16, borderTop: "1px solid var(--border)" }}>
           <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 2 }}>
-            Registro mensual de toda la empresa
+            Registro consolidado
           </div>
           <p style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 10 }}>
-            Un solo PDF con todos los empleados, listo para imprimir. Sin columnas
-            de estado ni observaciones. No depende de la selección de arriba.
+            Un solo PDF con el detalle de varias personas, listo para imprimir. Sin
+            columnas de estado ni observaciones.{" "}
+            {selectedIds.size > 0
+              ? `Incluirá solo a los ${selectedIds.size} seleccionados arriba.`
+              : "Sin selección incluye a toda la empresa; marca empleados arriba para acotarlo."}
           </p>
 
           <button
@@ -474,7 +485,7 @@ export function GenerateReportPanel() {
             className="btn outline btn-md"
             style={{ width: "100%", justifyContent: "center" }}
             onClick={handleGenerateAll}
-            disabled={runningAll || running || !month}
+            disabled={runningAll || running || !periodValid}
           >
             {runningAll ? (
               <>
@@ -484,7 +495,8 @@ export function GenerateReportPanel() {
             ) : (
               <>
                 <IconSvg d={Icons.users} size={14} />
-                Generar registro · {month}
+                Generar registro · {period === "weekly" ? week : month}
+                {selectedIds.size > 0 && ` · ${selectedIds.size}`}
               </>
             )}
           </button>

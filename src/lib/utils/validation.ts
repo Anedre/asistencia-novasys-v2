@@ -97,12 +97,18 @@ export const generateReportSchema = z.object({
 );
 
 /**
- * Company-wide monthly register. No employeeId and no tenantId on purpose: it
- * covers every employee, and the tenant comes from the session.
+ * Company-wide register, weekly or monthly. No tenantId on purpose — it comes
+ * from the session, never the body. `employeeIds` narrows it to a hand-picked
+ * subset; omitting it means everyone.
  */
 export const generateAllReportSchema = z.object({
-  month: z.string().regex(/^\d{4}-\d{2}$/),
-});
+  week: z.string().regex(/^\d{4}-W\d{2}$/).optional(),
+  month: z.string().regex(/^\d{4}-\d{2}$/).optional(),
+  employeeIds: z.array(z.string().min(1)).max(500).optional(),
+}).refine(
+  (data) => (data.week && !data.month) || (!data.week && data.month),
+  { message: "Envía solo week o solo month, no ambos" }
+);
 
 // ── HR Events ──
 export const createHREventSchema = z.object({

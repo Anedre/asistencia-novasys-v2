@@ -7,8 +7,9 @@ import { withErrorHandler } from "@/lib/utils/errors";
 /**
  * POST /api/reports/generate-all
  *
- * Monthly attendance register for EVERY employee of the caller's tenant, in a
- * single printable PDF — the document handed to a SUNAFIL inspector.
+ * Attendance register for the caller's tenant — a week or a month, every
+ * employee or a hand-picked subset — in a single printable PDF, the document
+ * handed to a SUNAFIL inspector.
  *
  * Admin-only, and the tenant is always taken from the session, never from the
  * request body: this endpoint dumps the whole company's attendance, so letting
@@ -29,6 +30,8 @@ export const POST = withErrorHandler(async (req: Request) => {
 
   const result = await generateConsolidatedReport({
     month: parsed.month,
+    week: parsed.week,
+    employeeIds: parsed.employeeIds,
     tenantId: user.tenantId,
   });
 

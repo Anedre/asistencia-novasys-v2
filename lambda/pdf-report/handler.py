@@ -550,7 +550,7 @@ def get_tenant_daily(tenant_id, start_d, end_d):
     return grouped
 
 
-def build_roster(tenant_id, start_d, end_d, roster_in=None):
+def build_roster(tenant_id, start_d, end_d, roster_in=None, roster_only=False):
     """Everyone who must appear in the register, sorted by name.
 
     Active employees plus anyone with attendance in the period — somebody who
@@ -583,9 +583,14 @@ def build_roster(tenant_id, start_d, end_d, roster_in=None):
         for e in get_tenant_employees(tenant_id):
             infos[e.get("EmployeeID", "")] = e
 
-    for emp_id in by_emp:
-        if emp_id and emp_id not in infos:
-            infos[emp_id] = get_employee_info(emp_id) or {"EmployeeID": emp_id}
+    # Someone with attendance but outside the roster is normally pulled in, so a
+    # person who left mid-period still appears. When the caller hand-picked who
+    # to include, that would silently re-add the very people they excluded, so
+    # roster_only turns it off.
+    if not roster_only:
+        for emp_id in by_emp:
+            if emp_id and emp_id not in infos:
+                infos[emp_id] = get_employee_info(emp_id) or {"EmployeeID": emp_id}
 
     roster = []
     for emp_id, info in infos.items():
@@ -932,21 +937,32 @@ def handle_employee_report(qs, company_name, company_ruc):
                       "toDate": end_d.isoformat()})
 
 
-def handle_tenant_report(qs, company_name, company_ruc, roster_in=None):
-    """Monthly register covering every employee of the tenant, in one PDF."""
+def handle_tenant_report(qs, company_name, company_ruc, roster_in=None, roster_only=False):
+    """Register covering the tenant's staff for a week or a month, in one PDF."""
     month = (qs.get("month") or "").strip()
+    week = (qs.get("week") or "").strip()
     tenant_id = (qs.get("tenantId") or "").strip()
 
     if not tenant_id:
         return resp(400, {"ok": False, "error": "Falta tenantId"})
-    if not month:
-        return resp(400, {"ok": False, "error": "Falta month (YYYY-MM)"})
+    if not week and not month:
+        return resp(400, {"ok": False, "error": "Falta week o month"})
+    if week and month:
+        return resp(400, {"ok": False, "error": "Envía solo week o month"})
 
-    start_d, end_d = parse_month(month)
-    y, m = month.split("-")
-    period_label = "Mes: " + MONTH_ES[int(m)] + " " + y
+    if week:
+        start_d, end_d = parse_iso_week(week)
+        period_label = "Semana " + week
+        rtype = "weekly-all"
+        key_part = week
+    else:
+        start_d, end_d = parse_month(month)
+        y, m = month.split("-")
+        period_label = "Mes: " + MONTH_ES[int(m)] + " " + y
+        rtype = "monthly-all"
+        key_part = month
 
-    roster = build_roster(tenant_id, start_d, end_d, roster_in)
+    roster = build_roster(tenant_id, start_d, end_d, roster_in, roster_only)
     if not roster:
         return resp(404, {"ok": False, "error": "No hay empleados ni registros en el período"})
 
@@ -954,12 +970,12 @@ def handle_tenant_report(qs, company_name, company_ruc, roster_in=None):
                                        start_d, end_d, roster)
 
     safe_tenant = tenant_id.replace("TENANT#", "").replace("#", "_").replace("/", "_")
-    key = "reports/monthly-all/" + month + "/" + safe_tenant + ".pdf"
+    key = "reports/" + rtype + "/" + key_part + "/" + safe_tenant + ".pdf"
 
     s3.put_object(Bucket=REPORT_BUCKET, Key=key, Body=pdf_bytes, ContentType="application/pdf")
     url = s3.generate_presigned_url("get_object", Params={"Bucket": REPORT_BUCKET, "Key": key}, ExpiresIn=900)
 
-    return resp(200, {"ok": True, "url": url, "s3Key": key, "reportType": "monthly-all",
+    return resp(200, {"ok": True, "url": url, "s3Key": key, "reportType": rtype,
                       "employeeCount": len(roster), "fromDate": start_d.isoformat(),
                       "toDate": end_d.isoformat()})
 
@@ -975,8 +991,11 @@ def handler(event, context):
 
         if scope == "tenant":
             # Active staff resolved by the caller (see build_roster).
+            # rosterOnly means the caller hand-picked the list and nobody else
+            # should be added to it.
             return handle_tenant_report(qs, company_name, company_ruc,
-                                        event.get("roster"))
+                                        event.get("roster"),
+                                        bool(event.get("rosterOnly")))
         return handle_employee_report(qs, company_name, company_ruc)
 
     except Exception as e:
