@@ -129,7 +129,7 @@ interface HeroProps {
   shiftEnd: string;
   breakMin: number;
   todayHistory: { time: string; label: string; loc: string; kind: string }[];
-  onAction: (type: EventType, customTime?: string) => Promise<void>;
+  onAction: (type: EventType, customTime?: string, autoClose?: boolean) => Promise<void>;
   pendingAction: EventType | null;
   allowCustomStart: boolean;
   /** True while the tenant config (which carries allowCustomStartTime) is still
@@ -281,6 +281,9 @@ function CheckInHero({
   // the next action is the day's first check-in).
   const [startPickerOpen, setStartPickerOpen] = useState(false);
   const [customStart, setCustomStart] = useState(shiftStart);
+  // Opt-in to auto-close, chosen at check-in and stored on the day's own row.
+  // Off by default: nothing should ever clock you out unless you asked it to.
+  const [autoClose, setAutoClose] = useState(false);
   const canCustomStart = allowCustomStart && meta.primaryAction === "START";
   const openStartPicker = () => { setCustomStart(shiftStart); setStartPickerOpen(true); };
 
@@ -493,7 +496,7 @@ function CheckInHero({
             onClick={() => {
               if (!meta.primaryAction) return;
               if (canCustomStart) openStartPicker();
-              else onAction(meta.primaryAction);
+              else onAction(meta.primaryAction, undefined, autoClose);
             }}
           >
             {pendingAction === meta.primaryAction ? (
@@ -531,6 +534,28 @@ function CheckInHero({
           </div>
         </div>
 
+        {/* Optional auto-close, offered only at check-in: after that the choice
+            is already recorded on the day and changing it here would lie. */}
+        {meta.primaryAction === "START" && (
+          <label
+            className={`autoclose-opt ${autoClose ? "on" : ""}`}
+            title="Al cumplir tus horas registramos tu salida por ti. Si sigues trabajando, puedes regularizarlo."
+          >
+            <input
+              type="checkbox"
+              checked={autoClose}
+              onChange={(e) => setAutoClose(e.target.checked)}
+              disabled={pendingAction !== null}
+            />
+            <span>
+              Cerrar mi jornada automáticamente al cumplir mis horas
+              {autoClose && shiftEnd ? (
+                <em> · alrededor de las {shiftEnd}</em>
+              ) : null}
+            </span>
+          </label>
+        )}
+
         {/* Custom start-time picker (admin-enabled): pick the hour you started */}
         {startPickerOpen && canCustomStart && (
           <div className="start-picker">
@@ -545,7 +570,7 @@ function CheckInHero({
               <button
                 className="btn-action accent"
                 disabled={pendingAction !== null || !customStart}
-                onClick={() => { setStartPickerOpen(false); onAction("START", customStart); }}
+                onClick={() => { setStartPickerOpen(false); onAction("START", customStart, autoClose); }}
               >
                 Marcar a las {customStart}
               </button>
@@ -555,7 +580,7 @@ function CheckInHero({
                 type="button"
                 className="start-picker-link"
                 disabled={pendingAction !== null}
-                onClick={() => { setStartPickerOpen(false); onAction("START"); }}
+                onClick={() => { setStartPickerOpen(false); onAction("START", undefined, autoClose); }}
               >
                 o marcar con la hora actual
               </button>
@@ -1186,10 +1211,14 @@ export default function EmployeeDashboardPage() {
     return hist;
   }, [today, siteName]);
 
-  async function handleAction(eventType: EventType, customTime?: string) {
+  async function handleAction(
+    eventType: EventType,
+    customTime?: string,
+    autoClose?: boolean
+  ) {
     setPendingAction(eventType);
     try {
-      const result = await recordEvent.mutateAsync({ eventType, customTime });
+      const result = await recordEvent.mutateAsync({ eventType, customTime, autoClose });
       toast.success(result.message ?? "¡Registro exitoso!");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "No se pudo registrar");

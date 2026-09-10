@@ -34,6 +34,8 @@ interface RecordEventParams {
   note?: string;
   clientTime?: string;
   customTime?: string; // HH:MM — override start time (Lima timezone)
+  /** START only: close this shift on its own once the hours are met. */
+  autoClose?: boolean;
   deviceId?: string;
   ip: string;
   userAgent: string;
@@ -41,7 +43,7 @@ interface RecordEventParams {
 }
 
 export async function recordEvent(params: RecordEventParams) {
-  const { employeeId, eventType, note, clientTime, customTime, deviceId, ip, userAgent, tenantId } =
+  const { employeeId, eventType, note, clientTime, customTime, autoClose, deviceId, ip, userAgent, tenantId } =
     params;
 
   if (!ALLOWED_EVENT_TYPES.has(eventType)) {
@@ -86,7 +88,7 @@ export async function recordEvent(params: RecordEventParams) {
   try {
     switch (eventType) {
       case "START":
-        await applyStart(employeeId, workDate, serverTsUtc, serverTsLocal, tenantId);
+        await applyStart(employeeId, workDate, serverTsUtc, serverTsLocal, tenantId, autoClose);
         break;
       case "BREAK_START":
         await applyBreakStart(employeeId, workDate, serverTsUtc, serverTsLocal, tenantId);

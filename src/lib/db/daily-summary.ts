@@ -90,13 +90,19 @@ export async function getDailySummariesByDate(
 /**
  * Apply START event to daily summary.
  * Uses ConditionExpression to prevent double-start.
+ *
+ * `autoClose` records the employee's choice, made at check-in, to have the day
+ * closed on its own once they reach their hours. It is stored per shift rather
+ * than read from a tenant setting so the condition the closer job looks for is
+ * explicit and auditable: the employee asked for it, on this day.
  */
 export async function applyStart(
   employeeId: string,
   workDate: string,
   tsUtc: string,
   tsLocal: string,
-  tenantId?: string
+  tenantId?: string,
+  autoClose?: boolean
 ): Promise<void> {
   const updateParts = [
     "firstInUtc = :utc",
@@ -118,6 +124,10 @@ export async function applyStart(
   if (tenantId) {
     updateParts.push("TenantID = :tid");
     values[":tid"] = tenantId;
+  }
+  if (autoClose) {
+    updateParts.push("autoCloseRequested = :acr");
+    values[":acr"] = true;
   }
 
   await docClient.send(

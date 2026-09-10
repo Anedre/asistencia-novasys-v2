@@ -51,6 +51,8 @@ export function useRecordEvent() {
       eventType: EventType;
       note?: string;
       customTime?: string; // HH:MM format — overrides start time
+      /** START only: close this shift on its own once the hours are met. */
+      autoClose?: boolean;
     }) => {
       const res = await fetch("/api/attendance/record", {
         method: "POST",

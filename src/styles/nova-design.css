@@ -7477,3 +7477,20 @@ path.chart-area-breath,
 
 /* Optional note: keep lines at a readable width instead of full-bleed. */
 .nva-app .rg-textarea { max-width: 520px; }
+
+/* Optional auto-close opt-in, shown under the CTA before checking in. */
+.autoclose-opt{
+  display:flex; align-items:flex-start; gap:8px;
+  margin-top:12px; padding:9px 11px;
+  border:1px solid var(--border); border-radius:var(--r);
+  background:var(--bg-subtle); cursor:pointer;
+  font-size:12px; color:var(--text-secondary);
+  transition:border-color .15s, background .15s;
+}
+.autoclose-opt:hover{ border-color:color-mix(in srgb, var(--accent) 40%, var(--border)); }
+.autoclose-opt.on{
+  border-color:color-mix(in srgb, var(--accent) 55%, transparent);
+  background:var(--accent-soft); color:var(--text-primary);
+}
+.autoclose-opt input{ accent-color:var(--accent); margin-top:1px; flex-shrink:0; }
+.autoclose-opt em{ font-style:normal; color:var(--text-muted); }

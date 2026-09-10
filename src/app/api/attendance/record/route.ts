@@ -24,6 +24,7 @@ export const POST = withErrorHandler(async (req: Request) => {
     note: parsed.note,
     clientTime: parsed.clientTime,
     customTime: parsed.customTime,
+    autoClose: parsed.autoClose,
     deviceId: parsed.deviceId,
     ip,
     userAgent: ua,

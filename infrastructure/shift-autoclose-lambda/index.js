@@ -3,21 +3,31 @@
  * ------------------------------
  * Runs every ~10 minutes (EventBridge rate(10 minutes)).
  *
- * For each ACTIVE tenant whose settings.workSchedule.autoCloseAtGoal === true:
- *   1. Find today's (Lima TZ) DailySummary rows with status === "OPEN" and no
- *      autoClosedAt.
- *   2. For each open shift, compute the close time at which the employee will
- *      have completed their laborable hours:
- *          closeMin = firstIn + plannedMinutes + breakTaken
- *      (worked excludes break, so we add back the break actually taken).
- *   3. If "now" (Lima) has reached that minute, mark END:
- *      set lastOut to the exact goal time, worked = plannedMinutes, status OK,
- *      autoClosedAt + autoCloseSource = "GOAL_REACHED", anomaly tag, source
- *      AUTO_CLOSE. Skip employees currently on break (hasOpenBreak).
+ * Closes a shift once the employee has completed their laborable hours — but
+ * ONLY when they asked for it. The trigger is `autoCloseRequested === true` on
+ * the day's own row, set from the optional toggle offered at check-in.
+ *
+ * That per-shift flag replaced the old tenant-wide
+ * `settings.workSchedule.autoCloseAtGoal` gate. The gate was invisible to the
+ * person it affected, and an admin could leave it on for a year without a
+ * single shift ever closing and nothing anywhere saying why. A flag written on
+ * the row at check-in is explicit: the employee chose it, on this day, and the
+ * condition this job looks for is the same thing the UI showed them.
+ *
+ *   1. Find today's (Lima TZ) rows with status "OPEN", autoCloseRequested true
+ *      and no autoClosedAt.
+ *   2. closeMin = firstIn + plannedMinutes + breakTaken
+ *      (worked excludes break, so the break actually taken is added back).
+ *   3. Once Lima "now" reaches it, mark END at exactly that minute: worked =
+ *      plannedMinutes, status OK, autoClosedAt + autoCloseSource
+ *      "GOAL_REACHED", anomaly tag, source AUTO_CLOSE. Guarded by a
+ *      ConditionExpression so a manual END landing first always wins.
  *   4. Notify the employee and the tenant admins.
  *
+ * Employees who are on break right now are left alone until they come back.
+ *
  * Idempotent: rows already carrying autoClosedAt are filtered out.
- * Distinct from `novasys-shift-closer` (nightly, closes at end of shift).
+ * Distinct from `novasys-shift-closer` (nightly, closes whatever is left open).
  */
 
 const { DynamoDBClient } = require("@aws-sdk/client-dynamodb");
@@ -114,12 +124,14 @@ async function listOpenDaysForTenant(tenantId, workDate) {
         TableName: TABLES.DAILY_SUMMARY,
         IndexName: INDEXES.DAILY_BY_TENANT,
         KeyConditionExpression: "TenantID = :tid AND WorkDate = :wd",
-        FilterExpression: "#s = :open AND attribute_not_exists(autoClosedAt)",
+        FilterExpression:
+          "#s = :open AND autoCloseRequested = :yes AND attribute_not_exists(autoClosedAt)",
         ExpressionAttributeNames: { "#s": "status" },
         ExpressionAttributeValues: {
           ":tid": tenantId,
           ":wd": `DATE#${workDate}`,
           ":open": "OPEN",
+          ":yes": true,
         },
         ExclusiveStartKey: lastKey,
       })
@@ -191,8 +203,15 @@ function goalMinutes(row, employee, tenantSettings) {
  * Returns notifications to enqueue, or [] if not yet due / skipped.
  */
 async function autoCloseAtGoalOne({ row, employee, admins, tenantSettings, workDate, nowIso, nowMin }) {
-  // Don't close someone who is currently on break.
-  if (row.hasOpenBreak || row.breakStartUtc) return [];
+  // Don't close someone who is on break RIGHT NOW.
+  //
+  // `breakStartUtc` is never cleared when the break ends — `lastBreakEndUtc` is
+  // written alongside it — so testing `breakStartUtc` alone skipped, forever,
+  // everyone who had ever taken a lunch break. Compare the two instead.
+  const brkStart = row.breakStartUtc || null;
+  const brkEnd = row.lastBreakEndUtc || null;
+  const onBreakNow = Boolean(brkStart) && (!brkEnd || brkEnd < brkStart);
+  if (onBreakNow) return [];
 
   const firstInMin = parseClockToMin(row.firstInLocal);
   if (firstInMin == null || !row.firstInUtc) return []; // no check-in to measure from
@@ -250,7 +269,7 @@ async function autoCloseAtGoalOne({ row, employee, admins, tenantSettings, workD
       notificationId: `NOTIF#AUTOCLOSEGOAL#${workDate}#${employee.EmployeeID}`,
       type: "SHIFT_AUTO_CLOSED",
       title: "Cerramos tu jornada al cumplir tus horas",
-      message: `Completaste tus horas laborables el ${workDate}; marcamos tu salida a las ${closeHHMM}. Si seguiste trabajando, regularízalo desde tu dashboard.`,
+      message: `Completaste tus horas laborables el ${workDate}; como pediste el cierre automático al marcar entrada, registramos tu salida a las ${closeHHMM}. Si seguiste trabajando, regularízalo desde tu dashboard.`,
       referenceId: workDate,
       readAt: null,
       ttl: ttl30d,
@@ -281,12 +300,11 @@ exports.handler = async () => {
   let totalClosed = 0;
   let totalNotifs = 0;
 
-  const tenants = await listActiveTenants();
-  const enabled = tenants.filter(
-    (t) => t.settings?.workSchedule?.autoCloseAtGoal === true
-  );
+  // Every active tenant is swept: whether a given day closes is decided per
+  // row by the employee's own opt-in, not by a company-wide switch.
+  const enabled = await listActiveTenants();
   console.log(
-    `[shift-autoclose] ${enabled.length}/${tenants.length} tenants enabled · workDate=${workDate} nowMin=${nowMin}`
+    `[shift-autoclose] ${enabled.length} tenants · workDate=${workDate} nowMin=${nowMin}`
   );
 
   for (const tenant of enabled) {
