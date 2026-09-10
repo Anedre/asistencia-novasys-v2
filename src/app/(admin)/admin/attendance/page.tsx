@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useAdminAttendance } from "@/hooks/use-employee";
 import { IconSvg, Icons } from "@/components/nova/icons";
@@ -8,6 +9,7 @@ import { NovaAvatar } from "@/components/nova/avatar";
 import { PageHeader } from "@/components/nova/page-header";
 import { NovaDatePicker } from "@/components/nova/date-picker";
 import { RegularizeSheet } from "@/components/attendance/regularize-sheet";
+import { CloseOpenShiftsSheet } from "@/components/admin/CloseOpenShiftsSheet";
 
 /* ============================================================
    Types
@@ -192,6 +194,20 @@ export default function AdminAttendancePage() {
   const [areaFilter, setAreaFilter] = useState<string>("ALL");
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
   const [editRow, setEditRow] = useState<AttendanceSummary | null>(null);
+  const [showOpenShifts, setShowOpenShifts] = useState(false);
+
+  // Backlog counter for the header button. Nothing in the app closes a shift
+  // after the fact, so this number only ever grows until somebody acts on it.
+  const { data: openShifts } = useQuery<{ count: number }>({
+    queryKey: ["admin", "open-shifts", "count"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/attendance/open-shifts");
+      if (!res.ok) throw new Error("No se pudo contar las jornadas abiertas");
+      return res.json();
+    },
+    staleTime: 60_000,
+  });
+  const openCount = openShifts?.count ?? 0;
 
   const { data, isLoading } = useAdminAttendance(selectedDate);
   const resp = data as AttendanceResponse | undefined;
@@ -243,6 +259,28 @@ export default function AdminAttendancePage() {
         subtitle="Revisa, edita y regulariza las marcaciones del equipo."
         actions={
           <>
+            <button
+              type="button"
+              className={`btn ${openCount > 0 ? "danger" : "outline"} btn-md`}
+              onClick={() => setShowOpenShifts(true)}
+              title="Jornadas en las que alguien marcó entrada y nunca salida"
+            >
+              <IconSvg d={Icons.clock} size={14} />
+              Jornadas sin cerrar
+              {openCount > 0 && (
+                <span
+                  style={{
+                    background: "rgba(255,255,255,.25)",
+                    borderRadius: 999,
+                    padding: "0 6px",
+                    fontSize: 11,
+                    fontWeight: 700,
+                  }}
+                >
+                  {openCount}
+                </span>
+              )}
+            </button>
             <button type="button" className="btn outline btn-md">
               <IconSvg d={Icons.download} size={14} /> Exportar
             </button>
@@ -473,6 +511,11 @@ export default function AdminAttendancePage() {
       {/* Regularize sheet — before/after preview + audit notice */}
       {editRow && (
         <RegularizeSheet row={editRow} onClose={() => setEditRow(null)} />
+      )}
+
+      {/* Open-shift backlog — review list + bulk close, audited as one group */}
+      {showOpenShifts && (
+        <CloseOpenShiftsSheet onClose={() => setShowOpenShifts(false)} />
       )}
     </>
   );

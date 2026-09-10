@@ -35,6 +35,8 @@ export const recordEventSchema = z.object({
   note: z.string().max(500).optional(),
   clientTime: z.string().optional(),
   customTime: z.string().regex(/^\d{2}:\d{2}$/).optional(),
+  /** START only: opt in to having this shift closed automatically. */
+  autoClose: z.boolean().optional(),
   deviceId: z.string().optional(),
 });
 
@@ -161,6 +163,29 @@ export const generateAllReportSchema = z
     detail: z.boolean().optional(),
   })
   .refine(periodIsValid, { message: PERIOD_MESSAGE });
+
+// ── Cierre de jornadas abiertas ──
+
+/**
+ * Bulk close of shifts left open. The admin picks exactly which days to close,
+ * so the payload is a list of keys rather than a date range: closing "todo lo
+ * abierto" retroactively would rewrite payroll periods that may already be
+ * settled.
+ */
+export const closeOpenShiftsSchema = z.object({
+  shifts: z
+    .array(
+      z.object({
+        employeeId: z.string().min(1),
+        workDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      })
+    )
+    .min(1)
+    .max(500),
+  /** SOFT fills the missing clock-out; STRICT demotes the day to MISSING. */
+  policy: z.enum(["SOFT", "STRICT"]).optional(),
+  reason: z.string().max(500).optional(),
+});
 
 // ── HR Events ──
 export const createHREventSchema = z.object({
