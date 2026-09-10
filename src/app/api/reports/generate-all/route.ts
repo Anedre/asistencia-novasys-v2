@@ -7,9 +7,10 @@ import { withErrorHandler } from "@/lib/utils/errors";
 /**
  * POST /api/reports/generate-all
  *
- * Attendance register for the caller's tenant — a week or a month, every
- * employee or a hand-picked subset — in a single printable PDF, the document
- * handed to a SUNAFIL inspector.
+ * Attendance register for the caller's tenant — any period (week, months,
+ * years or a date range), every employee or a subset picked by name or by
+ * area — in a single printable PDF, the document handed to a SUNAFIL
+ * inspector.
  *
  * Admin-only, and the tenant is always taken from the session, never from the
  * request body: this endpoint dumps the whole company's attendance, so letting
@@ -29,9 +30,17 @@ export const POST = withErrorHandler(async (req: Request) => {
   const parsed = generateAllReportSchema.parse(body);
 
   const result = await generateConsolidatedReport({
-    month: parsed.month,
     week: parsed.week,
+    month: parsed.month,
+    months: parsed.months,
+    years: parsed.years,
+    from: parsed.from,
+    to: parsed.to,
     employeeIds: parsed.employeeIds,
+    areas: parsed.areas,
+    cols: parsed.cols,
+    groupByArea: parsed.groupByArea,
+    detail: parsed.detail,
     tenantId: user.tenantId,
   });
 

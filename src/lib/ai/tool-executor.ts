@@ -360,10 +360,11 @@ async function handleListTeamStats(
   const from =
     (input.from as string) || workDateLima(new Date(defaultFromMs));
 
-  const stats = await getReportsStats(tenantId, from, to);
+  const stats = await getReportsStats(tenantId, { from, to });
+  const round1 = (n: number) => Math.round(n * 10) / 10;
   const top5 = stats.employeeRanking.slice(0, 5).map((e) => ({
     name: e.employeeName,
-    hours: e.workedHours,
+    hours: round1(e.workedHours),
     absences: e.absences,
   }));
   const distribution = Object.entries(stats.statusDistribution)
@@ -381,13 +382,15 @@ async function handleListTeamStats(
       type: "team_stats",
       from,
       to,
+      // The chat block's field names predate the shared metric catalogue;
+      // map rather than rename, so old messages still render.
       totals: {
-        totalEmployees: stats.totals.totalEmployees,
-        totalWorkedHours: stats.totals.totalWorkedHours,
-        totalPlannedHours: stats.totals.totalPlannedHours,
-        totalAbsences: stats.totals.totalAbsences,
-        totalRegularizations: stats.totals.totalRegularizations,
-        totalDays: stats.totals.totalDays,
+        totalEmployees: stats.totals.employees,
+        totalWorkedHours: round1(stats.totals.workedHours),
+        totalPlannedHours: round1(stats.totals.plannedHours),
+        totalAbsences: stats.totals.absences,
+        totalRegularizations: stats.totals.regularizations,
+        totalDays: stats.totals.daysRecorded,
       },
       topEmployees: top5,
       statusDistribution: distribution,

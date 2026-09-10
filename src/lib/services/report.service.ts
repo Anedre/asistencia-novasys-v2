@@ -6,6 +6,7 @@
 import { LambdaClient, InvokeCommand } from "@aws-sdk/client-lambda";
 import { getTenantById } from "@/lib/db/tenants";
 import { getAllActiveEmployees } from "@/lib/db/employees";
+import { areaKey } from "@/lib/utils/area";
 import { AppError, ValidationError } from "@/lib/utils/errors";
 
 const lambda = new LambdaClient({
@@ -18,22 +19,52 @@ const lambda = new LambdaClient({
   }),
 });
 
-interface GenerateReportParams {
-  employeeId: string;
+/**
+ * The stretch of time a report covers. Exactly one of these families is set;
+ * they are forwarded to the Lambda verbatim, which owns the interpretation
+ * (see `resolve_period` in lambda/pdf-report/handler.py).
+ */
+export interface ReportPeriod {
   week?: string; // "2026-W12"
   month?: string; // "2026-03"
+  /** Explicit, possibly non-contiguous months — enero, febrero y mayo. */
+  months?: string[];
+  years?: string[]; // ["2025", "2026"]
+  from?: string; // "2026-03-01"
+  to?: string; // "2026-05-31"
+}
+
+interface GenerateReportParams extends ReportPeriod {
+  employeeId: string;
   tenantId?: string;
 }
 
-interface ConsolidatedReportParams {
-  month?: string; // "2026-03"
-  week?: string; // "2026-W12"
+interface ConsolidatedReportParams extends ReportPeriod {
   tenantId: string;
   /**
    * Optional hand-picked subset. Absent means the whole company; when present,
    * ONLY these people appear — nobody is added back for having attendance.
    */
   employeeIds?: string[];
+  /** Whole departments. Combines with employeeIds as an intersection. */
+  areas?: string[];
+  /** Summary column keys, from the shared report-fields catalogue. */
+  cols?: string[];
+  groupByArea?: boolean;
+  /** Day-by-day blocks. Undefined lets the Lambda decide by period length. */
+  detail?: boolean;
+}
+
+/** Period fields as the Lambda's query string expects them. */
+function periodQuery(p: ReportPeriod): Record<string, string> {
+  const q: Record<string, string> = {};
+  if (p.week) q.week = p.week;
+  if (p.month) q.month = p.month;
+  if (p.months?.length) q.months = p.months.join(",");
+  if (p.years?.length) q.years = p.years.join(",");
+  if (p.from) q.from = p.from;
+  if (p.to) q.to = p.to;
+  return q;
 }
 
 interface ReportResult {
@@ -134,8 +165,7 @@ export async function generateReport(
 
   const body = await invokePdfLambda({
     employeeKey,
-    ...(params.week && { week: params.week }),
-    ...(params.month && { month: params.month }),
+    ...periodQuery(params),
     ...(params.tenantId && { tenantId: params.tenantId }),
     ...(companyName && { companyName }),
     ...(companyRuc && { companyRuc }),
@@ -152,9 +182,9 @@ export async function generateReport(
 }
 
 /**
- * Attendance register for a week or a month covering the tenant's staff, in a
- * single printable PDF (`scope=tenant`). Pass `employeeIds` to narrow it to a
- * hand-picked subset.
+ * Attendance register covering the tenant's staff over any period, in a single
+ * printable PDF (`scope=tenant`). Narrow it with `employeeIds` (hand-picked
+ * people), `areas` (whole departments), or both.
  *
  * Built for SUNAFIL inspections, so the Lambda renders it without the "Estado"
  * and "Obs." columns of the per-employee report: no regularization badges and
@@ -173,34 +203,49 @@ export async function generateConsolidatedReport(
   ]);
 
   const picked = params.employeeIds?.length ? new Set(params.employeeIds) : null;
+  // Accent-insensitive, so a report filtered on "Consultoría" also catches the
+  // records typed as "Consultoria".
+  const wantedAreas = params.areas?.length
+    ? new Set(params.areas.map(areaKey).filter(Boolean))
+    : null;
 
   const roster = employees
     .filter((e) => !picked || picked.has(e.EmployeeID))
+    .filter((e) => !wantedAreas || wantedAreas.has(areaKey(e.Area)))
     .map((e) => ({
       employeeId: e.EmployeeID,
       fullName: e.FullName,
       dni: e.DNI,
       area: e.Area,
       position: e.Position,
+      email: e.Email,
     }));
 
-  if (picked && roster.length === 0) {
+  if ((picked || wantedAreas) && roster.length === 0) {
     throw new ValidationError(
-      "Ninguno de los empleados seleccionados pertenece a tu empresa"
+      picked
+        ? "Ninguno de los empleados seleccionados pertenece a tu empresa"
+        : "Ningún empleado pertenece a las áreas seleccionadas"
     );
   }
 
   const body = await invokePdfLambda(
     {
       scope: "tenant",
-      ...(params.month && { month: params.month }),
-      ...(params.week && { week: params.week }),
+      ...periodQuery(params),
       tenantId: params.tenantId,
+      ...(params.areas?.length && { areas: params.areas.join(",") }),
+      ...(params.cols?.length && { cols: params.cols.join(",") }),
+      ...(params.groupByArea && { groupByArea: "1" }),
+      ...(params.detail !== undefined && { detail: params.detail ? "1" : "0" }),
       ...(companyName && { companyName }),
       ...(companyRuc && { companyRuc }),
     },
     // rosterOnly stops the Lambda from re-adding anyone with attendance who is
-    // not on the list — otherwise an explicit exclusion would be undone.
+    // not on the list — otherwise an explicit exclusion would be undone. An
+    // area filter does NOT set it: someone who left mid-period still belongs in
+    // their area's register, and the Lambda applies the same area filter to
+    // whoever it pulls in.
     { roster, rosterOnly: Boolean(picked) }
   );
 

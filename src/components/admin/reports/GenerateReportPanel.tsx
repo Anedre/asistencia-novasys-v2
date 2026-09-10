@@ -3,13 +3,15 @@
 /**
  * Generate-report panel (Nova design system).
  *
- * Replaces the old shadcn `GeneratePdfTab`, which was orphaned by the Nova
- * redesign (e204d1b) — the reports page stopped importing it, so admins lost
- * every way to produce a PDF for someone other than themselves.
+ * Produces the PDFs: one per employee, or a single consolidated register. The
+ * period is no longer limited to one week or one month — an admin can pick
+ * several months (even non-contiguous, and across years), whole years, or a
+ * free date range, and the register can be narrowed by area, grouped by area
+ * and given a chosen set of summary columns.
  *
- * Same proven backend contract as before: one POST /api/reports/generate per
- * selected employee, weekly ("YYYY-Www") or monthly ("YYYY-MM"), which invokes
- * the Python PDF Lambda and returns a presigned S3 URL.
+ * Backend contract: POST /api/reports/generate per selected employee, and
+ * POST /api/reports/generate-all for the register. Both invoke the Python PDF
+ * Lambda, which owns the period interpretation (`resolve_period`).
  */
 
 import { useMemo, useState } from "react";
@@ -18,9 +20,30 @@ import { IconSvg, Icons } from "@/components/nova/icons";
 import { NovaAvatar } from "@/components/nova/avatar";
 import { Spinner } from "@/components/nova/spinner";
 import { NovaWeekPicker, currentISOWeek } from "@/components/nova/week-picker";
-import { NovaMonthPicker, currentMonth } from "@/components/nova/month-picker";
+import { NovaDateRangePicker } from "@/components/nova/date-range-picker";
+import { areaKey, buildAreaCanon } from "@/lib/utils/area";
+import {
+  DEFAULT_FIELDS,
+  REPORT_FIELDS,
+  REPORT_GROUP_LABELS,
+  type ReportFieldGroup,
+  type ReportFieldKey,
+} from "@/lib/constants/report-fields";
+import { FilterPopover, PopoverCheck, PopoverGroup } from "./FilterPopover";
+import { monthLong, monthShort, monthsBack } from "./report-filters";
 
-type Period = "weekly" | "monthly";
+type Period = "weekly" | "monthly" | "yearly" | "range";
+type DetailMode = "auto" | "on" | "off";
+
+const MONTHS_SHORT = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
+const GROUP_ORDER: ReportFieldGroup[] = ["identidad", "dias", "horas", "cumplimiento"];
+const pad = (n: number) => String(n).padStart(2, "0");
+
+/** Current month as "YYYY-MM" — client-only, same contract as NovaMonthPicker. */
+function thisMonth(): string {
+  const n = new Date();
+  return `${n.getFullYear()}-${pad(n.getMonth() + 1)}`;
+}
 
 interface GenerateResult {
   employeeId: string;
@@ -43,25 +66,36 @@ export function GenerateReportPanel() {
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
-  const [areaFilter, setAreaFilter] = useState<string>("all");
+  const [areaFilter, setAreaFilter] = useState<string[]>([]);
+
   const [period, setPeriod] = useState<Period>("monthly");
   const [week, setWeek] = useState(currentISOWeek());
-  const [month, setMonth] = useState(currentMonth());
+  const [months, setMonths] = useState<string[]>(() => [thisMonth()]);
+  const [years, setYears] = useState<string[]>(() => [String(new Date().getFullYear())]);
+  const [range, setRange] = useState(() => monthsBack(1));
+
+  const [cols, setCols] = useState<ReportFieldKey[]>(DEFAULT_FIELDS.payroll);
+  const [groupByArea, setGroupByArea] = useState(false);
+  const [detail, setDetail] = useState<DetailMode>("auto");
+
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [results, setResults] = useState<GenerateResult[]>([]);
   const [runningAll, setRunningAll] = useState(false);
   const [allResult, setAllResult] = useState<ConsolidatedResult | null>(null);
 
-  const areas = useMemo(
-    () => Array.from(new Set(employees.map((e) => e.area).filter(Boolean))).sort(),
-    [employees]
-  );
+  /** Canonical area labels, so accent variants collapse into one chip. */
+  const areas = useMemo(() => {
+    const canon = buildAreaCanon(employees.map((e) => e.area));
+    return Array.from(canon.values()).sort((a, b) => a.localeCompare(b, "es"));
+  }, [employees]);
+
+  const areaKeys = useMemo(() => new Set(areaFilter.map(areaKey)), [areaFilter]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return employees.filter((e) => {
-      if (areaFilter !== "all" && e.area !== areaFilter) return false;
+      if (areaKeys.size > 0 && !areaKeys.has(areaKey(e.area))) return false;
       if (!q) return true;
       return (
         e.fullName.toLowerCase().includes(q) ||
@@ -69,7 +103,7 @@ export function GenerateReportPanel() {
         (e.area ?? "").toLowerCase().includes(q)
       );
     });
-  }, [employees, search, areaFilter]);
+  }, [employees, search, areaKeys]);
 
   const allFilteredSelected =
     filtered.length > 0 && filtered.every((e) => selectedIds.has(e.employeeId));
@@ -88,15 +122,75 @@ export function GenerateReportPanel() {
     setSelectedIds(next);
   }
 
-  /** Whole company — ignores the active search/area filter on purpose. */
+  function toggleArea(label: string) {
+    const key = areaKey(label);
+    const next = areaFilter.filter((a) => areaKey(a) !== key);
+    if (next.length === areaFilter.length) next.push(label);
+    setAreaFilter(next);
+  }
+
+  /** Whole company — clears every narrowing filter on purpose. */
   function selectEveryone() {
     setSelectedIds(new Set(employees.map((e) => e.employeeId)));
     setSearch("");
-    setAreaFilter("all");
+    setAreaFilter([]);
   }
 
+  /* ── Period ─────────────────────────────────────────────── */
+
+  const periodValid =
+    period === "weekly"
+      ? Boolean(week)
+      : period === "monthly"
+      ? months.length > 0
+      : period === "yearly"
+      ? years.length > 0
+      : Boolean(range.from && range.to && range.from <= range.to);
+
+  /**
+   * Period fields for the request body — exactly one family, never two.
+   *
+   * A single month goes out as `month`, not as a one-element `months`: that is
+   * the shape the previously deployed Lambda understands, so the everyday
+   * one-month report keeps working even before the new Lambda is rolled out.
+   */
+  function periodBody(): Record<string, unknown> {
+    if (period === "weekly") return { week };
+    if (period === "monthly") {
+      const sorted = [...months].sort();
+      return sorted.length === 1 ? { month: sorted[0] } : { months: sorted };
+    }
+    if (period === "yearly") return { years: [...years].sort() };
+    return { from: range.from, to: range.to };
+  }
+
+  const periodSummary =
+    period === "weekly"
+      ? week
+      : period === "monthly"
+      ? months.length === 1
+        ? monthLong(months[0])
+        : `${months.length} meses`
+      : period === "yearly"
+      ? years.length === 1
+        ? years[0]
+        : `${years.length} años`
+      : `${range.from} → ${range.to}`;
+
+  function toggleMonth(ym: string) {
+    setMonths((prev) =>
+      prev.includes(ym) ? prev.filter((m) => m !== ym) : [...prev, ym].sort()
+    );
+  }
+
+  function toggleYear(y: string) {
+    setYears((prev) => (prev.includes(y) ? prev.filter((v) => v !== y) : [...prev, y].sort()));
+  }
+
+  /* ── Actions ────────────────────────────────────────────── */
+
   async function handleGenerate() {
-    if (selectedIds.size === 0 || running) return;
+    if (selectedIds.size === 0 || running || !periodValid) return;
     const targets = employees.filter((e) => selectedIds.has(e.employeeId));
 
     setRunning(true);
@@ -104,20 +198,17 @@ export function GenerateReportPanel() {
     setProgress({ done: 0, total: targets.length });
 
     const collected: GenerateResult[] = [];
+    const scope = periodBody();
 
     // Sequential on purpose: the PDF Lambda is invoked once per employee and a
     // 40-person burst would hit concurrency limits. Progress is surfaced live.
+    // One call covers the WHOLE selected period, however many months it spans.
     for (const emp of targets) {
-      const body =
-        period === "weekly"
-          ? { employeeId: emp.employeeId, reportType: "weekly", week }
-          : { employeeId: emp.employeeId, reportType: "monthly", month };
-
       try {
         const res = await fetch("/api/reports/generate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
+          body: JSON.stringify({ employeeId: emp.employeeId, ...scope }),
         });
         const payload = await res.json();
         if (!res.ok || !payload.url) {
@@ -160,9 +251,8 @@ export function GenerateReportPanel() {
 
   /**
    * Consolidated register: ONE PDF covering several people, no per-employee
-   * loop. Follows the period selector above, and narrows to the checked
-   * employees when there are any — an inspection often asks for one area or a
-   * few names rather than the whole company.
+   * loop. Follows the period above, narrows to the checked employees and/or
+   * the active area chips, and carries the chosen summary columns.
    */
   async function handleGenerateAll() {
     if (runningAll || running || !periodValid) return;
@@ -170,8 +260,6 @@ export function GenerateReportPanel() {
     setRunningAll(true);
     setAllResult(null);
 
-    const scope =
-      period === "weekly" ? { week } : { month };
     const picked = Array.from(selectedIds);
 
     try {
@@ -179,8 +267,12 @@ export function GenerateReportPanel() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          ...scope,
+          ...periodBody(),
           ...(picked.length > 0 && { employeeIds: picked }),
+          ...(areaFilter.length > 0 && { areas: areaFilter }),
+          cols,
+          groupByArea,
+          ...(detail !== "auto" && { detail: detail === "on" }),
         }),
       });
       const payload = await res.json();
@@ -207,7 +299,13 @@ export function GenerateReportPanel() {
 
   const okCount = results.filter((r) => r.status === "ok").length;
   const errCount = results.filter((r) => r.status === "error").length;
-  const periodValid = period === "weekly" ? !!week : !!month;
+
+  const scopeNote =
+    selectedIds.size > 0
+      ? `Incluirá solo a los ${selectedIds.size} seleccionados arriba.`
+      : areaFilter.length > 0
+      ? `Incluirá a todo el personal de ${areaFilter.join(", ")}.`
+      : "Sin selección incluye a toda la empresa; marca empleados o áreas arriba para acotarlo.";
 
   return (
     <div className="row two-thirds" style={{ marginTop: 0, alignItems: "start" }}>
@@ -259,8 +357,8 @@ export function GenerateReportPanel() {
           <div style={{ display: "flex", gap: 4, marginLeft: 8, flexWrap: "wrap" }}>
             <button
               type="button"
-              className={`chip ${areaFilter === "all" ? "active" : ""}`}
-              onClick={() => setAreaFilter("all")}
+              className={`chip ${areaFilter.length === 0 ? "active" : ""}`}
+              onClick={() => setAreaFilter([])}
             >
               Todas
             </button>
@@ -268,8 +366,9 @@ export function GenerateReportPanel() {
               <button
                 key={a}
                 type="button"
-                className={`chip ${areaFilter === a ? "active" : ""}`}
-                onClick={() => setAreaFilter(a)}
+                className={`chip ${areaKeys.has(areaKey(a)) ? "active" : ""}`}
+                onClick={() => toggleArea(a)}
+                title="Puedes marcar varias áreas"
               >
                 {a}
               </button>
@@ -397,46 +496,57 @@ export function GenerateReportPanel() {
         <div className="panel-head">
           <div>
             <div className="panel-title">Generar reporte</div>
-            <div className="panel-sub">PDF de asistencia por empleado</div>
+            <div className="panel-sub">PDF de asistencia · {periodSummary}</div>
           </div>
         </div>
 
-        <div className="tabs" style={{ margin: "0 0 12px" }}>
-          <button
-            type="button"
-            className={`tab ${period === "weekly" ? "active" : ""}`}
-            onClick={() => setPeriod("weekly")}
-            disabled={running}
-          >
-            <IconSvg d={Icons.calendar} size={13} /> Semanal
-          </button>
-          <button
-            type="button"
-            className={`tab ${period === "monthly" ? "active" : ""}`}
-            onClick={() => setPeriod("monthly")}
-            disabled={running}
-          >
-            <IconSvg d={Icons.calendar} size={13} /> Mensual
-          </button>
+        <div className="tabs" style={{ margin: "0 0 12px", flexWrap: "wrap" }}>
+          {(
+            [
+              ["weekly", "Semanal"],
+              ["monthly", "Mensual"],
+              ["yearly", "Anual"],
+              ["range", "Rango"],
+            ] as [Period, string][]
+          ).map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              className={`tab ${period === key ? "active" : ""}`}
+              onClick={() => setPeriod(key)}
+              disabled={running || runningAll}
+            >
+              <IconSvg d={Icons.calendar} size={13} /> {label}
+            </button>
+          ))}
         </div>
 
         <div style={{ marginBottom: 12 }}>
-          <label
-            htmlFor={period === "weekly" ? "reportWeek" : "reportMonth"}
-            style={{
-              display: "block",
-              fontSize: 11,
-              fontWeight: 600,
-              color: "var(--text-secondary)",
-              marginBottom: 6,
-            }}
-          >
-            {period === "weekly" ? "Semana" : "Mes"}
-          </label>
-          {period === "weekly" ? (
-            <NovaWeekPicker id="reportWeek" value={week} onChange={setWeek} />
-          ) : (
-            <NovaMonthPicker id="reportMonth" value={month} onChange={setMonth} />
+          {period === "weekly" && (
+            <>
+              <FieldLabel htmlFor="reportWeek">Semana</FieldLabel>
+              <NovaWeekPicker id="reportWeek" value={week} onChange={setWeek} />
+            </>
+          )}
+
+          {period === "monthly" && (
+            <MonthGrid months={months} onToggle={toggleMonth} onSet={setMonths} disabled={running} />
+          )}
+
+          {period === "yearly" && (
+            <YearGrid years={years} onToggle={toggleYear} disabled={running} />
+          )}
+
+          {period === "range" && (
+            <>
+              <FieldLabel htmlFor="reportRange">Rango de fechas</FieldLabel>
+              <NovaDateRangePicker
+                id="reportRange"
+                from={range.from}
+                to={range.to}
+                onChange={(from, to) => setRange({ from, to })}
+              />
+            </>
           )}
         </div>
 
@@ -455,17 +565,17 @@ export function GenerateReportPanel() {
           ) : (
             <>
               <IconSvg d={Icons.download} size={14} />
-              Generar {period === "weekly" ? "semanal" : "mensual"}
+              Generar por empleado
               {selectedIds.size > 0 && ` · ${selectedIds.size}`}
             </>
           )}
         </button>
 
-        {selectedIds.size === 0 && !running && (
-          <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8, textAlign: "center" }}>
-            Selecciona al menos un empleado.
-          </p>
-        )}
+        <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8, textAlign: "center" }}>
+          {selectedIds.size === 0
+            ? "Selecciona al menos un empleado."
+            : `Un PDF por persona, cubriendo ${periodSummary}.`}
+        </p>
 
         {/* ── Company-wide register (SUNAFIL) ──────────────── */}
         <div style={{ marginTop: 18, paddingTop: 16, borderTop: "1px solid var(--border)" }}>
@@ -473,12 +583,21 @@ export function GenerateReportPanel() {
             Registro consolidado
           </div>
           <p style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 10 }}>
-            Un solo PDF con el detalle de varias personas, listo para imprimir. Sin
-            columnas de estado ni observaciones.{" "}
-            {selectedIds.size > 0
-              ? `Incluirá solo a los ${selectedIds.size} seleccionados arriba.`
-              : "Sin selección incluye a toda la empresa; marca empleados arriba para acotarlo."}
+            Un solo PDF con el detalle de varias personas, listo para imprimir. {scopeNote}
           </p>
+
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+            <SummaryColumnPicker cols={cols} onChange={setCols} />
+            <button
+              type="button"
+              className={`chip ${groupByArea ? "active" : ""}`}
+              onClick={() => setGroupByArea((v) => !v)}
+              title="Cada área con su encabezado y su subtotal"
+            >
+              {groupByArea ? "Agrupado por área" : "Agrupar por área"}
+            </button>
+            <DetailPicker detail={detail} onChange={setDetail} />
+          </div>
 
           <button
             type="button"
@@ -495,7 +614,7 @@ export function GenerateReportPanel() {
             ) : (
               <>
                 <IconSvg d={Icons.users} size={14} />
-                Generar registro · {period === "weekly" ? week : month}
+                Generar registro · {periodSummary}
                 {selectedIds.size > 0 && ` · ${selectedIds.size}`}
               </>
             )}
@@ -591,5 +710,249 @@ export function GenerateReportPanel() {
         )}
       </div>
     </div>
+  );
+}
+
+/* ── Small pieces ────────────────────────────────────────── */
+
+function FieldLabel({ htmlFor, children }: { htmlFor?: string; children: React.ReactNode }) {
+  return (
+    <label
+      htmlFor={htmlFor}
+      style={{
+        display: "block",
+        fontSize: 11,
+        fontWeight: 600,
+        color: "var(--text-secondary)",
+        marginBottom: 6,
+      }}
+    >
+      {children}
+    </label>
+  );
+}
+
+/** Year navigation + 12 toggles: pick any set of months, across any years. */
+function MonthGrid({
+  months,
+  onToggle,
+  onSet,
+  disabled,
+}: {
+  months: string[];
+  onToggle: (ym: string) => void;
+  onSet: (next: string[]) => void;
+  disabled?: boolean;
+}) {
+  const [year, setYear] = useState(() => new Date().getFullYear());
+  const selected = new Set(months);
+  const allOfYear = Array.from({ length: 12 }, (_, i) => `${year}-${pad(i + 1)}`);
+  const wholeYearOn = allOfYear.every((m) => selected.has(m));
+
+  return (
+    <>
+      <FieldLabel>Meses · puedes elegir varios</FieldLabel>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+        <button type="button" className="ndp-nav" onClick={() => setYear((y) => y - 1)} aria-label="Año anterior">
+          <IconSvg d="M15 18l-6-6 6-6" size={16} />
+        </button>
+        <strong style={{ fontSize: 13 }}>{year}</strong>
+        <button type="button" className="ndp-nav" onClick={() => setYear((y) => y + 1)} aria-label="Año siguiente">
+          <IconSvg d="M9 18l6-6-6-6" size={16} />
+        </button>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 4 }}>
+        {MONTHS_SHORT.map((label, i) => {
+          const ym = `${year}-${pad(i + 1)}`;
+          return (
+            <button
+              key={ym}
+              type="button"
+              className={`chip ${selected.has(ym) ? "active" : ""}`}
+              style={{ justifyContent: "center" }}
+              onClick={() => onToggle(ym)}
+              disabled={disabled}
+            >
+              {label}
+            </button>
+          );
+        })}
+      </div>
+
+      <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+        <button
+          type="button"
+          className="btn outline btn-sm"
+          style={{ flex: 1, justifyContent: "center" }}
+          disabled={disabled}
+          onClick={() =>
+            onSet(
+              wholeYearOn
+                ? months.filter((m) => !m.startsWith(`${year}-`))
+                : Array.from(new Set([...months, ...allOfYear])).sort()
+            )
+          }
+        >
+          {wholeYearOn ? `Quitar ${year}` : `Todo ${year}`}
+        </button>
+        {months.length > 0 && (
+          <button type="button" className="btn ghost btn-sm" disabled={disabled} onClick={() => onSet([])}>
+            Limpiar
+          </button>
+        )}
+      </div>
+
+      {months.length > 0 && (
+        <p style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 8, lineHeight: 1.4 }}>
+          {months.length === 1
+            ? monthLong(months[0])
+            : `${months.length} meses: ${[...months].sort().map(monthShort).join(", ")}`}
+        </p>
+      )}
+    </>
+  );
+}
+
+function YearGrid({
+  years,
+  onToggle,
+  disabled,
+}: {
+  years: string[];
+  onToggle: (y: string) => void;
+  disabled?: boolean;
+}) {
+  const thisYear = new Date().getFullYear();
+  const options = Array.from({ length: 6 }, (_, i) => String(thisYear - i));
+  const selected = new Set(years);
+
+  return (
+    <>
+      <FieldLabel>Años completos · puedes elegir varios</FieldLabel>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 4 }}>
+        {options.map((y) => (
+          <button
+            key={y}
+            type="button"
+            className={`chip ${selected.has(y) ? "active" : ""}`}
+            style={{ justifyContent: "center" }}
+            onClick={() => onToggle(y)}
+            disabled={disabled}
+          >
+            {y}
+          </button>
+        ))}
+      </div>
+      <p style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 8, lineHeight: 1.4 }}>
+        En períodos largos el registro sale como resumen; el detalle día por día se puede
+        forzar con la opción &quot;Detalle&quot;.
+      </p>
+    </>
+  );
+}
+
+function SummaryColumnPicker({
+  cols,
+  onChange,
+}: {
+  cols: ReportFieldKey[];
+  onChange: (next: ReportFieldKey[]) => void;
+}) {
+  const selected = new Set(cols);
+
+  function toggle(key: ReportFieldKey) {
+    const next = new Set(selected);
+    if (next.has(key)) {
+      if (next.size === 1) return; // never leave the table with just the name
+      next.delete(key);
+    } else {
+      next.add(key);
+    }
+    onChange(REPORT_FIELDS.filter((f) => next.has(f.key)).map((f) => f.key));
+  }
+
+  return (
+    <FilterPopover
+      label="Columnas"
+      icon={Icons.filter}
+      badge={cols.length}
+      width={320}
+      maxHeight={380}
+      title="Qué columnas lleva el resumen del registro consolidado"
+    >
+      <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "0 0 8px" }}>
+        Columnas del resumen por empleado. En A4 entran hasta 8: las que sobren se
+        descartan de derecha a izquierda.
+      </p>
+      {GROUP_ORDER.map((group) => {
+        const items = REPORT_FIELDS.filter((f) => f.group === group);
+        return (
+          <PopoverGroup key={group} title={REPORT_GROUP_LABELS[group]}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
+              {items.map((f) => (
+                <PopoverCheck
+                  key={f.key}
+                  checked={selected.has(f.key)}
+                  onChange={() => toggle(f.key)}
+                  label={f.label}
+                  hint={f.hint}
+                />
+              ))}
+            </div>
+          </PopoverGroup>
+        );
+      })}
+      <button
+        type="button"
+        className="btn ghost btn-sm"
+        style={{ width: "100%", marginTop: 8, justifyContent: "center" }}
+        onClick={() => onChange(DEFAULT_FIELDS.payroll)}
+      >
+        Volver a las columnas por defecto
+      </button>
+    </FilterPopover>
+  );
+}
+
+function DetailPicker({
+  detail,
+  onChange,
+}: {
+  detail: DetailMode;
+  onChange: (next: DetailMode) => void;
+}) {
+  const label =
+    detail === "auto" ? "Detalle: automático" : detail === "on" ? "Con detalle diario" : "Solo resumen";
+
+  return (
+    <FilterPopover
+      label={label}
+      icon={Icons.doc}
+      width={280}
+      maxHeight={200}
+      title="Incluir o no el bloque día por día de cada empleado"
+    >
+      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+        <PopoverCheck
+          checked={detail === "auto"}
+          onChange={() => onChange("auto")}
+          label="Automático"
+          hint="Con detalle hasta ~2 meses; más largo, solo resumen"
+        />
+        <PopoverCheck
+          checked={detail === "on"}
+          onChange={() => onChange("on")}
+          label="Siempre con detalle diario"
+          hint="Un año de 40 personas son miles de filas"
+        />
+        <PopoverCheck
+          checked={detail === "off"}
+          onChange={() => onChange("off")}
+          label="Solo resumen"
+          hint="Resumen por empleado y horas por período"
+        />
+      </div>
+    </FilterPopover>
   );
 }

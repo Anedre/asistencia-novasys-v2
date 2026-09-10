@@ -6,15 +6,38 @@ import Link from "next/link";
 import { IconSvg, Icons } from "@/components/nova/icons";
 import { NovaAvatar } from "@/components/nova/avatar";
 import { PageHeader } from "@/components/nova/page-header";
-import { areaKey, buildAreaCanon } from "@/lib/utils/area";
 import { GenerateReportPanel } from "@/components/admin/reports/GenerateReportPanel";
+import { ReportFilterBar } from "@/components/admin/reports/ReportFilterBar";
+import { EmployeeReportTable } from "@/components/admin/reports/EmployeeReportTable";
+import { AreaReportPanel } from "@/components/admin/reports/AreaReportPanel";
+import { MonthlyMatrixPanel } from "@/components/admin/reports/MonthlyMatrixPanel";
+import {
+  defaultFilters,
+  exportUrl,
+  statsUrl,
+  type ReportFilters,
+} from "@/components/admin/reports/report-filters";
+import {
+  DEFAULT_FIELDS,
+  attendancePct,
+  type ReportFieldKey,
+  type ReportViewKey,
+} from "@/lib/constants/report-fields";
 import type { ReportsStats } from "@/lib/services/reports-stats.service";
 
 /* ============================================================
    Helpers
    ============================================================ */
 
-type TabKey = "dashboard" | "generate" | "attendance" | "hours" | "absences" | "payroll";
+type TabKey =
+  | "dashboard"
+  | "generate"
+  | "attendance"
+  | "hours"
+  | "absences"
+  | "payroll"
+  | "areas"
+  | "monthly";
 
 const TABS: { key: TabKey; label: string; icon: React.ReactNode }[] = [
   { key: "dashboard", label: "Dashboard", icon: Icons.dashboard },
@@ -23,18 +46,16 @@ const TABS: { key: TabKey; label: string; icon: React.ReactNode }[] = [
   { key: "hours", label: "Horas trabajadas", icon: Icons.pulse },
   { key: "absences", label: "Ausencias", icon: Icons.alert },
   { key: "payroll", label: "Para nómina", icon: Icons.dollar },
+  { key: "areas", label: "Por área", icon: Icons.building },
+  { key: "monthly", label: "Mensual / Anual", icon: Icons.calendar },
 ];
 
-function toYmd(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
+/** Tabs that render a table with a column picker. */
+const VIEW_TABS = ["attendance", "hours", "absences", "payroll", "areas", "monthly"] as const;
+type ViewTab = (typeof VIEW_TABS)[number];
 
-function monthsBack(n: number): { from: string; to: string } {
-  const to = new Date();
-  const from = new Date();
-  from.setMonth(from.getMonth() - n);
-  return { from: toYmd(from), to: toYmd(to) };
-}
+const isViewTab = (t: TabKey): t is ViewTab =>
+  (VIEW_TABS as readonly string[]).includes(t);
 
 const MONTH_LABELS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
 
@@ -76,12 +97,11 @@ function BigChart({ stats, metric }: { stats: ReportsStats | undefined; metric: 
       // working overtime (workedHours > plannedHours) does NOT make
       // attendance exceed 100%. Overtime is shown separately in the
       // tooltip when present.
-      if (p.plannedHours <= 0) return 0;
-      return Math.min(100, Math.round((p.workedHours / p.plannedHours) * 100));
+      return Math.round(attendancePct(p));
     }
-    if (metric === "hours") return p.workedHours;
+    if (metric === "hours") return Math.round(p.workedHours * 10) / 10;
     // anomalies — derived: difference vs planned (negative is bad)
-    return Math.max(0, p.plannedHours - p.workedHours);
+    return Math.round(Math.max(0, p.plannedHours - p.workedHours) * 10) / 10;
   });
   // Per-point overtime hours — only shown in tooltip when > 0.
   const overtime = points.map((p) => Math.max(0, p.workedHours - p.plannedHours));
@@ -274,36 +294,24 @@ function BigChart({ stats, metric }: { stats: ReportsStats | undefined; metric: 
    Area breakdown — % attendance per area
    ============================================================ */
 
-function AreaBreakdown({ stats }: { stats: ReportsStats | undefined }) {
-  const ranking = stats?.employeeRanking ?? [];
-
-  // Aggregate by area — collapse accent/spacing variants ("Consultoria" vs
-  // "Consultoría") so one area never shows up twice; label with the canonical
-  // (accented) spelling.
-  const byArea = useMemo(() => {
-    const canon = buildAreaCanon(ranking.map((e) => e.area || "Sin área"));
-    const map = new Map<string, { label: string; worked: number; planned: number; count: number }>();
-    ranking.forEach((e) => {
-      const raw = e.area || "Sin área";
-      const key = areaKey(raw);
-      if (!map.has(key)) map.set(key, { label: canon.get(key) ?? raw, worked: 0, planned: 0, count: 0 });
-      const v = map.get(key)!;
-      v.worked += e.workedHours;
-      v.planned += e.plannedHours;
-      v.count += 1;
-    });
-    return Array.from(map.values())
-      .map((v) => ({
-        area: v.label,
-        count: v.count,
-        value:
-          v.planned > 0
-            ? Math.min(100, Math.round((v.worked / v.planned) * 100))
-            : 0,
-      }))
-      .sort((a, b) => b.value - a.value)
-      .slice(0, 6);
-  }, [ranking]);
+function AreaBreakdown({
+  stats,
+  onPickArea,
+}: {
+  stats: ReportsStats | undefined;
+  onPickArea: (area: string) => void;
+}) {
+  // Aggregation (and the accent-variant collapsing that goes with it) happens
+  // server-side now, so this is a plain read of areaBreakdown.
+  const byArea = (stats?.areaBreakdown ?? [])
+    .map((a) => ({
+      areaId: a.areaId,
+      area: a.area,
+      count: a.headcount,
+      value: Math.round(attendancePct(a)),
+    }))
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 6);
 
   if (byArea.length === 0) {
     return (
@@ -316,11 +324,23 @@ function AreaBreakdown({ stats }: { stats: ReportsStats | undefined }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
       {byArea.map((i) => (
-        <div key={i.area}>
+        <div key={i.areaId}>
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 4 }}>
-            <span>
+            <button
+              type="button"
+              onClick={() => onPickArea(i.area)}
+              title="Ver el reporte de esta área"
+              style={{
+                background: "none",
+                border: "none",
+                padding: 0,
+                cursor: "pointer",
+                color: "var(--text-primary)",
+                textAlign: "left",
+              }}
+            >
               {i.area} <span className="tcell-muted">({i.count})</span>
-            </span>
+            </button>
             <span className="tcell-mono">{i.value}%</span>
           </div>
           <div style={{ height: 8, background: "var(--bg-subtle)", borderRadius: 4, overflow: "hidden" }}>
@@ -397,11 +417,7 @@ function TopList({ stats }: { stats: ReportsStats | undefined }) {
   const ranking = stats?.employeeRanking ?? [];
   const top = ranking
     .slice()
-    .sort((a, b) => {
-      const aPct = a.plannedHours > 0 ? a.workedHours / a.plannedHours : 0;
-      const bPct = b.plannedHours > 0 ? b.workedHours / b.plannedHours : 0;
-      return bPct - aPct;
-    })
+    .sort((a, b) => attendancePct(b) - attendancePct(a))
     .slice(0, 6);
 
   if (top.length === 0) {
@@ -415,7 +431,7 @@ function TopList({ stats }: { stats: ReportsStats | undefined }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
       {top.map((e, i) => {
-        const pct = e.plannedHours > 0 ? Math.round((e.workedHours / e.plannedHours) * 100) : 0;
+        const pct = Math.round(attendancePct(e));
         return (
           <Link
             key={e.employeeId}
@@ -468,260 +484,42 @@ function TopList({ stats }: { stats: ReportsStats | undefined }) {
 }
 
 /* ============================================================
-   Export URLs — the API streams the file back with a
-   Content-Disposition attachment header, so a plain link is enough.
-   ============================================================ */
-
-function exportUrl(opts: {
-  range: { from: string; to: string };
-  variant: "all" | "attendance" | "hours" | "absences" | "payroll";
-  format: "xlsx" | "csv";
-}): string {
-  const q = new URLSearchParams({
-    from: opts.range.from,
-    to: opts.range.to,
-    variant: opts.variant,
-    format: opts.format,
-  });
-  return `/api/admin/reports/export?${q.toString()}`;
-}
-
-/* ============================================================
-   Per-employee table — the "reporte por persona" view.
-   One component; the column set switches per tab.
-   ============================================================ */
-
-function EmployeeTable({
-  stats,
-  isLoading,
-  variant,
-  range,
-}: {
-  stats: ReportsStats | undefined;
-  isLoading: boolean;
-  variant: "attendance" | "hours" | "absences" | "payroll";
-  range: { from: string; to: string };
-}) {
-  const [search, setSearch] = useState("");
-
-  const rows = useMemo(() => {
-    const list = stats?.employeeRanking ?? [];
-    const q = search.trim().toLowerCase();
-    const filtered = q
-      ? list.filter(
-          (e) =>
-            e.employeeName.toLowerCase().includes(q) ||
-            (e.area ?? "").toLowerCase().includes(q)
-        )
-      : list.slice();
-
-    // Sort by whatever the tab is actually about.
-    return filtered.sort((a, b) => {
-      if (variant === "absences") return b.absences - a.absences;
-      if (variant === "hours" || variant === "payroll") return b.workedHours - a.workedHours;
-      const aPct = a.plannedHours > 0 ? a.workedHours / a.plannedHours : 0;
-      const bPct = b.plannedHours > 0 ? b.workedHours / b.plannedHours : 0;
-      return bPct - aPct;
-    });
-  }, [stats, search, variant]);
-
-  const totals = stats?.totals;
-
-  return (
-    <div className="table-wrap">
-      <div className="table-toolbar">
-        <div className="searchbar" style={{ maxWidth: 280 }}>
-          <span style={{ color: "var(--text-muted)" }}>
-            <IconSvg d={Icons.search} size={14} />
-          </span>
-          <input
-            placeholder="Buscar empleado o área…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </div>
-        <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--text-muted)" }}>
-          {rows.length} empleado{rows.length === 1 ? "" : "s"}
-          {totals ? ` · ${totals.totalDays} días registrados` : ""}
-        </span>
-        <div style={{ display: "flex", gap: 6, marginLeft: 8 }}>
-          <a
-            className="btn outline btn-sm"
-            href={exportUrl({ range, variant, format: "xlsx" })}
-            title="Descargar esta vista en Excel"
-          >
-            <IconSvg d={Icons.download} size={13} /> Excel
-          </a>
-          <a
-            className="btn ghost btn-sm"
-            href={exportUrl({ range, variant, format: "csv" })}
-            title="Descargar esta vista en CSV"
-          >
-            CSV
-          </a>
-        </div>
-      </div>
-
-      <table className="table cards">
-        <thead>
-          <tr>
-            <th>Empleado</th>
-            <th>Área</th>
-            {variant === "attendance" && (
-              <>
-                <th>Días presente</th>
-                <th>Ausencias</th>
-                <th>% Asistencia</th>
-              </>
-            )}
-            {variant === "hours" && (
-              <>
-                <th>Horas trabajadas</th>
-                <th>Horas planificadas</th>
-                <th>Diferencia</th>
-              </>
-            )}
-            {variant === "absences" && (
-              <>
-                <th>Ausencias</th>
-                <th>Regularizaciones</th>
-                <th>Horas faltantes</th>
-              </>
-            )}
-            {variant === "payroll" && (
-              <>
-                <th>Días presente</th>
-                <th>Horas trabajadas</th>
-                <th>Horas extra</th>
-              </>
-            )}
-          </tr>
-        </thead>
-        <tbody>
-          {isLoading ? (
-            Array.from({ length: 6 }).map((_, i) => (
-              <tr key={i}>
-                <td colSpan={5}>
-                  <div
-                    style={{
-                      height: 32,
-                      background: "var(--bg-subtle)",
-                      borderRadius: 4,
-                      margin: "4px 0",
-                      opacity: 0.6,
-                    }}
-                  />
-                </td>
-              </tr>
-            ))
-          ) : rows.length === 0 ? (
-            <tr>
-              <td
-                colSpan={5}
-                style={{ textAlign: "center", padding: "48px 0", color: "var(--text-muted)", fontSize: 13 }}
-              >
-                {search
-                  ? "Sin empleados que coincidan con la búsqueda"
-                  : "Sin datos de asistencia en el rango seleccionado"}
-              </td>
-            </tr>
-          ) : (
-            rows.map((e) => {
-              const pct = e.plannedHours > 0 ? Math.round((e.workedHours / e.plannedHours) * 100) : 0;
-              const missing = Math.max(0, e.plannedHours - e.workedHours);
-              const overtime = Math.max(0, e.workedHours - e.plannedHours);
-              return (
-                <tr key={e.employeeId}>
-                  <td data-label="Empleado">
-                    <Link
-                      href={`/admin/employees/${encodeURIComponent(e.employeeId)}`}
-                      style={{ display: "flex", alignItems: "center", gap: 8, textDecoration: "none" }}
-                    >
-                      <NovaAvatar name={e.employeeName} size={26} variant="plain" />
-                      <span style={{ fontWeight: 600, color: "var(--text-primary)" }}>{e.employeeName}</span>
-                    </Link>
-                  </td>
-                  <td data-label="Área" className="tcell-muted">
-                    {e.area || "—"}
-                  </td>
-
-                  {variant === "attendance" && (
-                    <>
-                      <td data-label="Días presente" className="tcell-mono">{e.daysPresent}</td>
-                      <td data-label="Ausencias" className="tcell-mono">{e.absences}</td>
-                      <td data-label="% Asistencia" className="tcell-mono">
-                        <span style={{ fontWeight: 700, color: pct >= 95 ? "var(--success)" : "var(--text-primary)" }}>
-                          {pct}%
-                        </span>
-                      </td>
-                    </>
-                  )}
-
-                  {variant === "hours" && (
-                    <>
-                      <td data-label="Horas trabajadas" className="tcell-mono">{e.workedHours.toFixed(1)}h</td>
-                      <td data-label="Horas planificadas" className="tcell-mono">{e.plannedHours.toFixed(1)}h</td>
-                      <td data-label="Diferencia" className="tcell-mono">
-                        <span style={{ color: e.deltaHours < 0 ? "var(--danger)" : "var(--success)", fontWeight: 600 }}>
-                          {e.deltaHours >= 0 ? "+" : ""}
-                          {e.deltaHours.toFixed(1)}h
-                        </span>
-                      </td>
-                    </>
-                  )}
-
-                  {variant === "absences" && (
-                    <>
-                      <td data-label="Ausencias" className="tcell-mono">
-                        <span style={{ fontWeight: 700, color: e.absences > 0 ? "var(--danger)" : "var(--text-primary)" }}>
-                          {e.absences}
-                        </span>
-                      </td>
-                      <td data-label="Regularizaciones" className="tcell-mono">{e.regularizations}</td>
-                      <td data-label="Horas faltantes" className="tcell-mono">{missing.toFixed(1)}h</td>
-                    </>
-                  )}
-
-                  {variant === "payroll" && (
-                    <>
-                      <td data-label="Días presente" className="tcell-mono">{e.daysPresent}</td>
-                      <td data-label="Horas trabajadas" className="tcell-mono">{e.workedHours.toFixed(1)}h</td>
-                      <td data-label="Horas extra" className="tcell-mono">
-                        <span style={{ color: overtime > 0 ? "var(--success)" : "var(--text-muted)", fontWeight: 600 }}>
-                          {overtime.toFixed(1)}h
-                        </span>
-                      </td>
-                    </>
-                  )}
-                </tr>
-              );
-            })
-          )}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-/* ============================================================
    Page
    ============================================================ */
 
 export default function AdminReportsPage() {
   const [tab, setTab] = useState<TabKey>("dashboard");
   const [chartMetric, setChartMetric] = useState<ChartMetric>("attendance");
-  const [range, setRange] = useState<{ from: string; to: string }>(() => monthsBack(6));
+  const [filters, setFilters] = useState<ReportFilters>(defaultFilters);
+  const [groupByArea, setGroupByArea] = useState(false);
+  // Column selection is per view: the columns that make "Ausencias" readable
+  // are not the ones you want in "Para nómina".
+  const [fieldsByView, setFieldsByView] = useState<Record<ReportViewKey, ReportFieldKey[]>>(
+    () => ({ ...DEFAULT_FIELDS })
+  );
 
+  const view: ReportViewKey | undefined = isViewTab(tab) ? tab : undefined;
+  const fields = view ? fieldsByView[view] : undefined;
+
+  const url = statsUrl(filters);
   const { data: stats, isLoading } = useQuery<ReportsStats>({
-    queryKey: ["admin", "reports", "stats", range.from, range.to],
+    queryKey: ["admin", "reports", "stats", url],
     queryFn: async () => {
-      const res = await fetch(`/api/admin/reports/stats?from=${range.from}&to=${range.to}`);
-      if (!res.ok) throw new Error("Error al cargar reportes");
+      const res = await fetch(url);
+      if (!res.ok) {
+        const payload = await res.json().catch(() => null);
+        throw new Error(payload?.error || "Error al cargar reportes");
+      }
       return res.json();
     },
     refetchInterval: 30_000,
     refetchOnWindowFocus: true,
   });
+
+  function pickArea(area: string) {
+    setFilters((f) => ({ ...f, areas: [area] }));
+    setTab("areas");
+  }
 
   return (
     <>
@@ -733,8 +531,8 @@ export default function AdminReportsPage() {
           <>
             <a
               className="btn outline btn-md"
-              href={exportUrl({ range, variant: "all", format: "xlsx" })}
-              title="Descarga un libro de Excel con resumen, asistencia, horas, ausencias, nómina y tendencia mensual"
+              href={exportUrl(filters, { variant: "all", format: "xlsx" })}
+              title="Libro de Excel con resumen, asistencia, horas, ausencias, nómina, áreas, matriz mensual y anual"
             >
               <IconSvg d={Icons.download} size={14} /> Exportar Excel
             </a>
@@ -749,7 +547,6 @@ export default function AdminReportsPage() {
         }
       />
 
-      {/* Range selector */}
       <div className="tabs" role="tablist" aria-label="Secciones de reportes">
         {TABS.map((t) => (
           <button
@@ -769,39 +566,21 @@ export default function AdminReportsPage() {
       </div>
 
       {tab !== "generate" && (
-      <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>
-        <button
-          type="button"
-          className={`chip ${range.from === monthsBack(1).from ? "active" : ""}`}
-          onClick={() => setRange(monthsBack(1))}
-        >
-          1 mes
-        </button>
-        <button
-          type="button"
-          className={`chip ${range.from === monthsBack(3).from ? "active" : ""}`}
-          onClick={() => setRange(monthsBack(3))}
-        >
-          3 meses
-        </button>
-        <button
-          type="button"
-          className={`chip ${range.from === monthsBack(6).from ? "active" : ""}`}
-          onClick={() => setRange(monthsBack(6))}
-        >
-          6 meses
-        </button>
-        <button
-          type="button"
-          className={`chip ${range.from === monthsBack(12).from ? "active" : ""}`}
-          onClick={() => setRange(monthsBack(12))}
-        >
-          12 meses
-        </button>
-        <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--text-muted)" }}>
-          {isLoading ? "Cargando…" : `Rango: ${range.from} → ${range.to}`}
-        </span>
-      </div>
+        <ReportFilterBar
+          filters={filters}
+          onChange={setFilters}
+          availableAreas={stats?.availableAreas ?? []}
+          view={view}
+          fields={fields}
+          onFieldsChange={
+            view
+              ? (next) => setFieldsByView((prev) => ({ ...prev, [view]: next }))
+              : undefined
+          }
+          groupByArea={groupByArea}
+          onGroupByAreaChange={setGroupByArea}
+          isLoading={isLoading}
+        />
       )}
 
       {tab === "generate" && (
@@ -812,7 +591,37 @@ export default function AdminReportsPage() {
 
       {(tab === "attendance" || tab === "hours" || tab === "absences" || tab === "payroll") && (
         <div id={`tab-panel-${tab}`} role="tabpanel" aria-labelledby={`tab-${tab}`}>
-          <EmployeeTable stats={stats} isLoading={isLoading} variant={tab} range={range} />
+          <EmployeeReportTable
+            stats={stats}
+            isLoading={isLoading}
+            view={tab}
+            fields={fieldsByView[tab]}
+            groupByArea={groupByArea}
+            filters={filters}
+          />
+        </div>
+      )}
+
+      {tab === "areas" && (
+        <div id="tab-panel-areas" role="tabpanel" aria-labelledby="tab-areas">
+          <AreaReportPanel
+            stats={stats}
+            isLoading={isLoading}
+            fields={fieldsByView.areas}
+            filters={filters}
+            onFiltersChange={setFilters}
+          />
+        </div>
+      )}
+
+      {tab === "monthly" && (
+        <div id="tab-panel-monthly" role="tabpanel" aria-labelledby="tab-monthly">
+          <MonthlyMatrixPanel
+            stats={stats}
+            isLoading={isLoading}
+            fields={fieldsByView.monthly}
+            filters={filters}
+          />
         </div>
       )}
 
@@ -864,8 +673,11 @@ export default function AdminReportsPage() {
               <div className="panel-title">Por área</div>
               <div className="panel-sub">Asistencia promedio</div>
             </div>
+            <button type="button" className="btn ghost btn-sm" onClick={() => setTab("areas")}>
+              Ver detalle
+            </button>
           </div>
-          <AreaBreakdown stats={stats} />
+          <AreaBreakdown stats={stats} onPickArea={pickArea} />
         </div>
       </div>
 

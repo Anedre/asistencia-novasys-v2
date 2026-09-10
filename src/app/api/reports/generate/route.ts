@@ -28,6 +28,10 @@ export const POST = withErrorHandler(async (req: Request) => {
     employeeId: parsed.employeeId,
     week: parsed.week,
     month: parsed.month,
+    months: parsed.months,
+    years: parsed.years,
+    from: parsed.from,
+    to: parsed.to,
     tenantId: user.tenantId,
   });
 

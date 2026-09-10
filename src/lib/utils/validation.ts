@@ -87,28 +87,80 @@ export const reviewRequestSchema = z.object({
 });
 
 // ── Reports ──
-export const generateReportSchema = z.object({
-  employeeId: z.string().min(1),
-  week: z.string().regex(/^\d{4}-W\d{2}$/).optional(),
-  month: z.string().regex(/^\d{4}-\d{2}$/).optional(),
-}).refine(
-  (data) => (data.week && !data.month) || (!data.week && data.month),
-  { message: "Envía solo week o solo month, no ambos" }
-);
+
+const weekStr = z.string().regex(/^\d{4}-W\d{2}$/);
+const monthStr = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/);
+const yearStr = z.string().regex(/^\d{4}$/);
+const dateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
 /**
- * Company-wide register, weekly or monthly. No tenantId on purpose — it comes
- * from the session, never the body. `employeeIds` narrows it to a hand-picked
- * subset; omitting it means everyone.
+ * A report covers exactly one kind of period. They are kept as separate fields
+ * rather than one union so the PDF Lambda receives them verbatim, and so an
+ * older client that only knows `week`/`month` keeps working untouched.
  */
-export const generateAllReportSchema = z.object({
-  week: z.string().regex(/^\d{4}-W\d{2}$/).optional(),
-  month: z.string().regex(/^\d{4}-\d{2}$/).optional(),
-  employeeIds: z.array(z.string().min(1)).max(500).optional(),
-}).refine(
-  (data) => (data.week && !data.month) || (!data.week && data.month),
-  { message: "Envía solo week o solo month, no ambos" }
-);
+const periodShape = {
+  week: weekStr.optional(),
+  month: monthStr.optional(),
+  /** Explicit, possibly non-contiguous months: enero, febrero y mayo. */
+  months: z.array(monthStr).min(1).max(60).optional(),
+  years: z.array(yearStr).min(1).max(10).optional(),
+  from: dateStr.optional(),
+  to: dateStr.optional(),
+};
+
+type PeriodInput = {
+  week?: string;
+  month?: string;
+  months?: string[];
+  years?: string[];
+  from?: string;
+  to?: string;
+};
+
+/** Exactly one period family, and a range needs both of its ends. */
+function periodIsValid(data: PeriodInput): boolean {
+  const families = [
+    Boolean(data.week),
+    Boolean(data.month) || Boolean(data.months?.length),
+    Boolean(data.years?.length),
+    Boolean(data.from) || Boolean(data.to),
+  ].filter(Boolean).length;
+
+  if (families !== 1) return false;
+  if (Boolean(data.from) !== Boolean(data.to)) return false;
+  if (data.from && data.to && data.from > data.to) return false;
+  return true;
+}
+
+const PERIOD_MESSAGE =
+  "Envía un solo período: week, month/months, years o from+to";
+
+export const generateReportSchema = z
+  .object({ employeeId: z.string().min(1), ...periodShape })
+  .refine(periodIsValid, { message: PERIOD_MESSAGE });
+
+/**
+ * Company-wide register over any period. No tenantId on purpose — it comes
+ * from the session, never the body. `employeeIds` narrows it to a hand-picked
+ * subset and `areas` to whole departments; omitting both means everyone.
+ */
+export const generateAllReportSchema = z
+  .object({
+    ...periodShape,
+    employeeIds: z.array(z.string().min(1)).max(500).optional(),
+    /** Area labels; matched accent-insensitively by the Lambda. */
+    areas: z.array(z.string().min(1)).max(50).optional(),
+    /** Column keys from the shared report-fields catalogue. */
+    cols: z.array(z.string().min(1)).max(20).optional(),
+    groupByArea: z.boolean().optional(),
+    /**
+     * Day-by-day blocks. Omitted means "let the Lambda decide" — it keeps them
+     * for short periods and drops them for long ones, where they would run to
+     * thousands of rows.
+     */
+    detail: z.boolean().optional(),
+  })
+  .refine(periodIsValid, { message: PERIOD_MESSAGE });
 
 // ── HR Events ──
 export const createHREventSchema = z.object({
