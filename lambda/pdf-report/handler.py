@@ -489,9 +489,19 @@ def build_pdf(emp_key, emp_info, report_title, period_label, days, start_d, end_
         c2 = LM + 190
         c3 = LM + 370
 
+        def fit(text, width, font, size):
+            """Trim to the column so a long value never runs into the next label."""
+            text = str(text or "")
+            if c.stringWidth(text, font, size) <= width:
+                return text
+            while text and c.stringWidth(text + "...", font, size) > width:
+                text = text[:-1]
+            return text + "..."
+
         def info_row(y, pairs):
             """Draw a row of label: value pairs at given column positions."""
             col_positions = [c1, c2, c3]
+            col_ends = [c2, c3, RM]
             for i, (lbl, val) in enumerate(pairs):
                 if i >= len(col_positions):
                     break
@@ -502,7 +512,8 @@ def build_pdf(emp_key, emp_info, report_title, period_label, days, start_d, end_
                 c.drawString(cx, y, lbl)
                 c.setFont(VAL_F, FS)
                 c.setFillColor(TXT)
-                c.drawString(cx + lbl_w + 3, y, str(val))
+                avail = col_ends[i] - (cx + lbl_w + 3) - 10
+                c.drawString(cx + lbl_w + 3, y, fit(val, avail, VAL_F, FS))
 
         y -= RH
         info_row(y, [
@@ -519,7 +530,13 @@ def build_pdf(emp_key, emp_info, report_title, period_label, days, start_d, end_
         ])
 
         y -= RH
+        # A two-month or free-range period does not fit spelled out ("1 de
+        # Agosto 2026 — 11 de Septiembre 2026" ran straight into "Ingreso:"), so
+        # fall back to numeric dates before the column has to truncate.
         period_str = f"{fmt_date_long(start_d)}  —  {fmt_date_long(end_d)}"
+        period_avail = c2 - c1 - c.stringWidth("Período: ", LBL_F, FS) - 13
+        if c.stringWidth(period_str, VAL_F, FS) > period_avail:
+            period_str = f"{start_d.strftime('%d/%m/%Y')} — {end_d.strftime('%d/%m/%Y')}"
         hire = emp_info.get("HireDate", "—")
         phone = emp_info.get("Phone", "—") or "—"
         info_row(y, [
