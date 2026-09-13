@@ -45,6 +45,9 @@ BLUE_BG = HexColor("#eff6ff")
 GRAY = HexColor("#6b7280")
 GRAY_BG = HexColor("#f3f4f6")
 SUMMARY_BG = HexColor("#f0f4ff")
+PURPLE = HexColor("#7c3aed")
+PURPLE_BG = HexColor("#f5f3ff")
+HOLIDAY_BG = HexColor("#f5f3ff")
 
 DAY_ES = {0: "Lunes", 1: "Martes", 2: "Miércoles", 3: "Jueves",
            4: "Viernes", 5: "Sábado", 6: "Domingo"}
@@ -55,7 +58,7 @@ MONTH_ES = ["", "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
 STATUS_LABEL = {
     "OK": "Completo", "REGULARIZED": "Regularizado", "SHORT": "Incompleto",
     "MISSING": "Sin registro", "ABSENCE": "Ausencia", "OPEN": "En curso",
-    "No Laborable": "No laborable",
+    "No Laborable": "No laborable", "HOLIDAY": "Feriado",
 }
 
 WORK_MODE_LABEL = {
@@ -228,6 +231,8 @@ def status_colors(status):
         return RED, RED_BG
     if s == "OPEN":
         return BLUE, BLUE_BG
+    if s == "HOLIDAY":
+        return PURPLE, PURPLE_BG
     return GRAY, GRAY_BG
 
 
@@ -238,15 +243,33 @@ def get_employee_info(employee_id):
         return {}
 
 
-def build_day(ds, item, current_date):
+def build_day(ds, item, current_date, holidays=None):
+    """One printable row for a calendar day.
+
+    `holidays` maps "YYYY-MM-DD" to the holiday's name. A holiday is named in
+    the row, not just tinted: the client prints these on a monochrome laser,
+    where a red "Sin registro" and a red "Feriado" are the same grey — and a
+    holiday shown as "Sin registro" reads as an absence to an inspector.
+    """
     day_name = DAY_ES.get(current_date.weekday(), "")
     is_weekend = current_date.weekday() >= 5
+    holiday = (holidays or {}).get(ds) or ""
 
     if item:
         reason = item.get("regularizationReasonLabel", "")
         note = (item.get("regularizationNote") or "").strip()
         if note:
             reason = f"{reason} — {note}" if reason else note
+        worked = int(item.get("workedMinutes", 0))
+        status = item.get("status", "MISSING")
+        if holiday:
+            # Somebody who actually clocked hours on a holiday keeps them; the
+            # day is still labelled so the extra work is visible as such.
+            if worked > 0:
+                reason = f"Feriado: {holiday}" + (f" — {reason}" if reason else "")
+            else:
+                status = "HOLIDAY"
+                reason = holiday
         return {
             "date": ds, "day": day_name,
             "in": extract_time(item, "firstInLocal", "firstIn"),
@@ -259,15 +282,15 @@ def build_day(ds, item, current_date):
             "late": int(item.get("lateMinutes", 0)),
             "src": item.get("source", ""),
             "recorded": True,
-            "status": item.get("status", "MISSING"),
-            "reason": reason, "weekend": is_weekend,
+            "status": status,
+            "reason": reason, "weekend": is_weekend, "holiday": holiday,
         }
 
     return {
         "date": ds, "day": day_name, "in": "—", "out": "—",
         "brk": 0, "wrk": 0, "pln": 0, "late": 0, "src": "", "recorded": False,
-        "status": "No Laborable" if is_weekend else "MISSING",
-        "reason": "", "weekend": is_weekend,
+        "status": "HOLIDAY" if holiday else ("No Laborable" if is_weekend else "MISSING"),
+        "reason": holiday, "weekend": is_weekend, "holiday": holiday,
     }
 
 
@@ -557,6 +580,7 @@ def build_pdf(emp_key, emp_info, report_title, period_label, days, start_d, end_
     days_worked = 0
     days_complete = 0
     days_missing = 0
+    days_holiday = 0
     row_i = 0
 
     for d in days:
@@ -567,7 +591,9 @@ def build_pdf(emp_key, emp_info, report_title, period_label, days, start_d, end_
             row_i = 0
 
         # Row background
-        if d["weekend"]:
+        if d.get("holiday"):
+            bg = HOLIDAY_BG
+        elif d["weekend"]:
             bg = WEEKEND_BG
         elif row_i % 2 == 1:
             bg = ROW_ODD
@@ -630,8 +656,14 @@ def build_pdf(emp_key, emp_info, report_title, period_label, days, start_d, end_
         reason = d.get("reason", "")
         if len(reason) > 38:
             reason = reason[:35] + "..."
-        c.setFillColor(TXT3)
-        c.setFont("Helvetica", 6.5)
+        if d.get("holiday"):
+            # The holiday's name is the point of the row: light grey survives a
+            # colour screen but vanishes on the monochrome laser it gets printed on.
+            c.setFillColor(PURPLE)
+            c.setFont("Helvetica-Bold", 6.5)
+        else:
+            c.setFillColor(TXT3)
+            c.setFont("Helvetica", 6.5)
         c.drawString(col_x[7] + 4, y + 3, reason)
 
         # Stats
@@ -644,6 +676,8 @@ def build_pdf(emp_key, emp_info, report_title, period_label, days, start_d, end_
             days_complete += 1
         if su == "MISSING":
             days_missing += 1
+        if su == "HOLIDAY":
+            days_holiday += 1
 
         y -= ROW_H
         row_i += 1
@@ -686,6 +720,7 @@ def build_pdf(emp_key, emp_info, report_title, period_label, days, start_d, end_
         ("Días trabajados", str(days_worked)),
         ("Días completos", str(days_complete)),
         ("Sin registro", str(days_missing)),
+        ("Feriados", str(days_holiday)),
         ("Total horas", fmt_hours(total_wrk)),
         ("Total break", fmt_hours(total_brk)),
     ]
@@ -781,7 +816,7 @@ def area_key(raw):
     return " ".join(s.split())
 
 
-def build_roster(tenant_id, segments, roster_in=None, roster_only=False, areas=None):
+def build_roster(tenant_id, segments, roster_in=None, roster_only=False, areas=None, holidays=None):
     """Everyone who must appear in the register, sorted by name.
 
     Active employees plus anyone with attendance in the period — somebody who
@@ -843,7 +878,7 @@ def build_roster(tenant_id, segments, roster_in=None, roster_only=False, areas=N
         days = []
         for d in iter_days(segments):
             ds = d.isoformat()
-            days.append(build_day(ds, by_date.get(ds, {}), d))
+            days.append(build_day(ds, by_date.get(ds, {}), d, holidays))
         roster.append((emp_id, info, days))
 
     roster.sort(key=lambda r: (r[1].get("FullName") or r[0] or "").lower())
@@ -1243,7 +1278,9 @@ def build_consolidated_pdf(company_name, company_ruc, period_label, segments, ro
                 y = draw_thead(y, dcols, dxs)
                 row_i = 0
 
-            if d["weekend"]:
+            if d.get("holiday"):
+                bg = HOLIDAY_BG
+            elif d["weekend"]:
                 bg = WEEKEND_BG
             else:
                 bg = ROW_ODD if row_i % 2 else ROW_EVEN
@@ -1259,16 +1296,32 @@ def build_consolidated_pdf(company_name, company_ruc, period_label, segments, ro
             c.setFillColor(TXT3 if d["weekend"] else TXT2)
             c.setFont("Helvetica", 7)
             c.drawString(dxs[1] + 4, y + 3, d["day"])
-            c.setFillColor(TXT)
-            c.setFont("Helvetica", 7.5)
-            c.drawString(dxs[2] + 4, y + 3, d["in"])
-            c.drawString(dxs[3] + 4, y + 3, d["out"])
-            c.setFillColor(TXT2)
-            c.setFont("Helvetica", 7)
-            c.drawString(dxs[4] + 4, y + 3, (str(d["brk"]) + " min") if d["brk"] > 0 else "—")
-            c.setFillColor(TXT)
-            c.setFont("Helvetica-Bold" if d["wrk"] > 0 else "Helvetica", 7.5)
-            c.drawString(dxs[5] + 4, y + 3, fmt_hours(d["wrk"]))
+
+            if d.get("holiday") and d["wrk"] <= 0:
+                # This register has no Estado/Obs columns, so the name goes
+                # where the times would be — it must survive a monochrome print.
+                c.setFillColor(PURPLE)
+                c.setFont("Helvetica-Bold", 7.5)
+                span_w = (dxs[5] + dcols[5][1]) - dxs[2] - 8
+                c.drawString(dxs[2] + 4, y + 3,
+                             clip("Feriado: " + d["holiday"], span_w, "Helvetica-Bold", 7.5))
+            else:
+                c.setFillColor(TXT)
+                c.setFont("Helvetica", 7.5)
+                c.drawString(dxs[2] + 4, y + 3, d["in"])
+                c.drawString(dxs[3] + 4, y + 3, d["out"])
+                c.setFillColor(TXT2)
+                c.setFont("Helvetica", 7)
+                c.drawString(dxs[4] + 4, y + 3, (str(d["brk"]) + " min") if d["brk"] > 0 else "—")
+                c.setFillColor(TXT)
+                c.setFont("Helvetica-Bold" if d["wrk"] > 0 else "Helvetica", 7.5)
+                c.drawString(dxs[5] + 4, y + 3, fmt_hours(d["wrk"]))
+                if d.get("holiday"):
+                    # Worked on a holiday: keep the hours, but say so.
+                    c.setFillColor(PURPLE)
+                    c.setFont("Helvetica-Oblique", 6)
+                    c.drawRightString(RM - 4, y + 3,
+                                      clip("Feriado: " + d["holiday"], 150, "Helvetica-Oblique", 6))
 
             y -= ROW_H
             row_i += 1
@@ -1311,7 +1364,7 @@ def build_consolidated_pdf(company_name, company_ruc, period_label, segments, ro
 # Lambda Handler
 # ═══════════════════════════════════════════════════════
 
-def handle_employee_report(qs, company_name, company_ruc):
+def handle_employee_report(qs, company_name, company_ruc, holidays=None):
     employee_key = (qs.get("employeeKey") or "").strip().lower()
     if not employee_key:
         return resp(400, {"ok": False, "error": "Falta employeeKey"})
@@ -1339,7 +1392,7 @@ def handle_employee_report(qs, company_name, company_ruc):
     days = []
     for d in iter_days(segments):
         ds = d.isoformat()
-        days.append(build_day(ds, by_date.get(ds, {}), d))
+        days.append(build_day(ds, by_date.get(ds, {}), d, holidays))
 
     pdf_bytes = build_pdf(employee_key, emp_info, report_title, period_label,
                           days, start_d, end_d, company_name, company_ruc)
@@ -1355,7 +1408,7 @@ def handle_employee_report(qs, company_name, company_ruc):
                       "toDate": end_d.isoformat()})
 
 
-def handle_tenant_report(qs, company_name, company_ruc, roster_in=None, roster_only=False):
+def handle_tenant_report(qs, company_name, company_ruc, roster_in=None, roster_only=False, holidays=None):
     """Register covering the tenant's staff over any period, in one PDF."""
     tenant_id = (qs.get("tenantId") or "").strip()
     if not tenant_id:
@@ -1381,7 +1434,7 @@ def handle_tenant_report(qs, company_name, company_ruc, roster_in=None, roster_o
     else:
         detail = span_days <= 62
 
-    roster = build_roster(tenant_id, segments, roster_in, roster_only, areas)
+    roster = build_roster(tenant_id, segments, roster_in, roster_only, areas, holidays)
     if not roster:
         return resp(404, {"ok": False, "error": "No hay empleados ni registros en el período"})
 
@@ -1413,6 +1466,12 @@ def handler(event, context):
         company_name = (qs.get("companyName") or "Novasys").strip()
         company_ruc = (qs.get("companyRuc") or "").strip()
         scope = (qs.get("scope") or "employee").strip().lower()
+        # Holidays come from tenant settings, which live in the Tenants table
+        # the Next.js backend owns — passed in like the company name so this
+        # Lambda's IAM scope stays where it is. {"YYYY-MM-DD": "name"}.
+        holidays = event.get("holidays") or {}
+        if not isinstance(holidays, dict):
+            holidays = {}
 
         if scope == "tenant":
             # Active staff resolved by the caller (see build_roster).
@@ -1420,8 +1479,9 @@ def handler(event, context):
             # should be added to it.
             return handle_tenant_report(qs, company_name, company_ruc,
                                         event.get("roster"),
-                                        bool(event.get("rosterOnly")))
-        return handle_employee_report(qs, company_name, company_ruc)
+                                        bool(event.get("rosterOnly")),
+                                        holidays)
+        return handle_employee_report(qs, company_name, company_ruc, holidays)
 
     except ValueError as e:
         # Bad period / bad date: the caller can fix it, so say so with a 400

@@ -492,7 +492,10 @@ export function GenerateReportPanel() {
       </div>
 
       {/* ── Generate ──────────────────────────────────────── */}
-      <div className="panel" style={{ position: "sticky", top: 16 }}>
+      {/* Bottom padding clears the floating chat/messaging buttons (fixed,
+          bottom-right, ~80px tall): without it the last generated link sits
+          exactly under them and cannot be clicked. */}
+      <div className="panel" style={{ position: "sticky", top: 16, paddingBottom: 96 }}>
         <div className="panel-head">
           <div>
             <div className="panel-title">Generar reporte</div>

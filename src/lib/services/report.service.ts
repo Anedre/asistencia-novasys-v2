@@ -7,6 +7,7 @@ import { LambdaClient, InvokeCommand } from "@aws-sdk/client-lambda";
 import { getTenantById } from "@/lib/db/tenants";
 import { getAllActiveEmployees } from "@/lib/db/employees";
 import { areaKey } from "@/lib/utils/area";
+import { getHolidaySet } from "@/lib/utils/holidays";
 import { AppError, ValidationError } from "@/lib/utils/errors";
 
 const lambda = new LambdaClient({
@@ -104,6 +105,24 @@ async function resolveCompany(tenantId?: string) {
   }
 }
 
+/**
+ * Holidays as the Lambda wants them: {"YYYY-MM-DD": "Fiestas Patrias"}.
+ * Resolved here, like the company name, because the tenant table is ours to
+ * read and the Lambda's role is deliberately not granted access to it. A
+ * holiday the PDF does not know about prints as "Sin registro" — an absence,
+ * to anyone reading it.
+ */
+async function resolveHolidays(tenantId?: string): Promise<Record<string, string>> {
+  if (!tenantId) return {};
+  const tid = tenantId.startsWith("TENANT#") ? tenantId : `TENANT#${tenantId}`;
+  try {
+    return Object.fromEntries(await getHolidaySet(tid));
+  } catch {
+    // Better an unlabelled holiday than no report at all.
+    return {};
+  }
+}
+
 /** Shape returned inside the Lambda's API-Gateway-style `body`. */
 interface PdfLambdaBody {
   ok: boolean;
@@ -161,15 +180,21 @@ export async function generateReport(
   params: GenerateReportParams
 ): Promise<ReportResult> {
   const employeeKey = params.employeeId.replace("EMP#", "");
-  const { companyName, companyRuc } = await resolveCompany(params.tenantId);
+  const [{ companyName, companyRuc }, holidays] = await Promise.all([
+    resolveCompany(params.tenantId),
+    resolveHolidays(params.tenantId),
+  ]);
 
-  const body = await invokePdfLambda({
-    employeeKey,
-    ...periodQuery(params),
-    ...(params.tenantId && { tenantId: params.tenantId }),
-    ...(companyName && { companyName }),
-    ...(companyRuc && { companyRuc }),
-  });
+  const body = await invokePdfLambda(
+    {
+      employeeKey,
+      ...periodQuery(params),
+      ...(params.tenantId && { tenantId: params.tenantId }),
+      ...(companyName && { companyName }),
+      ...(companyRuc && { companyRuc }),
+    },
+    { holidays }
+  );
 
   return {
     url: body.url,
@@ -193,13 +218,14 @@ export async function generateReport(
 export async function generateConsolidatedReport(
   params: ConsolidatedReportParams
 ): Promise<ConsolidatedReportResult> {
-  const [{ companyName, companyRuc }, employees] = await Promise.all([
+  const [{ companyName, companyRuc }, employees, holidays] = await Promise.all([
     resolveCompany(params.tenantId),
     // The active roster is resolved HERE, not in the Lambda. Listing staff by
     // tenant needs a Query on the Employees GSI, and the Lambda's role is only
     // granted GetItem on the table itself — same reason the company name and
     // RUC are passed in. Sending the list keeps its IAM scope untouched.
     getAllActiveEmployees(params.tenantId),
+    resolveHolidays(params.tenantId),
   ]);
 
   const picked = params.employeeIds?.length ? new Set(params.employeeIds) : null;
@@ -246,7 +272,7 @@ export async function generateConsolidatedReport(
     // area filter does NOT set it: someone who left mid-period still belongs in
     // their area's register, and the Lambda applies the same area filter to
     // whoever it pulls in.
-    { roster, rosterOnly: Boolean(picked) }
+    { roster, rosterOnly: Boolean(picked), holidays }
   );
 
   return {
