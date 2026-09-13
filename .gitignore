@@ -44,3 +44,4 @@ next-env.d.ts
 lambda/pdf-report/package/
 lambda/pdf-report/lambda-package.zip
 infrastructure/*/function.zip
+__pycache__/
