@@ -3,7 +3,7 @@
  * Ported from asistencia-regularize-range.py
  */
 
-import { upsertDailySummary } from "@/lib/db/daily-summary";
+import { getDailySummary, upsertDailySummary } from "@/lib/db/daily-summary";
 import {
   REASON_LABELS,
   ABSENCE_REASONS,
@@ -189,6 +189,25 @@ export async function regularizeSingle(
       throw new ValidationError(
         `No puedes regularizar un día feriado (${workDate} · ${holidayName}). Los feriados permanecen fijos.`
       );
+    }
+  }
+
+  // Without overwrite an existing day is left untouched. Decide that HERE,
+  // before withAudit: the upsert would answer "SKIPPED" anyway, but the audit
+  // wrapper still writes an UPDATE row with an empty diff for the no-op —
+  // noise in the log that the revert screen would then offer to "undo".
+  if (!overwrite) {
+    const existing = await getDailySummary(employeeId, workDate);
+    if (existing) {
+      return {
+        id: null,
+        employeeId,
+        workDate,
+        reasonCode: code,
+        reasonLabel: REASON_LABELS[code],
+        result: "SKIPPED" as const,
+        auditId: null,
+      };
     }
   }
 
