@@ -188,11 +188,25 @@ export default function RegularizePage() {
           breakMinutes,
           reasonCode,
           reasonNote,
+          overwrite,
         }),
       });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error || "Error al regularizar");
-      toast.success(body.message || "Regularización aplicada");
+      // The service refuses to touch a day that already has a record unless
+      // told to overwrite — and it says so with result: "SKIPPED" on a 200.
+      // Reporting that as a success sent admins to "Rango" for one-day fixes.
+      if (body.result === "SKIPPED") {
+        toast.warning(
+          `El ${workDate} ya tiene un registro y no se modificó. Activa "Sobrescribir registros existentes" para reemplazarlo.`
+        );
+        return;
+      }
+      toast.success(
+        body.result === "OVERWRITTEN"
+          ? `Registro del ${workDate} reemplazado`
+          : body.message || "Regularización aplicada"
+      );
       invalidateAttendanceCaches(employeeId);
       // Soft reset: clear date + note, keep employee & schedule for batch flow
       setWorkDate("");
@@ -476,21 +490,28 @@ export default function RegularizePage() {
           )}
 
           {/* Step 4 — opciones del rango */}
-          {mode === "range" && (
+          {mode !== "clean" && (
             <StepBlock num={4} title="Opciones" optional>
               <div className="rg-toggles">
-                <ToggleRow
-                  id="weekdaysOnly"
-                  label="Solo días laborales (lun-vie)"
-                  checked={weekdaysOnly}
-                  onChange={setWeekdaysOnly}
-                />
-                <ToggleRow
-                  id="pastDatesOnly"
-                  label="Solo fechas pasadas"
-                  checked={pastDatesOnly}
-                  onChange={setPastDatesOnly}
-                />
+                {mode === "range" && (
+                  <>
+                    <ToggleRow
+                      id="weekdaysOnly"
+                      label="Solo días laborales (lun-vie)"
+                      checked={weekdaysOnly}
+                      onChange={setWeekdaysOnly}
+                    />
+                    <ToggleRow
+                      id="pastDatesOnly"
+                      label="Solo fechas pasadas"
+                      checked={pastDatesOnly}
+                      onChange={setPastDatesOnly}
+                    />
+                  </>
+                )}
+                {/* Shared by both modes: correcting a day that already has a
+                    record is the everyday case for a one-day fix, and used to
+                    force admins into "Rango" for a single date. */}
                 <ToggleRow
                   id="overwrite"
                   label="Sobrescribir registros existentes"
@@ -553,6 +574,11 @@ export default function RegularizePage() {
               {mode === "range" && weekdaysOnly && (
                 <div className="rg-stat" style={{ fontSize: 11.5, color: "var(--text-muted)" }}>
                   Fines de semana omitidos automáticamente
+                </div>
+              )}
+              {mode !== "clean" && overwrite && (
+                <div className="rg-stat" style={{ fontSize: 11.5, color: "var(--warn)" }}>
+                  Reemplazará los registros que ya existan
                 </div>
               )}
               {mode === "clean" && (

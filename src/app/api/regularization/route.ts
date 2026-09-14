@@ -18,6 +18,7 @@ export const POST = withErrorHandler(async (req: Request) => {
       breakMinutes: parsed.breakMinutes,
       reasonCode: parsed.reasonCode,
       reasonNote: parsed.reasonNote,
+      overwrite: parsed.overwrite,
       tenantId: user.tenantId,
     },
     user

@@ -49,6 +49,9 @@ export const regularizeSingleSchema = z.object({
   breakMinutes: z.number().min(0).max(480).optional(),
   reasonCode: z.string().min(1, "Falta reasonCode"),
   reasonNote: z.string().max(500).optional(),
+  // Same semantics as the range endpoint: without it an existing day is left
+  // untouched (the service answers "SKIPPED") instead of being replaced.
+  overwrite: z.boolean().default(false),
 });
 
 export const regularizeRangeSchema = z.object({
