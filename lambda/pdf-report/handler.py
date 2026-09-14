@@ -256,12 +256,19 @@ def build_day(ds, item, current_date, holidays=None):
     holiday = (holidays or {}).get(ds) or ""
 
     if item:
-        reason = item.get("regularizationReasonLabel", "")
+        label = item.get("regularizationReasonLabel", "")
+        reason = label
         note = (item.get("regularizationNote") or "").strip()
         if note:
             reason = f"{reason} — {note}" if reason else note
         worked = int(item.get("workedMinutes", 0))
         status = item.get("status", "MISSING")
+        # A justified leave (Vacaciones, Permiso, Descanso médico…) is stored
+        # as status ABSENCE with the reason in the label. Kept apart from
+        # `reason` because the consolidated register must show the bare label
+        # — never the internal note — and the per-employee ESTADO badge must
+        # not call a vacation an "Ausencia".
+        absence = label if (status or "").upper() == "ABSENCE" and worked <= 0 else ""
         if holiday:
             # Somebody who actually clocked hours on a holiday keeps them; the
             # day is still labelled so the extra work is visible as such.
@@ -283,14 +290,16 @@ def build_day(ds, item, current_date, holidays=None):
             "src": item.get("source", ""),
             "recorded": True,
             "status": status,
-            "reason": reason, "weekend": is_weekend, "holiday": holiday,
+            "reason": reason, "absence": absence,
+            "weekend": is_weekend, "holiday": holiday,
         }
 
     return {
         "date": ds, "day": day_name, "in": "—", "out": "—",
         "brk": 0, "wrk": 0, "pln": 0, "late": 0, "src": "", "recorded": False,
         "status": "HOLIDAY" if holiday else ("No Laborable" if is_weekend else "MISSING"),
-        "reason": holiday, "weekend": is_weekend, "holiday": holiday,
+        "reason": holiday, "absence": "",
+        "weekend": is_weekend, "holiday": holiday,
     }
 
 
@@ -658,6 +667,17 @@ def build_pdf(emp_key, emp_info, report_title, period_label, days, start_d, end_
         # ── Estado badge ──
         label = STATUS_LABEL.get(status, status)
         fg, bg_c = status_colors(status)
+        if d.get("absence"):
+            # A justified leave is not an "Ausencia": name it (Vacaciones,
+            # Permiso, Descanso médico…) and drop the red that flags a fault.
+            # "Descanso post-natal" outgrows the 70pt column, so trim to fit.
+            base = d["absence"]
+            fg, bg_c = BLUE, BLUE_BG
+            max_w = cols[6][1] - 14
+            label = base
+            while len(base) > 4 and c.stringWidth(label, "Helvetica-Bold", 6.5) > max_w:
+                base = base[:-1].rstrip()
+                label = base + "..."
 
         bw = min(c.stringWidth(label, "Helvetica-Bold", 6.5) + 8, cols[6][1] - 6)
         bx = col_x[6] + 3
@@ -779,9 +799,16 @@ DAILY_INDEX = os.environ.get("INDEX_DAILY_BY_TENANT", "Tenant-WorkDate-index")
 # Note the column is DROPPED rather than relabelling REGULARIZED days as
 # ordinary ones: the register reports the hours actually worked and stays
 # silent on how each row was captured, instead of asserting something untrue
-# about a specific day. A 0 width means "fill the remaining usable width".
-DETAIL_COLS = [("FECHA", 80), ("DÍA", 80), ("ENTRADA", 80),
-               ("SALIDA", 80), ("BREAK", 75), ("HORAS", 0)]
+# about a specific day.
+#
+# "MOTIVO" is the one exception, and only for rows with NO hours: a vacation,
+# a permit, a medical leave or a holiday. Left blank those rows are
+# indistinguishable from "Sin registro", and an inspector reads an unexplained
+# empty weekday as an absence. Worked days keep the column empty — it carries
+# the reason label only, never the internal note. A 0 width means "fill the
+# remaining usable width".
+DETAIL_COLS = [("FECHA", 64), ("DÍA", 62), ("ENTRADA", 62), ("SALIDA", 62),
+               ("BREAK", 54), ("HORAS", 54), ("MOTIVO", 0)]
 
 def utc_stamp():
     return datetime.now(timezone.utc).strftime("%d/%m/%Y %H:%M UTC")
@@ -1314,31 +1341,32 @@ def build_consolidated_pdf(company_name, company_ruc, period_label, segments, ro
             c.setFont("Helvetica", 7)
             c.drawString(dxs[1] + 4, y + 3, d["day"])
 
-            if d.get("holiday") and d["wrk"] <= 0:
-                # This register has no Estado/Obs columns, so the name goes
-                # where the times would be — it must survive a monochrome print.
+            c.setFillColor(TXT)
+            c.setFont("Helvetica", 7.5)
+            c.drawString(dxs[2] + 4, y + 3, d["in"])
+            c.drawString(dxs[3] + 4, y + 3, d["out"])
+            c.setFillColor(TXT2)
+            c.setFont("Helvetica", 7)
+            c.drawString(dxs[4] + 4, y + 3, (str(d["brk"]) + " min") if d["brk"] > 0 else "—")
+            c.setFillColor(TXT)
+            c.setFont("Helvetica-Bold" if d["wrk"] > 0 else "Helvetica", 7.5)
+            c.drawString(dxs[5] + 4, y + 3, fmt_hours(d["wrk"]))
+
+            # ── Motivo ── why an otherwise empty row is empty. Bold and
+            # coloured so it survives the monochrome laser this gets printed on.
+            motivo_w = dcols[6][1] - 8
+            if d.get("holiday"):
+                # Worked or not, a holiday is named; with hours it explains
+                # the extra work, without them it stops reading as an absence.
                 c.setFillColor(PURPLE)
-                c.setFont("Helvetica-Bold", 7.5)
-                span_w = (dxs[5] + dcols[5][1]) - dxs[2] - 8
-                c.drawString(dxs[2] + 4, y + 3,
-                             clip("Feriado: " + d["holiday"], span_w, "Helvetica-Bold", 7.5))
-            else:
-                c.setFillColor(TXT)
-                c.setFont("Helvetica", 7.5)
-                c.drawString(dxs[2] + 4, y + 3, d["in"])
-                c.drawString(dxs[3] + 4, y + 3, d["out"])
-                c.setFillColor(TXT2)
-                c.setFont("Helvetica", 7)
-                c.drawString(dxs[4] + 4, y + 3, (str(d["brk"]) + " min") if d["brk"] > 0 else "—")
-                c.setFillColor(TXT)
-                c.setFont("Helvetica-Bold" if d["wrk"] > 0 else "Helvetica", 7.5)
-                c.drawString(dxs[5] + 4, y + 3, fmt_hours(d["wrk"]))
-                if d.get("holiday"):
-                    # Worked on a holiday: keep the hours, but say so.
-                    c.setFillColor(PURPLE)
-                    c.setFont("Helvetica-Oblique", 6)
-                    c.drawRightString(RM - 4, y + 3,
-                                      clip("Feriado: " + d["holiday"], 150, "Helvetica-Oblique", 6))
+                c.setFont("Helvetica-Bold", 7)
+                c.drawString(dxs[6] + 4, y + 3,
+                             clip("Feriado: " + d["holiday"], motivo_w, "Helvetica-Bold", 7))
+            elif d.get("absence"):
+                c.setFillColor(BLUE)
+                c.setFont("Helvetica-Bold", 7)
+                c.drawString(dxs[6] + 4, y + 3,
+                             clip(d["absence"], motivo_w, "Helvetica-Bold", 7))
 
             y -= ROW_H
             row_i += 1
