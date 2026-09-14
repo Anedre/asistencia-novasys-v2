@@ -1,6 +1,6 @@
 "use client";
 
-import { useSession } from "next-auth/react";
+import { useRequireSession } from "@/hooks/use-require-session";
 import { Toaster } from "sonner";
 import { Loader2 } from "lucide-react";
 import { AppShell } from "@/components/nova/app-shell";
@@ -10,10 +10,13 @@ import { MessagingWidget } from "@/components/messaging/messaging-widget";
 import { useHeartbeat } from "@/hooks/use-presence";
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
-  const { status, data: session } = useSession();
+  const { ready, data: session } = useRequireSession();
   useHeartbeat();
 
-  if (status === "loading") {
+  // "unauthenticated" is also held on the spinner: the hook is already
+  // sending the browser to /login, and painting the shell for a beat would
+  // just flash an empty panel with failing requests.
+  if (!ready) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
