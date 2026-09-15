@@ -184,6 +184,8 @@ function CheckInHero({
       primaryLabel: string;
       primaryIcon: React.ReactNode;
       primaryAction?: EventType;
+      /** Navigation target for states with no clock action ("Ver reporte", …). */
+      primaryHref?: string;
       secondaryLabel?: string;
       secondaryIcon?: React.ReactNode;
       secondaryAction?: EventType;
@@ -234,6 +236,7 @@ function CheckInHero({
       pillCls: "accent",
       primaryLabel: "Ver reporte",
       primaryIcon: <IconSvg d={Icons.arrow} size={16} stroke={2} />,
+      primaryHref: "/reports",
       sub: "Trabajaste",
       subVal: today?.workedMinutes ? fmtMinutes(today.workedMinutes) : "—",
       headline: `Bien hecho, ${firstName}.`,
@@ -258,6 +261,7 @@ function CheckInHero({
       pillCls: "accent",
       primaryLabel: "Ver saldo",
       primaryIcon: <IconSvg d={Icons.beach} size={16} stroke={2} />,
+      primaryHref: "/requests",
       sub: "Días restantes",
       subVal: "—",
       headline: "Tiempo de descansar.",
@@ -268,6 +272,7 @@ function CheckInHero({
       pillCls: "warn",
       primaryLabel: "Ver calendario",
       primaryIcon: <IconSvg d={Icons.calendar} size={16} stroke={2} />,
+      primaryHref: "/history",
       sub: "Feriado",
       subVal: today?.holidayName ?? "Hoy",
       headline: "Hoy es feriado.",
@@ -276,6 +281,7 @@ function CheckInHero({
 
   const meta = stateMeta[state];
   const clockStyle = useClockStyle();
+  const heroRouter = useRouter();
 
   // Optional "custom start time" picker (only when the admin enabled it and
   // the next action is the day's first check-in).
@@ -487,14 +493,19 @@ function CheckInHero({
             disabled={
               isLoading ||
               pendingAction !== null ||
-              !meta.primaryAction ||
+              // States without a clock action are links (Ver reporte, Ver
+              // saldo, Ver calendario) — they used to render disabled and dead.
+              (!meta.primaryAction && !meta.primaryHref) ||
               // Don't allow the day's first check-in to fire until the tenant
               // config has loaded — otherwise a fast tap (common on mobile)
               // checks in immediately and skips the custom-start picker.
               (meta.primaryAction === "START" && tenantConfigLoading)
             }
             onClick={() => {
-              if (!meta.primaryAction) return;
+              if (!meta.primaryAction) {
+                if (meta.primaryHref) heroRouter.push(meta.primaryHref);
+                return;
+              }
               if (canCustomStart) openStartPicker();
               else onAction(meta.primaryAction, undefined, autoClose);
             }}
