@@ -71,9 +71,33 @@ function nowMinutesLima() {
   return d.getUTCHours() * 60 + d.getUTCMinutes();
 }
 
+/**
+ * Minutes since Lima midnight of the employee's check-in.
+ *
+ * `firstInLocal` is a full local ISO stamp ("2026-09-14T09:00:00-05:00") on
+ * every row the app writes — real check-ins and regularizations alike. The
+ * previous parser expected a bare "09:00", so it returned null for every
+ * single row and the job bailed out before measuring anything: this Lambda
+ * never closed a shift, for anyone, and said nothing. `firstInUtc` is the
+ * authoritative instant, so read the clock from it; fall back to whatever
+ * clock `firstInLocal` carries, ISO or bare.
+ */
+function firstInMinutesLima(row) {
+  if (row.firstInUtc) {
+    const t = Date.parse(row.firstInUtc);
+    if (!Number.isNaN(t)) {
+      const d = new Date(t - 5 * 60 * 60 * 1000);
+      return d.getUTCHours() * 60 + d.getUTCMinutes();
+    }
+  }
+  return parseClockToMin(row.firstInLocal);
+}
+
+/** "09:00" or "…T09:00:00-05:00" → 540. */
 function parseClockToMin(clock) {
   if (!clock) return null;
-  const m = /^(\d{1,2}):(\d{2})/.exec(String(clock));
+  const s = String(clock);
+  const m = /(?:^|T)(\d{1,2}):(\d{2})/.exec(s);
   if (!m) return null;
   return Number(m[1]) * 60 + Number(m[2]);
 }
@@ -168,7 +192,27 @@ async function getAdmins(tenantId) {
   return out;
 }
 
+/**
+ * The table key is (recipientId, createdAt) and every notification of one run
+ * carries the same `createdAt`, so two notices for the same person in one
+ * run — an admin who is also the employee, or two shifts closing in the same
+ * window — collide, and DynamoDB then rejects the WHOLE batch: nobody gets
+ * told. Nudge colliding timestamps by a millisecond so every key is unique.
+ */
+function uniqueKeys(notifs) {
+  const seen = new Set();
+  return notifs.map((n) => {
+    let createdAt = n.createdAt;
+    while (seen.has(`${n.recipientId}|${createdAt}`)) {
+      createdAt = new Date(Date.parse(createdAt) + 1).toISOString();
+    }
+    seen.add(`${n.recipientId}|${createdAt}`);
+    return createdAt === n.createdAt ? n : { ...n, createdAt };
+  });
+}
+
 async function writeNotifications(notifs) {
+  notifs = uniqueKeys(notifs);
   for (let i = 0; i < notifs.length; i += 25) {
     const chunk = notifs.slice(i, i + 25);
     await ddb.send(
@@ -213,8 +257,12 @@ async function autoCloseAtGoalOne({ row, employee, admins, tenantSettings, workD
   const onBreakNow = Boolean(brkStart) && (!brkEnd || brkEnd < brkStart);
   if (onBreakNow) return [];
 
-  const firstInMin = parseClockToMin(row.firstInLocal);
-  if (firstInMin == null || !row.firstInUtc) return []; // no check-in to measure from
+  const firstInMin = firstInMinutesLima(row);
+  if (firstInMin == null) {
+    // Say so: a silent skip here is exactly how this job stayed inert for a year.
+    console.warn(`[shift-autoclose] skip ${row.EmployeeID} — no parseable check-in (firstInUtc=${row.firstInUtc} firstInLocal=${row.firstInLocal})`);
+    return [];
+  }
 
   const goal = goalMinutes(row, employee, tenantSettings);
   const breakTaken = Number(row.breakMinutes || 0);
@@ -276,6 +324,9 @@ async function autoCloseAtGoalOne({ row, employee, admins, tenantSettings, workD
     });
   }
   for (const admin of admins) {
+    // An admin closing their own shift already got the employee notice above;
+    // a second row would share its (recipientId, createdAt) key.
+    if (admin.EmployeeID === employee?.EmployeeID) continue;
     notifs.push({
       recipientId: admin.EmployeeID,
       createdAt: nowIso,
