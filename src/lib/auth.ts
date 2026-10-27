@@ -1,10 +1,11 @@
 import type { NextAuthOptions, Session } from "next-auth";
 import type { JWT } from "next-auth/jwt";
 import CredentialsProvider from "next-auth/providers/credentials";
-import { QueryCommand, GetCommand } from "@aws-sdk/lib-dynamodb";
+import { GetCommand } from "@aws-sdk/lib-dynamodb";
 import { docClient } from "@/lib/db/client";
-import { TABLES, INDEXES } from "@/lib/db/tables";
+import { TABLES } from "@/lib/db/tables";
 import { cognitoSignIn, getCognitoErrorMessage, isCognitoError } from "@/lib/cognito";
+import { resolveEmployeeIdentity } from "@/lib/employee-session";
 
 export type UserRole = "ADMIN" | "EMPLOYEE" | "SUPER_ADMIN";
 
@@ -34,32 +35,6 @@ declare module "next-auth/jwt" {
   }
 }
 
-async function findEmployeeByCognitoSub(sub: string) {
-  const result = await docClient.send(
-    new QueryCommand({
-      TableName: TABLES.EMPLOYEES,
-      IndexName: INDEXES.EMPLOYEES_COGNITO_SUB,
-      KeyConditionExpression: "CognitoSub = :sub",
-      ExpressionAttributeValues: { ":sub": sub },
-      Limit: 1,
-    })
-  );
-  return result.Items?.[0] ?? null;
-}
-
-async function findEmployeeByEmail(email: string) {
-  const result = await docClient.send(
-    new QueryCommand({
-      TableName: TABLES.EMPLOYEES,
-      IndexName: INDEXES.EMPLOYEES_EMAIL,
-      KeyConditionExpression: "Email = :email",
-      ExpressionAttributeValues: { ":email": email.toLowerCase() },
-      Limit: 1,
-    })
-  );
-  return result.Items?.[0] ?? null;
-}
-
 export const authOptions: NextAuthOptions = {
   providers: [
     CredentialsProvider({
@@ -81,40 +56,13 @@ export const authOptions: NextAuthOptions = {
             credentials.password
           );
 
-          // Look up employee in DynamoDB
-          let employee = await findEmployeeByCognitoSub(cognitoResult.sub);
-          if (!employee) {
-            employee = await findEmployeeByEmail(cognitoResult.email);
-          }
-
-          if (employee) {
-            // Extract tenant slug from TenantID (e.g., "TENANT#novasys" → "novasys")
-            const tenantId = employee.TenantID || "TENANT#novasys";
-            const tenantSlug = tenantId.replace("TENANT#", "");
-
-            return {
-              id: employee.EmployeeID,
-              email: cognitoResult.email,
-              name: employee.FullName || cognitoResult.name,
-              role: (employee.Role as UserRole) || "EMPLOYEE",
-              area: employee.Area || "",
-              employeeId: employee.EmployeeID,
-              tenantId,
-              tenantSlug,
-            };
-          }
-
-          // Employee not found in DynamoDB — allow login with default tenant
-          return {
-            id: `EMP#${cognitoResult.email}`,
+          // Resolved through the shared resolver so this session and a mobile
+          // Bearer token can never disagree on role or tenant.
+          return await resolveEmployeeIdentity({
+            sub: cognitoResult.sub,
             email: cognitoResult.email,
             name: cognitoResult.name,
-            role: "EMPLOYEE" as UserRole,
-            area: "",
-            employeeId: `EMP#${cognitoResult.email}`,
-            tenantId: "TENANT#novasys",
-            tenantSlug: "novasys",
-          };
+          });
         } catch (error) {
           if (isCognitoError(error, "UserNotConfirmedException")) {
             throw new Error("USER_NOT_CONFIRMED");
