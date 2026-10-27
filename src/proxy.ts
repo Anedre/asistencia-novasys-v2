@@ -52,6 +52,18 @@ export async function proxy(request: NextRequest) {
 
   // Not authenticated
   if (!token) {
+    // Native clients (the Android app) carry a Cognito ID token instead of the
+    // session cookie. The proxy can't verify it — that needs the user pool's
+    // JWKS and the employee lookup — so it lets the request through and the
+    // route's own requireSession() verifies it. Every non-public API route
+    // checks the session itself, so nothing here relies on the proxy alone.
+    if (
+      pathname.startsWith("/api/") &&
+      /^Bearer\s+\S/i.test(request.headers.get("authorization") ?? "")
+    ) {
+      return noStore(NextResponse.next());
+    }
+
     // Para rutas de API: devolver 401 JSON (NO redirigir a /login,
     // porque el navegador convertiría POST → GET y obtendría 405).
     if (pathname.startsWith("/api/")) {
